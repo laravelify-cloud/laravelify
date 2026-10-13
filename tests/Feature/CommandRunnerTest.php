@@ -7,10 +7,33 @@ use Tests\TestCase;
 
 class CommandRunnerTest extends TestCase
 {
+    /** @var array<string, array{getenv: string|false, env: mixed, server: mixed}> */
+    private array $saved = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        foreach (['DB_DATABASE', 'APP_KEY'] as $key) {
+            $this->saved[$key] = ['getenv' => getenv($key), 'env' => $_ENV[$key] ?? null, 'server' => $_SERVER[$key] ?? null];
+        }
+    }
+
+    /**
+     * Put the variables back as they were. Removing them would also remove the test database
+     * that phpunit.xml sets, and every test after this one would lose its database.
+     */
     protected function tearDown(): void
     {
-        putenv('DB_DATABASE');
-        unset($_ENV['DB_DATABASE'], $_SERVER['DB_DATABASE'], $_ENV['APP_KEY'], $_SERVER['APP_KEY']);
+        foreach ($this->saved as $key => $original) {
+            $original['getenv'] === false ? putenv($key) : putenv($key.'='.$original['getenv']);
+
+            foreach (['env' => &$_ENV, 'server' => &$_SERVER] as $name => &$bag) {
+                $original[$name] === null ? $bag = array_diff_key($bag, [$key => true]) : $bag[$key] = $original[$name];
+            }
+
+            unset($bag);
+        }
 
         parent::tearDown();
     }
