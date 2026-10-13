@@ -170,7 +170,7 @@
             <div class="min-w-0 flex-1">
                 <header class="topbar">
                     <button class="icon-btn lg:hidden" type="button" @click="nav = true" aria-label="Open navigation">
-                        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16" /></svg>
+                        <x-menu-icon name="menu" />
                     </button>
                     <nav class="topbar-crumbs" aria-label="Breadcrumb">
                         <a href="{{ route('dashboard') }}" wire:navigate>Laravelify</a>

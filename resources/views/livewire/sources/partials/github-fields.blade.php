@@ -45,7 +45,7 @@
     <span class="relative block" x-data="{ show: false }">
         <input class="input pr-10" x-bind:type="show ? 'text' : 'password'" wire:model="webhook_secret" autocomplete="new-password">
         <button class="absolute inset-y-0 right-2 text-muted" type="button" @click="show = !show" tabindex="-1" aria-label="Show webhook secret">
-            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+            <x-menu-icon name="eye" class="size-4" />
         </button>
     </span>
     @error('webhook_secret') <small class="error">{{ $message }}</small> @enderror

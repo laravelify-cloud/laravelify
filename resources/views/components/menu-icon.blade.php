@@ -1,79 +1,14 @@
+{{-- Material Design icons, generated into resources/icons/mui.json by scripts/sync-mui-icons.mjs. --}}
 @props(['name'])
 
 @php
-    $paths = [
-        'dashboard' => 'M4 5h7v7H4zM13 5h7v4h-7zM13 12h7v7h-7zM4 15h7v4H4z',
-        'groups' => 'M4 7h6l2 2h8v10H4z',
-        'server' => 'M5 6h14v4H5zM5 14h14v4H5zM8 8h.01M8 16h.01',
-        'sources' => 'M7 7a3 3 0 1 0 0.1 0M17 17a3 3 0 1 0 0.1 0M9.5 8.5l5 7',
-        'tunnels' => 'M7 16a4 4 0 0 1 0-8 5 5 0 0 1 9.5 1.5A3.5 3.5 0 0 1 17 16z',
-        'settings' => 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 4v2M12 18v2M4.9 7.1l1.4 1.4M17.7 15.5l1.4 1.4M4 12h2M18 12h2M4.9 16.9l1.4-1.4M17.7 8.5l1.4-1.4',
-        'variables' => 'M8 8l-3 4 3 4M16 8l3 4-3 4M13 7l-2 10',
-        'runtime' => 'M9 3v3M15 3v3M8 8h8v10H8zM10 12h4',
-        'nginx' => 'M7 4h7l4 4v12H7zM14 4v4h4',
-        'processes' => 'M8 7h12M8 12h12M8 17h12M4 7h.01M4 12h.01M4 17h.01',
-        'deployments' => 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z',
-        'terminal' => 'M4 6h16v12H4zM8 10l2 2-2 2M12 14h4',
-        'files' => 'M4 6h6l2 2h8v10H4z',
-        'danger' => 'M12 4l8 14H4zM12 10v4M12 16h.01',
-        'keys' => 'M15 8a4 4 0 1 0-3.4 4H9l-2 2v2H5v2h3v-2l1-1h2.6A4 4 0 0 0 15 8z',
-        'upload' => 'M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3',
-        'download' => 'M12 4v12M7 11l5 5 5-5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3',
-        'pencil' => 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
-        'trash' => 'M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13M10 11v6M14 11v6',
-        'refresh' => 'M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6',
-        'search' => 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',
-        'home' => 'M4 11l8-7 8 7M6 9.5V20h12V9.5',
-        'up' => 'M12 19V5M6 11l6-6 6 6',
-        'grid' => 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
-        'list' => 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
-        'file-plus' => 'M7 3h7l5 5v13H7zM14 3v5h5M13 12v6M10 15h6',
-        'folder-plus' => 'M4 6h6l2 2h8v11H4zM12 11v5M9.5 13.5h5',
-        'more' => 'M5 12h.01M12 12h.01M19 12h.01',
-        'close' => 'M6 6l12 12M18 6L6 18',
-        'eye' => 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
-        'archive' => 'M4 5h16v4H4zM6 9v10h12V9M10 13h4',
-        'chevron-right' => 'M9 6l6 6-6 6',
-        'eye-off' => 'M3 3l18 18M10.6 6.1A10.6 10.6 0 0 1 12 6c6.5 0 10 6 10 6a17.7 17.7 0 0 1-3.2 3.9M6.6 6.6C3.8 8.4 2 12 2 12s3.5 6 10 6a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2',
-        'database' =>'M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
-        'shield' =>'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6zM9 12l2 2 4-4',
-        'lock' => 'M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3',
-        'robot' => 'M8 8h8a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a3 3 0 0 1 3-3zM12 4v4M9.5 13h.01M14.5 13h.01M10 16h4',
-        'telegram' =>'M21 4L3 11l6 2.2M21 4l-3.5 16-8.5-6.8M21 4L9 13.2V19l3-3.3',
-        'logs' => 'M7 3h7l5 5v13H7zM14 3v5h5M10 12h6M10 15.5h6M10 19h4',
-        'pulse' => 'M3 12h4l3-8 4 16 3-8h4',
-        'play' => 'M8 5v14l11-7z',
-        'sun' =>'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 3v1.5M12 19.5V21M4.6 4.6l1.1 1.1M18.3 18.3l1.1 1.1M3 12h1.5M19.5 12H21M4.6 19.4l1.1-1.1M18.3 5.7l1.1-1.1',
-        'moon' => 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z',
-        'logout' => 'M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h10',
-        'chevrons' => 'M8 9l4-4 4 4M8 15l4 4 4-4',
-        'chevron-down' => 'M6 9l6 6 6-6',
-        'external' => 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
-        'git' => 'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9',
-        'rocket' => 'M5 15c-1.5 1.5-2 5-2 5s3.5-.5 5-2M9 12a22 22 0 0 1 11-9 22 22 0 0 1-9 11l-2 1-3-3zM9 12H5l2-4h4M12 15v4l4-2v-4',
-        'stop' => 'M7 7h10v10H7z',
-        'arrow-down' => 'M12 5v14M6 13l6 6 6-6',
-        'clock' => 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
-        'webhook' => 'M10 4a4 4 0 0 0-3.5 6l-3 5M14 4a4 4 0 0 1 3 6.7M9 18h7a4 4 0 1 0-1.5-7.7M6.5 20a3 3 0 1 0 0-.01',
-        'copy' =>'M9 9h11v11H9zM5 15H4V4h11v1',
-        'move' => 'M4 6h6l2 2h8v11H4zM10 13.5h6M13.5 11l2.5 2.5-2.5 2.5',
-        'link' => 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
-        'wrap' => 'M4 6h16M4 12h13a3 3 0 0 1 0 6h-4M15 16l-2 2 2 2M4 18h5',
-        'minus' => 'M5 12h14',
-        'plus' => 'M12 5v14M5 12h14',
-        'expand' => 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5',
-        'shrink' => 'M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5',
-        'book' => 'M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 7h6M9 10.5h4',
-        'cpu' => 'M7 7h10v10H7zM10 10h4v4h-4zM9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4',
-        'chart' => 'M5 20v-9M12 20V5M19 20v-6M3 20h18',
-        'bug' => 'M9 7a3 3 0 0 1 6 0v1H9zM7 9h10v5a5 5 0 0 1-10 0zM12 11v8M4 12h3M17 12h3M5 18l2.5-1.5M19 18l-2.5-1.5M5 7l2.5 1.5M19 7l-2.5 1.5',
-        'globe' => 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z',
-        'ban' => 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.6 5.6l12.8 12.8',
-        'check' => 'M5 12.5l4.5 4.5L19 7.5',
-        'arrow-up-right' => 'M7 17L17 7M9 7h8v8',
-    ];
+    static $icons = null;
+    $icons ??= json_decode(file_get_contents(resource_path('icons/mui.json')), true);
+    $paths = $icons[$name] ?? $icons['settings'];
 @endphp
 
-<svg {{ $attributes->merge(['class' => 'menu-icon']) }} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
-    <path stroke-linecap="round" stroke-linejoin="round" d="{{ $paths[$name] ?? $paths['settings'] }}" />
+<svg {{ $attributes->merge(['class' => 'menu-icon']) }} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    @foreach ($paths as $path)
+        <path d="{{ $path }}" />
+    @endforeach
 </svg>

@@ -58,7 +58,7 @@
                 </div>
                 <button class="btn" type="button" @click="paused = !paused; if (!paused) tick()">
                     <x-menu-icon name="play" x-show="paused" />
-                    <x-menu-icon name="stop" x-show="!paused" />
+                    <x-menu-icon name="pause" x-show="!paused" />
                     <span x-text="paused ? 'Resume' : 'Pause'"></span>
                 </button>
             </div>

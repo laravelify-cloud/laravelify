@@ -101,7 +101,7 @@
                 var check = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                 check.setAttribute('viewBox', '0 0 24 24');
                 check.setAttribute('class', 'select-panel-check');
-                check.innerHTML = '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/>';
+                check.innerHTML = '<path fill="currentColor" d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>';
                 row.appendChild(check);
 
                 var index = state.visible.length;
@@ -189,7 +189,7 @@
 
             if (count >= SEARCH_FROM || select.hasAttribute('data-search')) {
                 var search = el('div', 'select-panel-search');
-                search.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg>';
+                search.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"/></svg>';
                 var input = el('input');
                 input.type = 'text';
                 input.placeholder = 'Search ' + count + ' options…';
