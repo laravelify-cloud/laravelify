@@ -67,13 +67,23 @@ node_site_ready() {
   [[ -f "${dir}/.next/standalone/server.js" || -f "${dir}/.laravelify-built" ]]
 }
 
+# PM2 files are CommonJS. A .js name breaks in projects with "type": "module" (Nuxt, SvelteKit),
+# so they are .cjs; files written by older versions are renamed.
+pm2_rename_old_files() {
+  local old
+  for old in /var/www/*/ecosystem.config.js; do
+    [[ -f "${old}" ]] && mv -f -- "${old}" "${old%.js}.cjs"
+  done
+  return 0
+}
+
 pm2_adopt_stray() {
   [[ -d /etc/.pm2 ]] || return 0
   echo "Moving PM2 apps from /etc/.pm2 to /root/.pm2"
   PM2_HOME=/etc/.pm2 pm2 kill >/dev/null 2>&1 || true
   rm -rf /etc/.pm2 || true
   local eco
-  for eco in /var/www/*/ecosystem.config.js; do
+  for eco in /var/www/*/ecosystem.config.cjs; do
     [[ -f "${eco}" ]] && node_site_ready "$(dirname "${eco}")" || continue
     pm2 startOrReload "${eco}" --update-env >/dev/null 2>&1 || echo "warning: could not start ${eco} in PM2" >&2
   done
@@ -179,6 +189,7 @@ case "${ACTION}" in
     fi
     if [[ "${KIND}" == "laravel" ]]; then
       ensure_dirs /etc/supervisor/conf.d
+      pm2_rename_old_files
       write_file 644 "${SRC}/process.conf" "/etc/supervisor/conf.d/laravelify-${TARGET}.conf"
       supervisorctl reread
       supervisorctl update
@@ -189,7 +200,7 @@ case "${ACTION}" in
         supervisorctl restart "${program}" || true
       done
     elif [[ "${RUNTIME}" == "node" ]]; then
-      write_file 644 "${SRC}/process.conf" "/var/www/${TARGET}/ecosystem.config.js"
+      write_file 644 "${SRC}/process.conf" "/var/www/${TARGET}/ecosystem.config.cjs"
       SITE_DIR="/var/www/${TARGET}"
       if ! node_site_ready "${SITE_DIR}"; then
         # Saved before the first deploy: there is nothing to run yet. Not an error.
@@ -201,7 +212,7 @@ case "${ACTION}" in
           chown www-data:www-data "${SITE_DIR}/.next/standalone/.env" || true
         fi
         pm2_adopt_stray
-        pm2 startOrReload "${SITE_DIR}/ecosystem.config.js" --update-env
+        pm2 startOrReload "${SITE_DIR}/ecosystem.config.cjs" --update-env
         pm2_persist
       fi
     fi
@@ -402,8 +413,9 @@ PHP
     # Run by update.sh: one PM2 daemon under /root, every Node site that has a build
     # started in it, the list saved, and pm2-root enabled so it all comes back after a reboot.
     command -v pm2 >/dev/null 2>&1 || { echo "PM2 is not installed."; exit 0; }
+    pm2_rename_old_files
     pm2_adopt_stray
-    for eco in /var/www/*/ecosystem.config.js; do
+    for eco in /var/www/*/ecosystem.config.cjs; do
       [[ -f "${eco}" ]] && node_site_ready "$(dirname "${eco}")" || continue
       name="$(basename "$(dirname "${eco}")")"
       if ! pm2 describe "${name}" >/dev/null 2>&1; then
