@@ -4,18 +4,17 @@ name: Release
 #   git tag v0.1.0-beta.1 && git push origin v0.1.0-beta.1
 #
 # The release gets laravelify.tar.gz (the panel with built assets, without vendor)
-# and install.sh. install.sh is also uploaded to DigitalOcean Spaces, so
+# and install.sh (the full installer). The public command
 #   curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash
-# always installs the latest release.
+# runs scripts/get.sh, which downloads install.sh from the latest release, so a
+# new release is live immediately: no CDN upload or cache purge needed.
+# A copy is also kept on the CDN at releases/vX.Y.Z/install.sh.
 #
 # Repository secrets (Settings → Secrets and variables → Actions):
 #   SPACES_ACCESS_KEY_ID       Spaces access key
 #   SPACES_SECRET_ACCESS_KEY   Spaces secret key
 #   SPACES_REGION              fra1
 #   SPACES_BUCKET              cdn.laravelify.cloud
-# Optional, to clear the CDN cache right away instead of within 5 minutes:
-#   DIGITALOCEAN_TOKEN         API token with CDN write access
-#   SPACES_CDN_ID              the CDN endpoint ID (doctl compute cdn list)
 
 on:
   push:
@@ -30,8 +29,6 @@ jobs:
     env:
       SPACES_BUCKET: ${{ secrets.SPACES_BUCKET }}
       SPACES_REGION: ${{ secrets.SPACES_REGION }}
-      DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-      SPACES_CDN_ID: ${{ secrets.SPACES_CDN_ID }}
 
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +48,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "$VERSION" > VERSION
           # The scripts and config ship with a placeholder; point them at this repository.
-          sed -i "s#YOUR-GITHUB-USER/laravelify#${GITHUB_REPOSITORY}#g" scripts/install.sh scripts/update.sh config/laravelify.php
+          sed -i "s#YOUR-GITHUB-USER/laravelify#${GITHUB_REPOSITORY}#g" scripts/install.sh scripts/update.sh scripts/get.sh config/laravelify.php
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Package
@@ -92,31 +89,17 @@ jobs:
           prerelease: false
           make_latest: true
 
-      - name: Upload install.sh to DigitalOcean Spaces
+      # A versioned copy on the CDN (a new path each release, so it is never stale).
+      - name: Keep a copy on DigitalOcean Spaces
         if: env.SPACES_BUCKET != ''
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
         run: |
-          ENDPOINT="https://${SPACES_REGION}.digitaloceanspaces.com"
           # The bucket name has dots, which break virtual-hosted HTTPS; use path-style requests.
           aws configure set default.s3.addressing_style path
-          aws s3 cp dist/install.sh "s3://${SPACES_BUCKET}/install.sh" \
-            --endpoint-url "$ENDPOINT" \
-            --acl public-read \
-            --content-type 'text/x-shellscript; charset=utf-8' \
-            --cache-control 'public, max-age=300'
           aws s3 cp dist/install.sh "s3://${SPACES_BUCKET}/releases/v${VERSION}/install.sh" \
-            --endpoint-url "$ENDPOINT" \
+            --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
             --acl public-read \
             --content-type 'text/x-shellscript; charset=utf-8'
-          echo "Uploaded: https://${SPACES_BUCKET}/install.sh"
-
-      - name: Clear the CDN cache
-        if: env.SPACES_BUCKET != '' && env.DIGITALOCEAN_TOKEN != '' && env.SPACES_CDN_ID != ''
-        run: |
-          curl -fsS -X DELETE "https://api.digitalocean.com/v2/cdn/endpoints/${SPACES_CDN_ID}/cache" \
-            -H "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
-            -H 'Content-Type: application/json' \
-            -d '{"files":["install.sh","releases/*"]}'

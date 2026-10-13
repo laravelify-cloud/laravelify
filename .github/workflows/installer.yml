@@ -1,0 +1,46 @@
+name: Publish installer
+
+# Uploads scripts/get.sh to https://cdn.laravelify.cloud/install.sh.
+# That bootstrap rarely changes: it always runs the installer of the latest
+# GitHub release, so new releases need no CDN upload or cache purge.
+# Runs when get.sh changes on main, or by hand (Actions → Publish installer → Run workflow).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/get.sh
+      - .github/workflows/installer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      SPACES_BUCKET: ${{ secrets.SPACES_BUCKET }}
+      SPACES_REGION: ${{ secrets.SPACES_REGION }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the script
+        run: bash -n scripts/get.sh
+
+      - name: Upload to DigitalOcean Spaces
+        if: env.SPACES_BUCKET != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          # The bucket name has dots, which break virtual-hosted HTTPS; use path-style requests.
+          aws configure set default.s3.addressing_style path
+          aws s3 cp scripts/get.sh "s3://${SPACES_BUCKET}/install.sh" \
+            --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+            --acl public-read \
+            --content-type 'text/x-shellscript; charset=utf-8' \
+            --cache-control 'public, max-age=3600'
+          echo "Published https://${SPACES_BUCKET}/install.sh"

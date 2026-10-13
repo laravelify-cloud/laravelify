@@ -34,4 +34,4 @@ vendor/bin/pint --test
 
 1. Update `CHANGELOG.md`.
 2. Update `VERSION`, then tag and push: `git tag v0.2.0-beta.1 && git push origin v0.2.0-beta.1`.
-3. The **Release** workflow builds the assets, attaches `laravelify.tar.gz` and `install.sh` to the GitHub release, and uploads `install.sh` to https://cdn.laravelify.cloud/install.sh (DigitalOcean Spaces).
+3. The **Release** workflow builds the assets and attaches `laravelify.tar.gz` and `install.sh` to the GitHub release. That is all: `https://cdn.laravelify.cloud/install.sh` is a small bootstrap (`scripts/get.sh`) that always runs the latest release's installer, so there is nothing to upload or purge. Changes to `scripts/get.sh` itself are published by the **Publish installer** workflow.
