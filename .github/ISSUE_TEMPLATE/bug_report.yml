@@ -1,0 +1,51 @@
+name: Bug report
+description: Something does not work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Remove passwords, tokens, and domains you do not want to share before posting.
+        Security issues: do not open an issue, use **Security → Report a vulnerability** instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The deploy log, or /opt/laravelify/storage/logs/laravel.log around the error.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Laravelify version
+      description: Shown next to GitHub in the sidebar, or `cat /opt/laravelify/VERSION`.
+    validations:
+      required: true
+  - type: dropdown
+    id: ubuntu
+    attributes:
+      label: Ubuntu version
+      options: ['24.04', '22.04', '26.04', 'Other']
+    validations:
+      required: true
+  - type: dropdown
+    id: site
+    attributes:
+      label: Site type
+      options: ['Laravel', 'Next.js', 'Not site related']

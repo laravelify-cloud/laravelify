@@ -1,0 +1,510 @@
+/*
+ * Monitoring pages (Nightwatch-style): uppercase stat labels, large tabular
+ * numbers, legend dots, and lightweight CSS/SVG charts with hover tooltips.
+ */
+:root {
+    --mon-ok: #a3a3a3;
+    --mon-4xx: #f59e0b;
+    --mon-5xx: #ef4444;
+    --mon-p95: #f97316;
+    --mon-avg: #a3a3a3;
+    --mon-up: #22c55e;
+}
+
+.dark {
+    --mon-ok: #737373;
+    --mon-avg: #8a8a8a;
+}
+
+@layer components {
+    .mon-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .mon-live {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--color-muted);
+        font-size: 12px;
+    }
+
+    .mon-live::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--mon-up);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--mon-up) 25%, transparent);
+        animation: status-pulse 1.6s ease-in-out infinite;
+    }
+
+    .mon-grid-2 {
+        display: grid;
+        gap: 16px;
+    }
+
+    @media (min-width: 1024px) {
+        .mon-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .mon-grid-hero { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+        .mon-grid-side { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+    }
+
+    .mon-grid-4 {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    @media (min-width: 768px) {
+        .mon-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+
+    .mon-card {
+        position: relative;
+        min-width: 0;
+        overflow: hidden;
+        border-radius: 12px;
+        border: 1px solid var(--color-line);
+        background: var(--color-card);
+        padding: 18px 20px;
+    }
+
+    .mon-label {
+        color: var(--color-muted);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .mon-value {
+        margin-top: 6px;
+        font-size: 28px;
+        font-weight: 600;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .mon-value-sm {
+        font-size: 20px;
+    }
+
+    .mon-sub {
+        margin-top: 4px;
+        color: var(--color-muted);
+        font-size: 12px;
+    }
+
+    .mon-hero-title {
+        margin-top: 14px;
+        font-size: 26px;
+        font-weight: 700;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+    }
+
+    .mon-legend {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 4px 18px;
+        text-align: right;
+    }
+
+    .mon-legend-item .mon-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .mon-legend-item p:last-child {
+        margin-top: 4px;
+        font-size: 17px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .mon-dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        flex-shrink: 0;
+        border-radius: 999px;
+        background: var(--mon-ok);
+    }
+
+    .mon-dot.is-4xx { background: var(--mon-4xx); }
+    .mon-dot.is-5xx { background: var(--mon-5xx); }
+    .mon-dot.is-p95 { background: var(--mon-p95); }
+    .mon-dot.is-avg { background: var(--mon-avg); }
+    .mon-dot.is-up { background: var(--mon-up); }
+
+    /* Charts */
+    .mon-chart { margin-top: 18px; }
+
+    .mon-plot {
+        position: relative;
+    }
+
+    .mon-grid {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        pointer-events: none;
+    }
+
+    .mon-grid span {
+        border-top: 1px dashed color-mix(in srgb, var(--color-line) 70%, transparent);
+    }
+
+    .mon-grid span:last-child {
+        border-top-style: solid;
+    }
+
+    .mon-cols {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: flex-end;
+        gap: 2px;
+    }
+
+    .mon-col {
+        display: flex;
+        height: 100%;
+        min-width: 0;
+        flex: 1 1 0;
+        align-items: flex-end;
+        justify-content: center;
+        border-radius: 3px;
+        transition: background 80ms;
+    }
+
+    .mon-col.is-hover {
+        background: color-mix(in srgb, var(--color-ink) 6%, transparent);
+    }
+
+    .mon-bar {
+        display: flex;
+        width: 100%;
+        max-width: 14px;
+        flex-direction: column;
+        overflow: hidden;
+        border-radius: 2px 2px 0 0;
+    }
+
+    .mon-seg {
+        flex-basis: 0;
+        min-height: 0;
+        background: var(--mon-ok);
+    }
+
+    .mon-seg.is-4xx { background: var(--mon-4xx); }
+    .mon-seg.is-5xx { background: var(--mon-5xx); }
+
+    .mon-svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+    }
+
+    .mon-line {
+        fill: none;
+        stroke-width: 2;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+        vector-effect: non-scaling-stroke;
+    }
+
+    .mon-line.is-p95 { stroke: var(--mon-p95); }
+    .mon-line.is-avg { stroke: var(--mon-avg); }
+
+    .mon-tip {
+        position: absolute;
+        bottom: calc(100% - 8px);
+        z-index: 5;
+        min-width: 170px;
+        transform: translateX(-50%);
+        border-radius: 8px;
+        border: 1px solid var(--color-line);
+        background: var(--color-elevated);
+        box-shadow: var(--shadow-dropdown);
+        padding: 8px 10px;
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        pointer-events: none;
+    }
+
+    .mon-tip.is-start { transform: translateX(-10%); }
+    .mon-tip.is-end { transform: translateX(-90%); }
+
+    .mon-tip p {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 1px 0;
+        color: var(--color-ink-dim);
+    }
+
+    .mon-tip p b {
+        margin-left: auto;
+        color: var(--color-ink);
+        font-weight: 600;
+    }
+
+    .mon-tip .mon-tip-title {
+        margin-bottom: 4px;
+        color: var(--color-ink);
+        font-weight: 600;
+    }
+
+    .mon-tip .mon-tip-total {
+        margin-top: 3px;
+        border-top: 1px solid var(--color-line);
+        padding-top: 4px;
+    }
+
+    .mon-axis {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 8px;
+        color: var(--color-muted);
+        font-family: var(--font-mono);
+        font-size: 11px;
+    }
+
+    .mon-strip {
+        display: flex;
+        height: 26px;
+        gap: 2px;
+        margin-top: 14px;
+    }
+
+    .mon-strip span {
+        min-width: 0;
+        flex: 1 1 0;
+        border-radius: 2px;
+        background: var(--color-fill);
+    }
+
+    .mon-strip .is-up { background: var(--mon-up); }
+    .mon-strip .is-down { background: var(--mon-5xx); }
+    .mon-strip .is-partial { background: var(--mon-4xx); }
+
+    .mon-spark {
+        display: flex;
+        height: 34px;
+        align-items: flex-end;
+        gap: 2px;
+    }
+
+    .mon-spark span {
+        min-width: 0;
+        flex: 1 1 0;
+        border-radius: 1.5px;
+        background: color-mix(in srgb, var(--color-accent) 70%, transparent);
+    }
+
+    .mon-spark span.is-empty {
+        background: var(--color-fill);
+    }
+
+    .mon-spark.is-danger span:not(.is-empty) {
+        background: color-mix(in srgb, var(--mon-5xx) 75%, transparent);
+    }
+
+    /* Status, method, and risk chips */
+    .mon-code {
+        display: inline-flex;
+        height: 20px;
+        min-width: 38px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 5px;
+        padding: 0 6px;
+        background: var(--color-recessed);
+        color: var(--color-ink-dim);
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        font-weight: 600;
+    }
+
+    .mon-code.is-2xx { color: var(--color-success); background: color-mix(in srgb, var(--color-success) 12%, transparent); }
+    .mon-code.is-3xx { color: var(--color-info); background: color-mix(in srgb, var(--color-info) 12%, transparent); }
+    .mon-code.is-4xx { color: var(--mon-4xx); background: color-mix(in srgb, var(--mon-4xx) 14%, transparent); }
+    .mon-code.is-5xx { color: var(--mon-5xx); background: color-mix(in srgb, var(--mon-5xx) 14%, transparent); }
+
+    .mon-risk {
+        display: inline-flex;
+        height: 20px;
+        align-items: center;
+        gap: 5px;
+        border-radius: 999px;
+        padding: 0 8px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--color-muted);
+        background: var(--color-recessed);
+    }
+
+    .mon-risk.is-critical { color: var(--mon-5xx); background: color-mix(in srgb, var(--mon-5xx) 14%, transparent); }
+    .mon-risk.is-high { color: var(--mon-p95); background: color-mix(in srgb, var(--mon-p95) 14%, transparent); }
+    .mon-risk.is-medium { color: var(--mon-4xx); background: color-mix(in srgb, var(--mon-4xx) 14%, transparent); }
+
+    .mon-table td {
+        height: 44px;
+        font-size: 13px;
+    }
+
+    .mon-table .mono {
+        font-family: var(--font-mono);
+        font-size: 12px;
+    }
+
+    .mon-path {
+        display: block;
+        max-width: 420px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+    }
+
+    .mon-meter {
+        height: 4px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--color-fill);
+    }
+
+    .mon-meter span {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: var(--color-accent);
+    }
+
+    .mon-issue {
+        display: flex;
+        width: 100%;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 16px;
+        border-top: 1px solid var(--color-line);
+        text-align: left;
+        transition: background 100ms;
+    }
+
+    .mon-issue:first-child { border-top: 0; }
+
+    .mon-issue:hover {
+        background: color-mix(in srgb, var(--color-ink) 3%, transparent);
+    }
+
+    .mon-trace {
+        max-height: 420px;
+        overflow: auto;
+        border-radius: 8px;
+        border: 1px solid var(--color-line);
+        background: var(--color-recessed);
+        padding: 12px 14px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.6;
+        white-space: pre;
+    }
+
+    .mon-empty {
+        display: grid;
+        place-items: center;
+        gap: 6px;
+        padding: 36px 16px;
+        color: var(--color-muted);
+        font-size: 13px;
+        text-align: center;
+    }
+}
+
+/* Live panels: per-second bars, streaming request feed, rolling server lines. */
+@layer components {
+    .mon-live.is-paused::before {
+        background: var(--color-muted);
+        box-shadow: none;
+        animation: none;
+    }
+
+    .mon-live-bars {
+        display: flex;
+        height: 56px;
+        align-items: flex-end;
+        gap: 2px;
+        border-bottom: 1px solid var(--color-line);
+    }
+
+    .mon-live-bars span {
+        min-width: 0;
+        flex: 1 1 0;
+        border-radius: 2px 2px 0 0;
+        background: var(--mon-ok);
+        transition: height 300ms var(--ease-out);
+    }
+
+    .mon-live-bars span.is-4xx { background: var(--mon-4xx); }
+    .mon-live-bars span.is-5xx { background: var(--mon-5xx); }
+
+    .mon-feed {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border-radius: 8px;
+        border: 1px solid var(--color-line);
+    }
+
+    .mon-feed-row {
+        display: flex;
+        min-height: 36px;
+        align-items: center;
+        gap: 10px;
+        border-top: 1px solid var(--color-line);
+        padding: 0 12px;
+        animation: mon-feed-in 420ms var(--ease-out);
+    }
+
+    .mon-feed-row:first-child { border-top: 0; }
+
+    @keyframes mon-feed-in {
+        from { background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
+        to { background: transparent; }
+    }
+
+    .mon-live-svg {
+        display: block;
+        width: 100%;
+        height: 64px;
+        margin-top: 12px;
+        overflow: visible;
+    }
+
+    .mon-live-svg path {
+        transition: d 400ms linear;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .mon-feed-row { animation: none; }
+        .mon-live-bars span,
+        .mon-live-svg path { transition: none; }
+    }
+}

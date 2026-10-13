@@ -1,0 +1,28 @@
+[Unit]
+Description=Laravelify panel
+After=laravelify-boot.service mysql.service redis-server.service
+Wants=mysql.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/laravelify
+ExecStart=/usr/bin/php artisan serve --host=0.0.0.0 --port=8000
+Restart=always
+RestartSec=3
+Environment=APP_URL=http://127.0.0.1:8124
+Environment=DB_CONNECTION=mysql
+Environment=DB_HOST=127.0.0.1
+Environment=DB_PORT=3306
+Environment=DB_DATABASE=laravelify
+Environment=DB_USERNAME=root
+Environment=DB_PASSWORD=root
+Environment=SESSION_DRIVER=redis
+Environment=QUEUE_CONNECTION=redis
+Environment=CACHE_STORE=redis
+Environment=REDIS_CLIENT=phpredis
+Environment=REDIS_HOST=127.0.0.1
+Environment=REDIS_PORT=6379
+Environment=LARAVELIFY_HOST_COMMANDS=true
+
+[Install]
+WantedBy=multi-user.target

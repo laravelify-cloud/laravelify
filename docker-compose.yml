@@ -1,0 +1,17 @@
+services:
+  laravelify:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    privileged: true
+    cgroup: host
+    ports:
+      - "8124:8000"
+      - "8080:80"
+      - "8081-8090:8081-8090"
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /run/lock
+      - /tmp
