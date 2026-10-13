@@ -45,7 +45,7 @@ class SiteLogs
             $seen[] = $path;
         }
 
-        if (! $website->isLaravel()) {
+        if ($website->isNode()) {
             $sources[] = ['key' => 'pm2', 'label' => 'PM2 output', 'group' => 'Application', 'path' => 'pm2 logs '.$website->slug, 'size' => '', 'modified' => null];
         }
 

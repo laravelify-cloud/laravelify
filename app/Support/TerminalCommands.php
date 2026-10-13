@@ -16,8 +16,12 @@ class TerminalCommands
      */
     public static function for(?Website $website): array
     {
+        if ($website && $website->isPhp() && ! $website->isLaravel()) {
+            return [...self::php(), ...self::tools()];
+        }
+
         if ($website && ! $website->isLaravel()) {
-            return [...self::node(), ...self::processes(collect([$website]))];
+            return [...self::node(), ...($website->isNode() ? self::processes(collect([$website])) : [])];
         }
 
         if ($website) {
@@ -42,6 +46,10 @@ class TerminalCommands
 
         foreach ($websites as $website) {
             if (! $website->isLaravel()) {
+                if (! $website->isNode()) {
+                    continue;
+                }
+
                 $pm2[] = ['pm2 logs '.$website->slug, 'Recent output of '.$website->name];
                 $pm2[] = ['pm2 restart '.$website->slug, 'Restart '.$website->name];
 
@@ -54,7 +62,7 @@ class TerminalCommands
             }
         }
 
-        $hasNext = $both || $websites->contains(fn (Website $website): bool => ! $website->isLaravel());
+        $hasNext = $both || $websites->contains(fn (Website $website): bool => $website->isNode());
         $hasLaravel = $both || $websites->contains(fn (Website $website): bool => $website->isLaravel());
 
         return [
@@ -141,6 +149,21 @@ class TerminalCommands
             ['tail -n 100 storage/logs/laravel.log', 'Last 100 lines of the Laravel log'],
             ['df -h', 'Disk space'],
         ]))->all();
+    }
+
+    /**
+     * @return list<array{group: string, command: string, description: string, danger: bool}>
+     */
+    private static function php(): array
+    {
+        return self::group('PHP', [
+            ['php -v', 'PHP version'],
+            ['php -m', 'Loaded PHP extensions'],
+            ['php -l index.php', 'Check a file for syntax errors'],
+            ['composer install --no-dev --optimize-autoloader', 'Install PHP dependencies for production'],
+            ['composer dump-autoload -o', 'Rebuild the optimized autoloader'],
+            ['composer outdated', 'Show outdated packages'],
+        ])->all();
     }
 
     /**

@@ -7,6 +7,10 @@
         'observe' => ['Observe', ['monitoring' => ['Monitoring', 'chart'], 'deployments' => ['Deployments', 'deployments'], 'logs' => ['Logs', 'logs'], 'health' => ['Health', 'pulse'], 'processes' => ['Processes', 'processes'], 'terminal' => ['Terminal', 'terminal'], 'files' => ['Files', 'files']]],
         'operations' => ['Operations', ['danger' => ['Danger zone', 'danger']]],
     ];
+
+    if (! $website->hasProcessFile()) {
+        unset($navGroups['observe'][1]['processes']);
+    }
 @endphp
 
 <div
@@ -27,7 +31,7 @@
             </p>
             <div class="mt-1 flex min-w-0 flex-wrap items-center gap-2.5">
                 <h2 class="page-title truncate">{{ $website->name }}</h2>
-                <span class="pill">{{ $website->isLaravel() ? 'Laravel' : 'Next.js' }}</span>
+                <span class="pill">{{ $website->typeLabel() }}</span>
                 @if ($latestDeployment)
                     <x-status-badge :status="$latestDeployment->status" />
                 @endif
@@ -210,7 +214,7 @@
                 </form>
             </x-layer-card>
 
-            @if ($website->isLaravel())
+            @if ($website->isPhp())
                 <x-layer-card title="Database" helper="A MySQL database and user for this site." x-show="tab === 'general'" x-cloak>
                     <x-slot:actions>
                         <button class="btn" type="button" wire:click="provisionDatabase">{{ $website->db_name ? 'Re-provision' : 'Provision MySQL' }}</button>
@@ -239,7 +243,7 @@
             @endif
 
             {{-- Environment --}}
-            <x-layer-card title="Environment" helper="Written to the site's .env file on save." flush x-show="tab === 'environment'" x-cloak>
+            <x-layer-card title="Environment" helper="{{ $website->isStatic() ? 'Written to the site\'s .env file. Build tools read it while the site builds.' : 'Written to the site\'s .env file on save.' }}" flush x-show="tab === 'environment'" x-cloak>
                 <x-slot:actions>
                     <button class="btn btn-primary" type="submit" form="website-environment">Save</button>
                 </x-slot:actions>
@@ -250,13 +254,18 @@
             </x-layer-card>
 
             {{-- Runtime --}}
-            <x-layer-card title="Runtime" helper="{{ $website->isLaravel() ? 'PHP version and Reverb websockets.' : 'Node.js version and the PM2 port.' }}" x-show="tab === 'runtime'" x-cloak>
+            <x-layer-card title="Runtime" helper="{{ $website->isPhp() ? 'PHP version, web root, and Reverb websockets.' : ($website->isNode() ? 'Node.js version, port, and the install, build, and start commands.' : ($website->usesNode() ? 'Node.js version and how the site is built and which folder is served.' : 'Which folder nginx serves.')) }}" x-show="tab === 'runtime'" x-cloak>
                 <x-slot:actions>
-                    <button class="btn" type="button" wire:click="regenerate" wire:confirm="Replace nginx and the process file with the template?">Regenerate files</button>
+                    <button class="btn" type="button" wire:click="regenerate" wire:confirm="Replace nginx{{ $website->hasProcessFile() ? ' and the process file' : '' }} with the template?">Regenerate files</button>
                     <button class="btn btn-primary" type="submit" form="website-runtime">Save</button>
                 </x-slot:actions>
                 <form id="website-runtime" class="flex flex-col gap-5" wire:submit="saveRuntime">
-                    @if ($website->isLaravel())
+                    <p class="text-[12.5px] text-muted">
+                        <span class="font-medium text-ink">{{ $website->typeLabel() }}</span>
+                        · {{ $website->isPhp() ? 'nginx → PHP-FPM' : ($website->isNode() ? 'nginx → PM2' : 'nginx serves static files') }}
+                    </p>
+
+                    @if ($website->isPhp())
                         <div class="field">
                             <span>PHP version</span>
                             <div class="flex flex-wrap gap-2">
@@ -266,11 +275,22 @@
                             </div>
                             @error('php_version') <small class="error">{{ $message }}</small> @enderror
                         </div>
-                        <label class="flex items-center gap-2.5 text-[13.5px]">
-                            <input type="checkbox" wire:model="enable_reverb">
-                            <span>Reverb on port {{ $website->reverb_port ?: 'assigned when enabled' }}</span>
-                        </label>
-                    @else
+                        @if ($website->isLaravel())
+                            <label class="flex items-center gap-2.5 text-[13.5px]">
+                                <input type="checkbox" wire:model="enable_reverb">
+                                <span>Reverb on port {{ $website->reverb_port ?: 'assigned when enabled' }}</span>
+                            </label>
+                        @else
+                            <label class="field max-w-md">
+                                <span>Web root folder</span>
+                                <input class="input font-mono" wire:model="public_dir" placeholder="public">
+                                <small class="text-muted">Inside the repository. Use <code>.</code> for the repository root. Regenerate nginx to apply.</small>
+                                @error('public_dir') <small class="error">{{ $message }}</small> @enderror
+                            </label>
+                        @endif
+                    @endif
+
+                    @if ($website->usesNode())
                         <div class="field">
                             <span>Node.js version</span>
                             <div class="flex flex-wrap gap-2">
@@ -278,16 +298,52 @@
                                     <button class="choice {{ $node_version === $version ? 'active' : '' }}" type="button" wire:click="$set('node_version', '{{ $version }}')">{{ $version }}</button>
                                 @endforeach
                             </div>
+                            @error('node_version') <small class="error">{{ $message }}</small> @enderror
                         </div>
+                    @endif
+
+                    @if ($website->isNode())
                         <div class="field max-w-md">
                             <label class="label" for="website-pm2-port">PM2 port</label>
                             <div class="flex gap-2">
                                 <input class="input min-w-0 flex-1" id="website-pm2-port" type="number" wire:model="port">
                                 @include('livewire.websites.partials.ports-modal', ['model' => 'port'])
                             </div>
-                            <small class="text-muted">The Next.js server listens here; nginx proxies the domain to it. Save to apply.</small>
+                            <small class="text-muted">The app listens here (it gets it as <code>PORT</code>); nginx proxies the domain to it. Regenerate the files to apply a change.</small>
                             @error('port') <small class="error">{{ $message }}</small> @enderror
                         </div>
+                    @endif
+
+                    @if ($website->usesNode())
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <label class="field">
+                                <span>Install command</span>
+                                <input class="input font-mono" wire:model="install_command" placeholder="auto: from your lockfile">
+                                @error('install_command') <small class="error">{{ $message }}</small> @enderror
+                            </label>
+                            <label class="field">
+                                <span>Build command</span>
+                                <input class="input font-mono" wire:model="build_command" placeholder="{{ $website->definition()['build'] ?? 'none' }}">
+                                @error('build_command') <small class="error">{{ $message }}</small> @enderror
+                            </label>
+                            @if ($website->isNode() && ! $website->isNextjs())
+                                <label class="field md:col-span-2">
+                                    <span>Start command</span>
+                                    <input class="input font-mono" wire:model="start_command" placeholder="{{ $website->definition()['start'] ?? 'npm start' }}">
+                                    <small class="text-muted">PM2 runs this from the site folder. Regenerate the files to apply a change, then deploy.</small>
+                                    @error('start_command') <small class="error">{{ $message }}</small> @enderror
+                                </label>
+                            @endif
+                        </div>
+                    @endif
+
+                    @if ($website->isStatic())
+                        <label class="field max-w-md">
+                            <span>{{ $website->type === 'static' ? 'Folder to serve' : 'Output folder' }}</span>
+                            <input class="input font-mono" wire:model="public_dir" placeholder="{{ $website->type === 'static' ? '. (the repository root)' : 'auto: '.implode(', ', $website->definition()['output'] ?? ['dist']) }}">
+                            <small class="text-muted">{{ $website->type === 'static' ? 'A folder inside the repository. Regenerate nginx to apply a change.' : 'Where the build writes its files. Leave empty to detect it after each build.' }}</small>
+                            @error('public_dir') <small class="error">{{ $message }}</small> @enderror
+                        </label>
                     @endif
                 </form>
             </x-layer-card>

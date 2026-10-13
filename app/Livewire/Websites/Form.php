@@ -11,6 +11,8 @@ use App\Services\ConfigRenderer;
 use App\Services\DatabaseProvisioner;
 use App\Services\GithubAppClient;
 use App\Services\HostWriter;
+use App\Support\BuildOutput;
+use App\Support\SiteTypes;
 use App\Support\Slugs;
 use Illuminate\Validation\Rule;
 use Throwable;
@@ -23,6 +25,9 @@ class Form extends PanelComponent
 
     public string $type = 'laravel';
 
+    /** A ready-made stack the picker highlights (it still creates a normal website of $type). */
+    public string $stack = '';
+
     public string $domain = '';
 
     public string $http_port = '';
@@ -34,6 +39,14 @@ class Form extends PanelComponent
     public string $php_version = '8.4';
 
     public string $node_version = '22';
+
+    public string $install_command = '';
+
+    public string $build_command = '';
+
+    public string $start_command = '';
+
+    public string $public_dir = '';
 
     public bool $enable_reverb = false;
 
@@ -49,6 +62,24 @@ class Form extends PanelComponent
     public array $repositories = [];
 
     public string $selectedRepository = '';
+
+    /**
+     * Pick a framework (or a ready-made stack that creates one).
+     */
+    public function chooseType(string $type, string $stack = ''): void
+    {
+        if (! SiteTypes::exists($type)) {
+            return;
+        }
+
+        $this->type = $type;
+        $this->stack = isset(SiteTypes::stacks()[$stack]) && SiteTypes::stacks()[$stack]['type'] === $type ? $stack : '';
+        $this->install_command = '';
+        $this->build_command = '';
+        $this->start_command = '';
+        $this->public_dir = $type === 'php' ? 'public' : '';
+        $this->resetErrorBag(['type', 'php_version', 'node_version', 'public_dir']);
+    }
 
     public function selectGithubApp(int $id, GithubAppClient $client): void
     {
@@ -97,10 +128,13 @@ class Form extends PanelComponent
     {
         $phpVersions = config('laravelify.php_versions');
         $nodeVersions = config('laravelify.node_versions');
+        $runtime = SiteTypes::runtime($this->type);
+        $usesNode = $runtime === SiteTypes::RUNTIME_NODE || ($runtime === SiteTypes::RUNTIME_STATIC && $this->type !== 'static');
+        $command = ['nullable', 'string', 'max:500', 'regex:/^[^\r\n\0]*$/'];
 
         $validated = $this->validate([
             'name' => ['required', 'string', 'max:80'],
-            'type' => ['required', Rule::in(['laravel', 'nextjs'])],
+            'type' => ['required', Rule::in(SiteTypes::keys())],
             'domain' => $this->domain === ''
                 ? ['nullable']
                 : ['string', 'max:190', 'regex:/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i', Rule::unique('websites', 'domain')],
@@ -109,8 +143,16 @@ class Form extends PanelComponent
                 : ['integer', 'between:80,65535', Rule::unique('websites', 'http_port'), Rule::notIn([8000, 3306, 6379])],
             'repository' => ['nullable', 'string', 'max:500'],
             'branch' => ['required', 'string', 'max:120'],
-            'php_version' => ['required_if:type,laravel', Rule::in($phpVersions)],
-            'node_version' => ['required_if:type,nextjs', Rule::in($nodeVersions)],
+            'php_version' => $runtime === SiteTypes::RUNTIME_PHP ? ['required', Rule::in($phpVersions)] : ['nullable'],
+            'node_version' => $usesNode ? ['required', Rule::in($nodeVersions)] : ['nullable'],
+            'install_command' => $command,
+            'build_command' => $command,
+            'start_command' => $command,
+            'public_dir' => ['nullable', 'string', 'max:190', function (string $attribute, mixed $value, \Closure $fail): void {
+                if ($value !== null && $value !== '' && ! BuildOutput::safe(trim((string) $value, '/'))) {
+                    $fail('Use a folder inside the repository, like dist or public (no spaces or ..).');
+                }
+            }],
             'enable_reverb' => ['boolean'],
             'provision_database' => ['boolean'],
             'cloudflare_tunnel_id' => $this->cloudflare_tunnel_id === ''
@@ -138,6 +180,8 @@ class Form extends PanelComponent
         $slug = Slugs::unique(Website::class, $this->name);
         $root = rtrim((string) config('laravelify.sites_root'), '/');
         $isLaravel = $validated['type'] === 'laravel';
+        $isPhp = $runtime === SiteTypes::RUNTIME_PHP;
+        $isNode = $runtime === SiteTypes::RUNTIME_NODE;
 
         $website = new Website([
             'group_id' => $this->group->id,
@@ -150,14 +194,18 @@ class Form extends PanelComponent
             'http_port' => $httpPort,
             'repository' => $this->repository !== '' ? $this->repository : null,
             'branch' => $this->branch,
-            'php_version' => $isLaravel ? $this->php_version : null,
-            'node_version' => $isLaravel ? null : $this->node_version,
-            'port' => $isLaravel ? null : Website::nextPort('port', (int) config('laravelify.node_port_start')),
+            'php_version' => $isPhp ? $this->php_version : null,
+            'node_version' => $usesNode ? $this->node_version : null,
+            'install_command' => $usesNode && $this->install_command !== '' ? $this->install_command : null,
+            'build_command' => $usesNode && $this->build_command !== '' ? $this->build_command : null,
+            'start_command' => $isNode && $this->start_command !== '' ? $this->start_command : null,
+            'public_dir' => $this->publicDirectory($validated['type']),
+            'port' => $isNode ? Website::nextPort('port', (int) config('laravelify.node_port_start')) : null,
             'enable_reverb' => $isLaravel && $this->enable_reverb,
             'reverb_port' => $isLaravel && $this->enable_reverb
                 ? Website::nextPort('reverb_port', (int) config('laravelify.reverb_port_start'))
                 : null,
-            'provision_database' => $isLaravel && $this->provision_database,
+            'provision_database' => $isPhp && $this->provision_database,
             'deploy_path' => $root.'/'.$slug,
             'webhook_secret' => bin2hex(random_bytes(20)),
         ]);
@@ -180,9 +228,27 @@ class Form extends PanelComponent
         $this->redirect(route('websites.show', $website));
     }
 
+    /**
+     * The folder saved on the site: the web root for plain PHP, the output folder for
+     * built front-ends and static sites, nothing for the rest.
+     */
+    private function publicDirectory(string $type): ?string
+    {
+        if (! in_array(SiteTypes::runtime($type), [SiteTypes::RUNTIME_PHP, SiteTypes::RUNTIME_STATIC], true) || $type === 'laravel') {
+            return null;
+        }
+
+        $folder = trim($this->public_dir, '/');
+
+        return $folder !== '' ? $folder : ($type === 'php' ? 'public' : null);
+    }
+
     public function render()
     {
         return view('livewire.websites.form', [
+            'groups' => SiteTypes::GROUPS,
+            'definition' => SiteTypes::get($this->type),
+            'runtime' => SiteTypes::runtime($this->type),
             'phpVersions' => config('laravelify.php_versions'),
             'nodeVersions' => config('laravelify.node_versions'),
             'tunnels' => CloudflareTunnel::query()->orderBy('name')->get(),

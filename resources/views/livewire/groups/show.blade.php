@@ -32,11 +32,11 @@
                         <tr wire:key="website-{{ $website->id }}">
                             <td>
                                 <a class="flex items-center gap-2.5 font-medium hover:text-accent" href="{{ route('websites.show', $website) }}" wire:navigate>
-                                    <span class="stat-icon size-7"><x-menu-icon name="{{ $website->type === 'laravel' ? 'runtime' : 'terminal' }}" class="size-4" /></span>
+                                    <span class="stat-icon size-7"><x-menu-icon name="{{ $website->definition()['icon'] }}" class="size-4" /></span>
                                     {{ $website->name }}
                                 </a>
                             </td>
-                            <td><span class="pill">{{ $website->type === 'laravel' ? 'Laravel' : 'Next.js' }}</span></td>
+                            <td><span class="pill">{{ $website->typeLabel() }}</span></td>
                             <td class="max-w-[18rem] truncate text-muted">
                                 @if ($website->publicUrl())
                                     <a class="hover:text-ink" href="{{ $website->publicUrl() }}" target="_blank" rel="noreferrer">{{ preg_replace('#^https?://#', '', $website->publicUrl()) }}</a>
@@ -44,7 +44,7 @@
                                     {{ $website->domain ?: '-' }}
                                 @endif
                             </td>
-                            <td class="text-muted">{{ $website->isLaravel() ? 'PHP '.$website->php_version : 'Node '.$website->node_version }}</td>
+                            <td class="text-muted">{{ $website->isPhp() ? 'PHP '.$website->php_version : ($website->isNode() ? 'Node '.$website->node_version : ($website->usesNode() ? 'Static (built with Node '.$website->node_version.')' : 'Static files')) }}</td>
                         </tr>
                     @empty
                         <tr>

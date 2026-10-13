@@ -60,6 +60,13 @@ pm2_persist() {
 
 # Older versions could start apps under /etc/.pm2 (see PM2_HOME above). Stop that daemon
 # and start those apps again under root's daemon, so each app runs once and survives reboots.
+# A Node site has something to run once a deploy built it. Next.js leaves its server in
+# .next/standalone; every other type gets a marker file from the deploy.
+node_site_ready() {
+  local dir="$1"
+  [[ -f "${dir}/.next/standalone/server.js" || -f "${dir}/.laravelify-built" ]]
+}
+
 pm2_adopt_stray() {
   [[ -d /etc/.pm2 ]] || return 0
   echo "Moving PM2 apps from /etc/.pm2 to /root/.pm2"
@@ -67,7 +74,7 @@ pm2_adopt_stray() {
   rm -rf /etc/.pm2 || true
   local eco
   for eco in /var/www/*/ecosystem.config.js; do
-    [[ -f "${eco}" && -f "$(dirname "${eco}")/.next/standalone/server.js" ]] || continue
+    [[ -f "${eco}" ]] && node_site_ready "$(dirname "${eco}")" || continue
     pm2 startOrReload "${eco}" --update-env >/dev/null 2>&1 || echo "warning: could not start ${eco} in PM2" >&2
   done
 }
@@ -140,19 +147,28 @@ case "${ACTION}" in
   site)
     slug_ok "${TARGET}" || die "invalid slug"
     KIND="${3:-}"
-    [[ "${KIND}" == "laravel" || "${KIND}" == "nextjs" ]] || die "invalid site kind"
+    # php = nginx → PHP-FPM, node = a server under PM2, static = nginx serves files.
+    case "${KIND}" in
+      laravel|php) RUNTIME=php ;;
+      nextjs|nuxt|sveltekit|express|nestjs|node) RUNTIME=node ;;
+      react|vue|angular|svelte|astro|static) RUNTIME=static ;;
+      *) die "invalid site kind" ;;
+    esac
     SRC="${RENDERED}/sites/${TARGET}"
     [[ -f "${SRC}/nginx.conf" ]] || die "missing rendered nginx config"
-    ensure_dirs /etc/nginx/sites-available /etc/nginx/sites-enabled \
-      "/var/www/${TARGET}/public" \
-      "/var/www/${TARGET}/storage/logs" \
-      "/var/www/${TARGET}/storage/framework/cache" \
-      "/var/www/${TARGET}/storage/framework/sessions" \
-      "/var/www/${TARGET}/storage/framework/views" \
-      "/var/www/${TARGET}/bootstrap/cache"
-    touch "/var/www/${TARGET}/storage/logs/queue.log" \
-      "/var/www/${TARGET}/storage/logs/scheduler.log" \
-      "/var/www/${TARGET}/storage/logs/reverb.log"
+    ensure_dirs /etc/nginx/sites-available /etc/nginx/sites-enabled "/var/www/${TARGET}"
+    if [[ "${KIND}" == "laravel" ]]; then
+      ensure_dirs \
+        "/var/www/${TARGET}/public" \
+        "/var/www/${TARGET}/storage/logs" \
+        "/var/www/${TARGET}/storage/framework/cache" \
+        "/var/www/${TARGET}/storage/framework/sessions" \
+        "/var/www/${TARGET}/storage/framework/views" \
+        "/var/www/${TARGET}/bootstrap/cache"
+      touch "/var/www/${TARGET}/storage/logs/queue.log" \
+        "/var/www/${TARGET}/storage/logs/scheduler.log" \
+        "/var/www/${TARGET}/storage/logs/reverb.log"
+    fi
     chown -R www-data:www-data "/var/www/${TARGET}" || true
     install_site_nginx "${TARGET}" "${SRC}"
     if [[ -f "${SRC}/.env" ]]; then
@@ -172,20 +188,20 @@ case "${ACTION}" in
       for program in $(supervisorctl status 2>/dev/null | awk '{print $1}' | grep -E "^${TARGET}-" || true); do
         supervisorctl restart "${program}" || true
       done
-    else
+    elif [[ "${RUNTIME}" == "node" ]]; then
       write_file 644 "${SRC}/process.conf" "/var/www/${TARGET}/ecosystem.config.js"
-      STANDALONE="/var/www/${TARGET}/.next/standalone"
-      if [[ ! -f "${STANDALONE}/server.js" ]]; then
+      SITE_DIR="/var/www/${TARGET}"
+      if ! node_site_ready "${SITE_DIR}"; then
         # Saved before the first deploy: there is nothing to run yet. Not an error.
-        echo "PM2 not started: ${STANDALONE}/server.js does not exist yet. Deploy the site to build it."
+        echo "PM2 not started: the site has not been built yet. Deploy it first."
       elif command -v pm2 >/dev/null 2>&1; then
-        # Server-side code reads the .env next to server.js; keep it in step with the saved one.
-        if [[ -f "/var/www/${TARGET}/.env" ]]; then
-          cp -f -- "/var/www/${TARGET}/.env" "${STANDALONE}/.env"
-          chown www-data:www-data "${STANDALONE}/.env" || true
+        # Next.js reads the .env next to server.js; keep it in step with the saved one.
+        if [[ -f "${SITE_DIR}/.next/standalone/server.js" && -f "${SITE_DIR}/.env" ]]; then
+          cp -f -- "${SITE_DIR}/.env" "${SITE_DIR}/.next/standalone/.env"
+          chown www-data:www-data "${SITE_DIR}/.next/standalone/.env" || true
         fi
         pm2_adopt_stray
-        pm2 startOrReload "/var/www/${TARGET}/ecosystem.config.js" --update-env
+        pm2 startOrReload "${SITE_DIR}/ecosystem.config.js" --update-env
         pm2_persist
       fi
     fi
@@ -383,12 +399,12 @@ PHP
     esac
     ;;
   pm2-boot)
-    # Run by update.sh: one PM2 daemon under /root, every Next.js site that has a build
+    # Run by update.sh: one PM2 daemon under /root, every Node site that has a build
     # started in it, the list saved, and pm2-root enabled so it all comes back after a reboot.
     command -v pm2 >/dev/null 2>&1 || { echo "PM2 is not installed."; exit 0; }
     pm2_adopt_stray
     for eco in /var/www/*/ecosystem.config.js; do
-      [[ -f "${eco}" && -f "$(dirname "${eco}")/.next/standalone/server.js" ]] || continue
+      [[ -f "${eco}" ]] && node_site_ready "$(dirname "${eco}")" || continue
       name="$(basename "$(dirname "${eco}")")"
       if ! pm2 describe "${name}" >/dev/null 2>&1; then
         echo "Starting ${name} in PM2"

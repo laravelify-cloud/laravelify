@@ -124,7 +124,7 @@
             x-ref="command"
             @input="onInput($event)"
             @keydown="onKey($event)"
-            placeholder="{{ $website && ! $website->isLaravel() ? 'Type / for npm commands' : 'Type / for Laravel commands, or any shell command' }}"
+            placeholder="{{ $website && $website->isPhp() && ! $website->isLaravel() ? 'Type / for PHP and Composer commands' : ($website && ! $website->isLaravel() ? 'Type / for npm commands' : 'Type / for Laravel commands, or any shell command') }}"
             autocomplete="off"
             spellcheck="false"
             aria-label="Command"

@@ -9,23 +9,58 @@ class ConfigRenderer
 {
     public function nginx(Website $website): string
     {
-        return $website->isLaravel()
-            ? $this->laravelNginx($website)
-            : $this->nextNginx($website);
+        return match (true) {
+            $website->isLaravel() => $this->laravelNginx($website),
+            $website->isPhp() => $this->phpNginx($website),
+            $website->isNode() => $this->nodeNginx($website),
+            default => $this->staticNginx($website),
+        };
     }
 
+    /**
+     * Supervisor workers (Laravel), a PM2 file (Node servers), or nothing (plain PHP and static sites).
+     */
     public function process(Website $website): string
     {
-        return $website->isLaravel()
-            ? $this->supervisor($website)
-            : $this->pm2($website);
+        return match (true) {
+            $website->isLaravel() => $this->supervisor($website),
+            $website->isNode() => $this->pm2($website),
+            default => '',
+        };
     }
 
     public function env(Website $website): string
     {
-        return $website->isLaravel()
-            ? $this->laravelEnv($website)
-            : $this->nextEnv($website);
+        return match (true) {
+            $website->isLaravel() => $this->laravelEnv($website),
+            $website->isPhp() => $this->phpEnv($website),
+            $website->isNode() => $this->nodeEnv($website),
+            default => $this->staticEnv($website),
+        };
+    }
+
+    /**
+     * The folder nginx serves for a PHP or static site.
+     */
+    public function webRoot(Website $website): string
+    {
+        $path = rtrim((string) $website->deploy_path, '/');
+        $folder = trim((string) $website->public_dir, '/');
+
+        if ($website->isLaravel()) {
+            return $path.'/public';
+        }
+
+        if ($website->isPhp()) {
+            return $folder === '' ? $path.'/public' : ($folder === '.' ? $path : $path.'/'.$folder);
+        }
+
+        // Built sites are served through a symlink the deploy points at the build output.
+        if ($website->type !== 'static') {
+            return $path.'/public_html';
+        }
+
+        return $folder === '' || $folder === '.' ? $path : $path.'/'.$folder;
     }
 
     public function ingress(CloudflareTunnel $tunnel): string
@@ -177,18 +212,56 @@ server {
 NGINX;
     }
 
-    private function nextNginx(Website $website): string
+    private function phpNginx(Website $website): string
     {
-        $port = $website->port ?: 3000;
-
+        $php = $website->php_version ?: '8.4';
+        $root = $this->webRoot($website);
         $listen = $this->listenLines($website);
 
         return <<<NGINX
-# {$this->siteLabel($website)} — Next.js standalone via PM2 on 127.0.0.1:{$port}
+# {$this->siteLabel($website)} — PHP (PHP {$php}-FPM)
+# Front-controller apps (Symfony, Slim, CodeIgniter) work as they are. Add extra locations here.
+
+server {
+{$listen}
+
+    root {$root};
+    index index.php index.html;
+    client_max_body_size 256M;
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options "nosniff";
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location ~ \\.php\$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php{$php}-fpm.sock;
+        fastcgi_read_timeout 300;
+    }
+
+    location ~ /\\.(?!well-known).* {
+        deny all;
+    }
+}
+NGINX;
+    }
+
+    private function nodeNginx(Website $website): string
+    {
+        $port = $website->port ?: 3000;
+        $label = $website->typeLabel();
+        $listen = $this->listenLines($website);
+
+        return <<<NGINX
+# {$this->siteLabel($website)} — {$label} via PM2 on 127.0.0.1:{$port}
 # Custom paths (OAuth callbacks, legacy PHP routes) can be added above location /.
 
 server {
 {$listen}
+    client_max_body_size 256M;
 
     location / {
         proxy_pass http://127.0.0.1:{$port};
@@ -201,6 +274,57 @@ server {
         proxy_set_header Connection "upgrade";
         proxy_read_timeout 60s;
         proxy_send_timeout 60s;
+    }
+}
+NGINX;
+    }
+
+    private function staticNginx(Website $website): string
+    {
+        $root = $this->webRoot($website);
+        $label = $website->typeLabel();
+        $listen = $this->listenLines($website);
+        $spa = (bool) ($website->definition()['spa'] ?? false);
+        $fallback = $spa
+            ? 'try_files $uri $uri/ /index.html;'
+            : 'try_files $uri $uri.html $uri/ =404;';
+        $note = $spa
+            ? '# Unknown paths fall back to index.html, so client-side routes work on refresh.'
+            : '# Unknown paths answer 404.';
+
+        return <<<NGINX
+# {$this->siteLabel($website)} — {$label}, static files served by nginx
+{$note}
+
+server {
+{$listen}
+
+    root {$root};
+    index index.html;
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options "nosniff";
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml text/plain;
+
+    location / {
+        {$fallback}
+    }
+
+    # The page itself is always fresh; hashed assets can be cached.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    location ~* \\.(?:css|js|mjs|woff2?|ttf|otf|png|jpe?g|gif|svg|webp|avif|ico)\$ {
+        expires 7d;
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
+    location ~ /\\.(?!well-known).* {
+        deny all;
     }
 }
 NGINX;
@@ -269,6 +393,11 @@ CONF;
 
     private function pm2(Website $website): string
     {
+        return $website->isNextjs() ? $this->nextPm2($website) : $this->nodePm2($website);
+    }
+
+    private function nextPm2(Website $website): string
+    {
         $port = $website->port ?: 3000;
         $path = $website->deploy_path;
         $slug = $website->slug;
@@ -291,6 +420,55 @@ module.exports = {
   ],
 };
 JS;
+    }
+
+    /**
+     * Express, NestJS, Nuxt, SvelteKit, or any Node app: run the start command from the
+     * site folder, with the Node major version chosen for the site.
+     */
+    private function nodePm2(Website $website): string
+    {
+        $port = $website->port ?: 3000;
+        $path = $website->deploy_path;
+        $slug = $website->slug;
+        $node = $website->node_version ?: '22';
+        $command = $website->startCommand() ?: 'npm start';
+        $withNode = base_path('scripts/with-node.sh');
+        $origin = $website->publicUrl();
+        $extra = '';
+
+        if ($website->type === 'nuxt') {
+            $extra = "\n        NITRO_HOST: \"127.0.0.1\",\n        NITRO_PORT: \"{$port}\",";
+        } elseif ($website->type === 'sveltekit' && $origin) {
+            // adapter-node rejects form posts from an origin it does not know.
+            $extra = "\n        ORIGIN: ".json_encode($origin, JSON_UNESCAPED_SLASHES).',';
+        }
+
+        return <<<JS
+module.exports = {
+  apps: [
+    {
+      name: "{$slug}",
+      cwd: "{$path}",
+      script: "/bin/bash",
+      args: [{$this->jsString($withNode)}, "{$node}", "bash", "-c", {$this->jsString('exec '.$command)}],
+      interpreter: "none",
+      env_file: "{$path}/.env",
+      env: {
+        NODE_ENV: "production",
+        PORT: "{$port}",
+        HOST: "127.0.0.1",
+        HOSTNAME: "127.0.0.1",{$extra}
+      },
+    },
+  ],
+};
+JS;
+    }
+
+    private function jsString(string $value): string
+    {
+        return (string) json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     private function laravelEnv(Website $website): string
@@ -379,7 +557,28 @@ ENV;
         return true;
     }
 
-    private function nextEnv(Website $website): string
+    private function phpEnv(Website $website): string
+    {
+        $name = str_replace(['"', "\n"], '', $website->name);
+        $db = $website->db_name ?: '';
+        $user = $website->db_username ?: '';
+        $password = $website->db_password ?: '';
+
+        return <<<ENV
+APP_NAME="{$name}"
+APP_ENV=production
+APP_DEBUG=false
+APP_URL={$website->publicUrl()}
+
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE={$db}
+DB_USERNAME={$user}
+DB_PASSWORD={$password}
+ENV;
+    }
+
+    private function nodeEnv(Website $website): string
     {
         $port = $website->port ?: 3000;
 
@@ -388,5 +587,12 @@ NODE_ENV=production
 PORT={$port}
 HOSTNAME=127.0.0.1
 ENV;
+    }
+
+    private function staticEnv(Website $website): string
+    {
+        return $website->type === 'static'
+            ? "# Static HTML has no build, so this file is not used.\n"
+            : "# Available while the site builds, for example:\n# VITE_API_URL=https://api.example.com\n";
     }
 }

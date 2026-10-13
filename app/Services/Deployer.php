@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Deployment;
 use App\Models\Setting;
 use App\Models\Website;
+use App\Support\BuildOutput;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Throwable;
@@ -76,7 +77,7 @@ class Deployer
             $this->syncEnvBack($website, $log);
             $log->line($this->hostWriter->writeWebsite($website));
 
-            if ($website->isLaravel() && $website->provision_database) {
+            if ($website->isPhp() && $website->provision_database) {
                 $log->line($this->databases->create($website));
             }
 
@@ -159,36 +160,172 @@ class Deployer
 
     private function install(Website $website, DeploymentLogger $log): void
     {
+        match (true) {
+            $website->isLaravel() => $this->installLaravel($website, $log),
+            $website->isPhp() => $this->installPhp($website, $log),
+            $website->isNextjs() => $this->installNextjs($website, $log),
+            $website->isNode() => $this->installNode($website, $log),
+            default => $this->installStatic($website, $log),
+        };
+    }
+
+    private function installLaravel(Website $website, DeploymentLogger $log): void
+    {
+        $path = $website->deploy_path;
+        $php = '/usr/bin/php'.($website->php_version ?: '8.4');
+        $this->composerInstall($path, $log);
+
+        if (! str_contains((string) file_get_contents($path.'/.env'), 'APP_KEY=base64:')) {
+            $this->writeAppKey($path);
+            $log->line('Generated APP_KEY.');
+        }
+
+        if (filled($website->db_name)) {
+            $this->must($this->runner->run([$php, $path.'/artisan', 'migrate', '--force', '--no-ansi'], $path), $log);
+        } else {
+            $log->line('Skipped migrations. Create a MySQL database for this site before migrating.');
+        }
+
+        $this->must($this->runner->run([$php, $path.'/artisan', 'optimize', '--no-ansi'], $path), $log);
+        $this->installFrontend($website, $log);
+        $this->installSocketIo($website, $log);
+    }
+
+    /**
+     * Plain PHP: Composer when there is a composer.json, nothing else to build.
+     */
+    private function installPhp(Website $website, DeploymentLogger $log): void
+    {
+        if (is_file($website->deploy_path.'/composer.json')) {
+            $this->composerInstall($website->deploy_path, $log);
+        } else {
+            $log->line('No composer.json, so there is nothing to install.');
+        }
+    }
+
+    private function installNextjs(Website $website, DeploymentLogger $log): void
+    {
+        $this->installDependencies($website, $log);
+        $this->buildSite($website, $log);
+        $this->prepareStandalone($website->deploy_path, $log);
+    }
+
+    /**
+     * Express, NestJS, Nuxt, SvelteKit, or any Node app: install, build when the type has a
+     * build step, and mark the site built so PM2 starts it (see host-apply.sh).
+     */
+    private function installNode(Website $website, DeploymentLogger $log): void
+    {
+        $this->installDependencies($website, $log);
+        $this->buildSite($website, $log);
+
+        File::put($website->deploy_path.'/.laravelify-built', now()->toIso8601String()."\n");
+        $log->line('Start command: '.($website->startCommand() ?: 'npm start'));
+    }
+
+    /**
+     * React, Vue, Angular, Svelte, Astro: build, then point public_html at the output folder
+     * that nginx serves. Static HTML has no build and is served from the repository itself.
+     */
+    private function installStatic(Website $website, DeploymentLogger $log): void
+    {
+        if ($website->type === 'static') {
+            $log->line('Static HTML: no build step, the repository files are served as they are.');
+
+            return;
+        }
+
+        $this->installDependencies($website, $log);
+        $this->buildSite($website, $log);
+        $this->linkBuildOutput($website, $log);
+    }
+
+    private function composerInstall(string $path, DeploymentLogger $log): void
+    {
+        $composer = is_executable('/usr/local/bin/composer') ? '/usr/local/bin/composer' : 'composer';
+        $this->must($this->runner->run([$composer, 'install', '--no-dev', '--optimize-autoloader', '--no-interaction', '--no-ansi', '--no-progress'], $path), $log);
+    }
+
+    /**
+     * npm, pnpm, or Yarn (from the lockfile), or the install command saved on the site.
+     */
+    private function installDependencies(Website $website, DeploymentLogger $log): void
+    {
         $path = $website->deploy_path;
 
-        if ($website->isLaravel()) {
-            $php = '/usr/bin/php'.($website->php_version ?: '8.4');
-            $composer = is_executable('/usr/local/bin/composer') ? '/usr/local/bin/composer' : 'composer';
-            $this->must($this->runner->run([$composer, 'install', '--no-dev', '--optimize-autoloader', '--no-interaction', '--no-ansi', '--no-progress'], $path), $log);
+        if (! is_file($path.'/package.json')) {
+            throw new RuntimeException('There is no package.json in the repository. Check the repository, the branch, and the framework you chose.');
+        }
 
-            if (! str_contains((string) file_get_contents($path.'/.env'), 'APP_KEY=base64:')) {
-                $this->writeAppKey($path);
-                $log->line('Generated APP_KEY.');
-            }
+        $withNode = base_path('scripts/with-node.sh');
+        $node = (string) ($website->node_version ?: '22');
 
-            if (filled($website->db_name)) {
-                $this->must($this->runner->run([$php, $path.'/artisan', 'migrate', '--force', '--no-ansi'], $path), $log);
-            } else {
-                $log->line('Skipped migrations. Create a MySQL database for this site before migrating.');
-            }
+        if ($command = $website->installCommand()) {
+            $log->line('Installing with the command saved on this site.');
+            $this->runShell($withNode, $node, $path, $command, $log);
 
-            $this->must($this->runner->run([$php, $path.'/artisan', 'optimize', '--no-ansi'], $path), $log);
-            $this->installFrontend($website, $log);
-            $this->installSocketIo($website, $log);
+            return;
+        }
+
+        $this->installPackages($withNode, $node, $path, $log);
+    }
+
+    /**
+     * The build command saved on the site, else the type's default. The default
+     * "npm run build" follows the lockfile (pnpm and Yarn projects build with their own tool).
+     */
+    private function buildSite(Website $website, DeploymentLogger $log): void
+    {
+        $command = $website->buildCommand();
+
+        if ($command === null) {
+            $log->line('This type has no build step.');
 
             return;
         }
 
         $withNode = base_path('scripts/with-node.sh');
         $node = (string) ($website->node_version ?: '22');
-        $this->installPackages($withNode, $node, $path, $log);
-        $this->runScript($withNode, $node, $path, 'build', $log);
-        $this->prepareStandalone($path, $log);
+
+        if (blank($website->build_command) && $command === 'npm run build') {
+            $this->runScript($withNode, $node, $website->deploy_path, 'build', $log);
+
+            return;
+        }
+
+        $this->runShell($withNode, $node, $website->deploy_path, $command, $log);
+    }
+
+    private function runShell(string $withNode, string $node, string $path, string $command, DeploymentLogger $log): void
+    {
+        $this->must($this->runner->run(['bash', $withNode, $node, 'bash', '-c', $command], $path), $log);
+    }
+
+    private function linkBuildOutput(Website $website, DeploymentLogger $log): void
+    {
+        $path = $website->deploy_path;
+        $candidates = (array) ($website->definition()['output'] ?? ['dist']);
+        $output = BuildOutput::locate($path, $website->public_dir, $candidates);
+
+        if ($output === null) {
+            $looked = filled($website->public_dir) ? (string) $website->public_dir : implode(', ', $candidates);
+
+            throw new RuntimeException('The build finished, but no output folder with files was found (looked in: '.$looked.'). Set the output folder on the Runtime tab.');
+        }
+
+        $link = $path.'/public_html';
+
+        if (is_link($link) || is_file($link)) {
+            @unlink($link);
+        } elseif (is_dir($link)) {
+            throw new RuntimeException('public_html is a real folder in your repository. Rename it, because Laravelify uses that name for the build output.');
+        }
+
+        if (! @symlink($output, $link)) {
+            throw new RuntimeException('Could not link public_html to '.$output.'.');
+        }
+
+        $log->line('Serving '.$output.' (public_html → '.$output.').');
     }
 
     private function installFrontend(Website $website, DeploymentLogger $log): void

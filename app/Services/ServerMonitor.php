@@ -104,9 +104,11 @@ class ServerMonitor
         $report = [];
 
         foreach ($this->monitoredWebsites() as $website) {
-            $names = $website->isLaravel()
-                ? array_map(fn (string $name): array => ['supervisor', $name], array_keys($this->logs->programs($website)))
-                : [['pm2', $website->slug]];
+            $names = match (true) {
+                $website->isLaravel() => array_map(fn (string $name): array => ['supervisor', $name], array_keys($this->logs->programs($website))),
+                $website->isNode() => [['pm2', $website->slug]],
+                default => [],
+            };
 
             foreach ($names as [$manager, $name]) {
                 $row = $running->first(fn (array $process): bool => $process['manager'] === $manager && $process['name'] === $name);

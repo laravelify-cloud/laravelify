@@ -74,7 +74,11 @@ class SiteHealth
 
         $running = collect($this->processes->list());
 
-        if (! $website->isLaravel()) {
+        if (! $website->hasProcessFile()) {
+            return [];
+        }
+
+        if ($website->isNode()) {
             $process = $running->first(fn (array $row): bool => $row['manager'] === 'pm2' && $row['name'] === $website->slug);
 
             return [[

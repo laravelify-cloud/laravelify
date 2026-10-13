@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Jobs\RunDeployment;
+use App\Support\SiteTypes;
 use Database\Factories\WebsiteFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -26,6 +27,10 @@ class Website extends Model
         'branch',
         'php_version',
         'node_version',
+        'install_command',
+        'build_command',
+        'start_command',
+        'public_dir',
         'port',
         'http_port',
         'reverb_port',
@@ -101,6 +106,81 @@ class Website extends Model
     public function isNextjs(): bool
     {
         return $this->type === 'nextjs';
+    }
+
+    /**
+     * The framework's definition (label, group, defaults) from the type catalog.
+     *
+     * @return array<string, mixed>
+     */
+    public function definition(): array
+    {
+        return SiteTypes::get($this->type);
+    }
+
+    public function typeLabel(): string
+    {
+        return SiteTypes::label($this->type);
+    }
+
+    /**
+     * php (nginx → PHP-FPM), node (a server under PM2), or static (nginx serves files).
+     */
+    public function runtime(): string
+    {
+        return SiteTypes::runtime($this->type);
+    }
+
+    public function isPhp(): bool
+    {
+        return $this->runtime() === SiteTypes::RUNTIME_PHP;
+    }
+
+    public function isNode(): bool
+    {
+        return $this->runtime() === SiteTypes::RUNTIME_NODE;
+    }
+
+    public function isStatic(): bool
+    {
+        return $this->runtime() === SiteTypes::RUNTIME_STATIC;
+    }
+
+    /**
+     * Whether the site needs Node.js to build or run (everything except PHP and plain HTML).
+     */
+    public function usesNode(): bool
+    {
+        return $this->isNode() || ($this->isStatic() && $this->type !== 'static');
+    }
+
+    /**
+     * Only Laravel has Supervisor workers; Node sites have a PM2 file; the rest have none.
+     */
+    public function hasProcessFile(): bool
+    {
+        return $this->isLaravel() || $this->isNode();
+    }
+
+    public function installCommand(): ?string
+    {
+        return filled($this->install_command) ? (string) $this->install_command : null;
+    }
+
+    /**
+     * The build command: the one saved on the site, else the type's default.
+     */
+    public function buildCommand(): ?string
+    {
+        return filled($this->build_command) ? (string) $this->build_command : ($this->definition()['build'] ?? null);
+    }
+
+    /**
+     * The command PM2 runs: the one saved on the site, else the type's default.
+     */
+    public function startCommand(): ?string
+    {
+        return filled($this->start_command) ? (string) $this->start_command : ($this->definition()['start'] ?? null);
     }
 
     /**

@@ -12,6 +12,7 @@ use App\Services\DatabaseProvisioner;
 use App\Services\HostWriter;
 use App\Services\ServerProcesses;
 use App\Services\SiteSecurity;
+use App\Support\BuildOutput;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Renderless;
@@ -38,6 +39,14 @@ class Show extends PanelComponent
     public string $php_version = '8.4';
 
     public string $node_version = '22';
+
+    public string $install_command = '';
+
+    public string $build_command = '';
+
+    public string $start_command = '';
+
+    public string $public_dir = '';
 
     public ?int $port = null;
 
@@ -132,39 +141,76 @@ class Show extends PanelComponent
 
     public function saveRuntime(): void
     {
-        $rules = $this->website->isLaravel()
-            ? [
+        $website = $this->website;
+        $command = ['nullable', 'string', 'max:500', 'regex:/^[^\r\n\0]*$/'];
+        $folder = ['nullable', 'string', 'max:190', function (string $attribute, mixed $value, \Closure $fail): void {
+            if ($value !== null && $value !== '' && ! BuildOutput::safe(trim((string) $value, '/'))) {
+                $fail('Use a folder inside the repository, like dist or public (no spaces or ..).');
+            }
+        }];
+
+        $rules = match (true) {
+            $website->isPhp() => [
                 'php_version' => ['required', Rule::in(config('laravelify.php_versions'))],
                 'enable_reverb' => ['boolean'],
-            ]
-            : [
+                'public_dir' => $folder,
+            ],
+            $website->isNode() => [
                 'node_version' => ['required', Rule::in(config('laravelify.node_versions'))],
-                'port' => ['required', 'integer', 'min:1024', 'max:65535', Rule::unique('websites', 'port')->ignore($this->website->id)],
-            ];
+                'port' => ['required', 'integer', 'min:1024', 'max:65535', Rule::unique('websites', 'port')->ignore($website->id)],
+                'install_command' => $command,
+                'build_command' => $command,
+                'start_command' => $command,
+            ],
+            default => [
+                'node_version' => $website->usesNode() ? ['required', Rule::in(config('laravelify.node_versions'))] : ['nullable'],
+                'install_command' => $command,
+                'build_command' => $command,
+                'public_dir' => $folder,
+            ],
+        };
 
         $this->validate($rules);
+        $blank = fn (string $value): ?string => trim($value) !== '' ? trim($value) : null;
 
-        if ($this->website->isLaravel()) {
-            $reverbPort = $this->website->reverb_port;
+        if ($website->isLaravel()) {
+            $reverbPort = $website->reverb_port;
 
             if ($this->enable_reverb && ! $reverbPort) {
                 $reverbPort = Website::nextPort('reverb_port', (int) config('laravelify.reverb_port_start'));
             }
 
-            $this->website->update([
+            $website->update([
                 'php_version' => $this->php_version,
                 'enable_reverb' => $this->enable_reverb,
                 'reverb_port' => $this->enable_reverb ? $reverbPort : null,
             ]);
-        } else {
-            $this->website->update([
+        } elseif ($website->isPhp()) {
+            $website->update([
+                'php_version' => $this->php_version,
+                'public_dir' => $blank(trim($this->public_dir, '/')) ?? 'public',
+            ]);
+        } elseif ($website->isNode()) {
+            $website->update([
                 'node_version' => $this->node_version,
                 'port' => $this->port,
+                'install_command' => $blank($this->install_command),
+                'build_command' => $blank($this->build_command),
+                'start_command' => $website->isNextjs() ? null : $blank($this->start_command),
+            ]);
+        } else {
+            $website->update([
+                'node_version' => $website->usesNode() ? $this->node_version : null,
+                'install_command' => $website->usesNode() ? $blank($this->install_command) : null,
+                'build_command' => $website->usesNode() ? $blank($this->build_command) : null,
+                'public_dir' => $blank(trim($this->public_dir, '/')),
             ]);
         }
 
-        $this->website->refresh();
-        $this->toast('Runtime saved. Regenerate nginx and the process file to apply it.');
+        $website->refresh();
+        $this->toast($website->hasProcessFile()
+            ? 'Runtime saved. Regenerate nginx and the process file to apply it, then deploy.'
+            : 'Runtime saved. Regenerate nginx to apply it, then deploy.');
         $this->saved();
     }
 
@@ -178,9 +224,9 @@ class Show extends PanelComponent
 
         try {
             $hostWriter->writeWebsite($this->website);
-            $this->toast($this->website->isLaravel()
+            $this->toast($this->website->isPhp() || $this->website->isLaravel()
                 ? 'Environment saved.'
-                : 'Environment saved. NEXT_PUBLIC_ values are built into the app, so deploy to apply them.');
+                : 'Environment saved. Values that the build reads (NEXT_PUBLIC_, VITE_, and similar) are built into the app, so deploy to apply them.');
         } catch (Throwable $exception) {
             $this->addError('env_content', 'Environment saved. Applying it on the server failed: '.$exception->getMessage());
             $this->toast('Environment saved. Applying it on the server failed: '.$exception->getMessage(), 'error');
@@ -241,7 +287,7 @@ class Show extends PanelComponent
 
     public function provisionDatabase(DatabaseProvisioner $databases): void
     {
-        if (! $this->website->isLaravel()) {
+        if (! $this->website->isPhp()) {
             return;
         }
 
@@ -496,6 +542,10 @@ class Show extends PanelComponent
         $this->github_app_id = (string) ($this->website->github_app_id ?? '');
         $this->php_version = $this->website->php_version ?: '8.4';
         $this->node_version = $this->website->node_version ?: '22';
+        $this->install_command = (string) ($this->website->install_command ?? '');
+        $this->build_command = (string) ($this->website->build_command ?? '');
+        $this->start_command = (string) ($this->website->start_command ?? '');
+        $this->public_dir = (string) ($this->website->public_dir ?? '');
         $this->port = $this->website->port;
         $this->enable_reverb = $this->website->enable_reverb;
         $this->env_content = $this->website->env_content ?? '';
