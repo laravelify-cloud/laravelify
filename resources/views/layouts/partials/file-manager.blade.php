@@ -232,6 +232,9 @@
                     case 'compress':
                         this.$wire.compressEntries([target.relative]);
                         break;
+                    case 'downloadZip':
+                        this.$wire.prepareDownload(target.relative);
+                        break;
                     case 'extract':
                         this.$wire.extractEntry(target.relative);
                         break;

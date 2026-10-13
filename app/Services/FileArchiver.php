@@ -37,24 +37,71 @@ class FileArchiver
     }
 
     /**
-     * Subfolders of a folder, for the folder picker.
+     * Folders and files of a folder for the backup picker, folders first.
      *
-     * @return list<string> Names, sorted.
+     * @return list<array{name: string, relative: string, dir: bool, link: bool, size: int, modified: int}>
      */
-    public function folders(string $relative): array
+    public function listing(string $relative): array
     {
-        $directory = $this->paths->resolveIn($this->root(), self::cleanPath($relative));
-        $names = [];
+        $relative = self::cleanPath($relative);
+        $directory = $this->paths->resolveIn($this->root(), $relative);
+        $rows = [];
 
-        foreach (scandir($directory) ?: [] as $entry) {
-            if ($entry !== '.' && $entry !== '..' && is_dir($directory.DIRECTORY_SEPARATOR.$entry)) {
-                $names[] = $entry;
+        foreach (scandir($directory) ?: [] as $name) {
+            if ($name === '.' || $name === '..') {
+                continue;
+            }
+
+            $full = $directory.DIRECTORY_SEPARATOR.$name;
+            $link = is_link($full);
+            $dir = ! $link && is_dir($full);
+
+            $rows[] = [
+                'name' => $name,
+                'relative' => ltrim($relative.'/'.$name, '/'),
+                'dir' => $dir,
+                'link' => $link,
+                'size' => $dir ? 0 : (int) @filesize($full),
+                'modified' => (int) @filemtime($full),
+            ];
+        }
+
+        usort($rows, fn (array $a, array $b) => $a['dir'] === $b['dir'] ? strnatcasecmp($a['name'], $b['name']) : ($a['dir'] ? -1 : 1));
+
+        return $rows;
+    }
+
+    /**
+     * Whether a tar exclude pattern skips this path: a name matches in every folder
+     * (node_modules), a path matches that path and anything ending with it (storage/logs).
+     *
+     * @param  list<string>  $patterns
+     */
+    public static function excluded(string $path, array $patterns): bool
+    {
+        $path = trim($path, '/');
+
+        foreach ($patterns as $pattern) {
+            $pattern = trim($pattern, '/');
+
+            if ($pattern === '') {
+                continue;
+            }
+
+            if (str_contains($pattern, '*') || str_contains($pattern, '?')) {
+                if (fnmatch($pattern, $path) || fnmatch($pattern, basename($path)) || fnmatch('*/'.$pattern, $path)) {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if ($path === $pattern || str_ends_with($path, '/'.$pattern) || str_starts_with($path, $pattern.'/') || str_contains($path, '/'.$pattern.'/')) {
+                return true;
             }
         }
 
-        sort($names, SORT_NATURAL | SORT_FLAG_CASE);
-
-        return $names;
+        return false;
     }
 
     /**
@@ -72,7 +119,20 @@ class FileArchiver
         foreach ($paths as $path) {
             $path = self::cleanPath($path);
             $this->paths->resolveIn($root, $path);
-            $members[] = $path === '' ? '.' : $path;
+
+            if ($path !== '') {
+                $members[] = $path;
+
+                continue;
+            }
+
+            // The whole root: list what is in it, so names in the archive never start with "./",
+            // and leave out the folder restores are written to.
+            foreach (scandir($root) ?: [] as $name) {
+                if (! in_array($name, ['.', '..', 'laravelify-restore'], true)) {
+                    $members[] = $name;
+                }
+            }
         }
 
         if ($members === []) {
@@ -109,10 +169,12 @@ class FileArchiver
     }
 
     /**
-     * Unpack the whole archive or only $member into the original place or a restore folder.
-     * Returns the folder the files were written to.
+     * Unpack the whole archive (no members) or only the chosen folders and files, into the
+     * original place or a new restore folder. Returns the folder the files were written to.
+     *
+     * @param  list<string>  $members
      */
-    public function restore(string $file, ?string $member, bool $toOriginal): string
+    public function restore(string $file, array $members, bool $toOriginal): string
     {
         $root = $this->root();
         $destination = $root;
@@ -127,9 +189,11 @@ class FileArchiver
 
         $command = ['tar', '--force-local', '-xzf', $file, '-C', $destination, '--no-same-owner'];
 
-        if ($member !== null && self::cleanPath($member) !== '') {
+        $members = array_values(array_unique(array_filter(array_map(self::cleanPath(...), $members), fn (string $member) => $member !== '')));
+
+        if ($members !== []) {
             $command[] = '--';
-            $command[] = self::cleanPath($member);
+            array_push($command, ...$members);
         }
 
         $result = $this->runner->run($command);

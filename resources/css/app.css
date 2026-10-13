@@ -1579,3 +1579,242 @@ html:has(.modal-root:not([x-cloak]):not([style*="display: none"])) {
 
     .type-pin:hover, .type-pin.is-pinned { opacity: 1; color: var(--color-accent); }
 }
+
+/* Background tasks (task tray), compact row actions, and the backup dialogs. */
+@layer components {
+    .fm-tasks { margin: 0 14px 10px; }
+
+    .btn-sm {
+        height: 28px;
+        padding: 0 9px;
+        font-size: 12.5px;
+        gap: 5px;
+    }
+
+    .btn-sm .menu-icon { width: 15px; height: 15px; }
+
+    .task-tray {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        overflow: hidden;
+        border: 1px solid var(--color-line);
+        border-radius: 10px;
+        background: var(--color-line);
+    }
+
+    .task-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        background: var(--color-card);
+        font-size: 13px;
+    }
+
+    .task-icon {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        flex-shrink: 0;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--color-recessed);
+        color: var(--color-muted);
+    }
+
+    .task-row.is-success .task-icon { color: var(--color-success); }
+    .task-row.is-failed .task-icon { color: var(--color-danger); }
+
+    .task-spinner {
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        border: 2px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+        border-top-color: var(--color-accent);
+        animation: task-spin 700ms linear infinite;
+    }
+
+    .task-bar {
+        position: relative;
+        height: 4px;
+        margin-top: 7px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--color-recessed);
+    }
+
+    .task-bar span {
+        position: absolute;
+        inset: 0 auto 0 0;
+        border-radius: inherit;
+        background: var(--color-accent);
+        transition: width 400ms var(--ease-out);
+    }
+
+    .task-bar.is-waiting span {
+        width: 30% !important;
+        animation: task-wait 1.2s ease-in-out infinite;
+    }
+
+    @keyframes task-spin { to { transform: rotate(360deg); } }
+    @keyframes task-wait { 0% { left: -30%; } 100% { left: 100%; } }
+
+    /* A row of small icon actions at the end of a table row. */
+    .row-actions {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 2px;
+    }
+
+    .row-actions .icon-btn { width: 28px; height: 28px; }
+    .row-actions .icon-btn .menu-icon { width: 16px; height: 16px; }
+    .row-actions .icon-btn.is-accent { color: var(--color-accent); }
+
+    .row-actions .icon-btn.is-accent:hover {
+        background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    }
+
+    .row-menu { position: relative; display: inline-flex; }
+
+    .row-menu .dropdown {
+        min-width: 11rem;
+    }
+
+
+    .steps {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 14px;
+        color: var(--color-muted);
+        font-size: 12.5px;
+    }
+
+    .steps .step {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .steps .step-number {
+        display: grid;
+        width: 20px;
+        height: 20px;
+        place-items: center;
+        border-radius: 999px;
+        border: 1px solid var(--color-line);
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .steps .step.is-current { color: var(--color-ink); }
+
+    .steps .step.is-current .step-number {
+        border-color: var(--color-accent);
+        background: var(--color-accent);
+        color: white;
+    }
+
+    .steps .step.is-done .step-number {
+        border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-line));
+        color: var(--color-accent);
+    }
+
+    .pick-list {
+        display: flex;
+        max-height: 22rem;
+        flex-direction: column;
+        gap: 1px;
+        overflow: auto;
+        border: 1px solid var(--color-line);
+        border-radius: 10px;
+        background: var(--color-line);
+    }
+
+    .pick-item {
+        display: flex;
+        width: 100%;
+        min-width: 0;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+        background: var(--color-card);
+        text-align: left;
+        font-size: 13px;
+        transition: background 100ms;
+    }
+
+    .pick-item:hover { background: color-mix(in srgb, var(--color-ink) 4%, var(--color-card)); }
+
+    .pick-item.is-selected {
+        background: color-mix(in srgb, var(--color-accent) 9%, var(--color-card));
+    }
+
+    .pick-item .menu-icon { width: 18px; height: 18px; flex-shrink: 0; color: var(--color-muted); }
+
+    .sql-block {
+        max-height: 22rem;
+        overflow: auto;
+        border: 1px solid var(--color-line);
+        border-radius: 8px;
+        background: var(--color-recessed);
+        padding: 10px 12px;
+        font-family: var(--font-mono, ui-monospace, monospace);
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre;
+    }
+
+    .check-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        border: 1px solid var(--color-line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        cursor: pointer;
+    }
+
+    .check-card:has(input:checked) {
+        border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-line));
+        background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+    }
+
+    .pager {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding-top: 10px;
+        color: var(--color-muted);
+        font-size: 12.5px;
+    }
+
+    .badge-include,
+    .badge-exclude {
+        display: inline-flex;
+        height: 20px;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0 8px;
+        font-size: 11px;
+        font-weight: 500;
+    }
+
+    .badge-include {
+        background: color-mix(in srgb, var(--color-success) 14%, transparent);
+        color: var(--color-success);
+    }
+
+    .badge-exclude {
+        background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+        color: var(--color-danger);
+    }
+}
+
+/* Wide dialogs (restore, view, download). Outside a layer, like .modal-panel itself. */
+.modal-wide .modal-panel { width: min(100%, 56rem); }
+.modal-medium .modal-panel { width: min(100%, 44rem); }

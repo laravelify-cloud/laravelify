@@ -32,6 +32,8 @@
     @entries-transferred.window="dialog = null; clearSelection()"
     @entry-chmodded.window="dialog = null"
     @file-saved.window="dirty = false"
+    @entries-queued.window="clearSelection()"
+    @download-ready.window="window.location.href = $event.detail.url"
 >
     <input class="sr-only" type="file" multiple x-ref="picker" @change="upload($event.target.files, pickTarget ?? $wire.directory); $event.target.value = ''">
 
@@ -123,7 +125,7 @@
             <button class="btn" type="button" @click="askTransfer('copy', selectedTargets())"><x-menu-icon name="copy" /> Copy to…</button>
             <button class="btn" type="button" @click="askTransfer('move', selectedTargets())"><x-menu-icon name="move" /> Move to…</button>
             @if ($canZip)
-                <button class="btn" type="button" @click="$wire.compressEntries(selected)"><x-menu-icon name="archive" /> Compress</button>
+                <button class="btn" type="button" @click="$wire.compressEntries(selected)" wire:loading.attr="disabled" wire:target="compressEntries"><x-menu-icon name="archive" /> Compress to .zip</button>
             @endif
             <button class="btn btn-danger" type="button" @click="askDelete(selectedTargets())"><x-menu-icon name="trash" /> Delete</button>
         </div>
@@ -137,6 +139,8 @@
         </div>
         <div class="fm-progress-track"><span :style="`width: ${progress}%`"></span></div>
     </div>
+
+    <x-task-tray :tasks="$tasks" :active="$tasksActive" class="fm-tasks" />
 
     @error('uploads') <p class="fm-alert">{{ $message }}</p> @enderror
     @error('uploads.*') <p class="fm-alert">{{ $message }}</p> @enderror
@@ -282,9 +286,9 @@
         </span>
         <span class="hidden md:inline">Right-click an item for more actions · Drag files in to upload · Max 32 MB per file</span>
         @if ($canZip && $listingError === '' && ($website || $directory !== ''))
-            <a class="fm-link" href="{{ $downloadUrl($directory) }}" download>
+            <button class="fm-link" type="button" wire:click="prepareDownload(@js($directory))">
                 <x-menu-icon name="archive" class="size-4" /> Download folder (.zip)
-            </a>
+            </button>
         @endif
     </div>
 
@@ -315,9 +319,12 @@
             <button type="button" role="menuitem" x-show="menu.target.directory" @click="act('upload')">
                 <x-menu-icon name="upload" /> Upload here
             </button>
-            <a role="menuitem" x-show="!menu.target.link && (!menu.target.directory || canZip)" :href="downloadUrl(menu.target.relative)" download @click="menu.open = false">
-                <x-menu-icon name="download" /> <span x-text="menu.target.directory ? 'Download as .zip' : 'Download'"></span>
+            <a role="menuitem" x-show="!menu.target.link && !menu.target.directory" :href="downloadUrl(menu.target.relative)" download @click="menu.open = false">
+                <x-menu-icon name="download" /> Download
             </a>
+            <button type="button" role="menuitem" x-show="!menu.target.link && menu.target.directory && canZip" @click="act('downloadZip')">
+                <x-menu-icon name="download" /> Download as .zip
+            </button>
             <div class="fm-menu-sep"></div>
             <button type="button" role="menuitem" @click="act('rename')"><x-menu-icon name="pencil" /> Rename <kbd>F2</kbd></button>
             <button type="button" role="menuitem" x-show="!menu.target.link" @click="act('duplicate')"><x-menu-icon name="copy" /> Duplicate</button>

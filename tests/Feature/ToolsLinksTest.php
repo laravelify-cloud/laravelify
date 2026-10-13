@@ -85,6 +85,9 @@ class ToolsLinksTest extends TestCase
 
     public function test_phpmyadmin_opens_with_a_one_time_token_and_sets_up_sign_in(): void
     {
+        // The sign-on script runs on its own and reads the real storage folder.
+        $this->app->useStoragePath(base_path('storage'));
+
         $service = ServerService::query()->firstOrCreate(
             ['kind' => 'phpmyadmin'],
             ['name' => 'phpMyAdmin', 'key' => 'phpmyadmin', 'domain' => 'phpmyadmin.internal', 'config' => ServerCatalog::phpMyAdminNginx()],

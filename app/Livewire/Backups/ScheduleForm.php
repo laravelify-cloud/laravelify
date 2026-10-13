@@ -95,6 +95,18 @@ class ScheduleForm extends PanelComponent
         $this->browse = '';
     }
 
+    /**
+     * Open a folder by its path from the root (a row of the picker).
+     */
+    public function openPath(string $relative): void
+    {
+        try {
+            $this->browse = FileArchiver::cleanPath($relative);
+        } catch (Throwable) {
+            $this->browse = '';
+        }
+    }
+
     public function addBrowsedFolder(): void
     {
         $this->addPath($this->browse);
@@ -105,10 +117,57 @@ class ScheduleForm extends PanelComponent
         $this->addPath(trim($this->browse.'/'.$name, '/'));
     }
 
+    /**
+     * Add the picked folders and files to the backup. A path that is skipped stops being skipped.
+     *
+     * @param  list<string>  $relatives
+     */
+    public function includePaths(array $relatives): void
+    {
+        foreach ($relatives as $relative) {
+            $this->addPath((string) $relative);
+            $this->excludes = implode("\n", array_values(array_diff($this->excludeLines(), [trim((string) $relative, '/')])));
+        }
+
+        $this->dispatch('picker-done');
+    }
+
+    /**
+     * Skip the picked folders and files. They are left out even when a parent folder is backed up.
+     *
+     * @param  list<string>  $relatives
+     */
+    public function excludePaths(array $relatives): void
+    {
+        $lines = $this->excludeLines();
+
+        foreach ($relatives as $relative) {
+            try {
+                $path = FileArchiver::cleanPath((string) $relative);
+            } catch (Throwable) {
+                continue;
+            }
+
+            if ($path !== '' && ! in_array($path, $lines, true)) {
+                $lines[] = $path;
+            }
+
+            $this->paths = array_values(array_diff($this->paths, [$path]));
+        }
+
+        $this->excludes = implode("\n", $lines);
+        $this->dispatch('picker-done');
+    }
+
     public function removePath(int $index): void
     {
         unset($this->paths[$index]);
         $this->paths = array_values($this->paths);
+    }
+
+    public function removeExclude(string $pattern): void
+    {
+        $this->excludes = implode("\n", array_values(array_diff($this->excludeLines(), [$pattern])));
     }
 
     public function toggleExclude(string $pattern): void
@@ -243,7 +302,7 @@ class ScheduleForm extends PanelComponent
             if ($isDatabase) {
                 $available = $dumper->databases();
             } else {
-                $folders = $archiver->folders($this->browse);
+                $folders = $archiver->listing($this->browse);
             }
         } catch (Throwable $exception) {
             $pickerError = $exception->getMessage();
@@ -255,7 +314,7 @@ class ScheduleForm extends PanelComponent
             'frequencies' => BackupCron::FREQUENCIES,
             'weekdays' => BackupCron::WEEKDAYS,
             'availableDatabases' => $available,
-            'folders' => $folders,
+            'listing' => $folders,
             'pickerError' => $pickerError,
             'suggestedExcludes' => FileArchiver::SUGGESTED_EXCLUDES,
             'activeExcludes' => $this->excludeLines(),

@@ -5,6 +5,7 @@ use App\Http\Controllers\GithubAppManifestController;
 use App\Http\Controllers\GithubHookController;
 use App\Http\Controllers\HeartbeatController;
 use App\Http\Controllers\MonitoringLiveController;
+use App\Http\Controllers\PanelTaskController;
 use App\Http\Controllers\PhpMyAdminController;
 use App\Http\Controllers\WebsiteFileController;
 use App\Livewire\Auth\Login;
@@ -78,6 +79,7 @@ Route::get('/backups/schedules/{schedule}/edit', BackupScheduleForm::class)->nam
 
 Route::get('/files', FileManager::class)->name('files.index');
 Route::get('/files/download', [WebsiteFileController::class, 'global'])->name('files.download');
+Route::get('/tasks/{panelTask}/download', [PanelTaskController::class, 'download'])->name('tasks.download');
 Route::get('/terminal', ToolsTerminal::class)->name('terminal.index');
 Route::get('/tools/phpmyadmin', PhpMyAdminController::class)->name('tools.phpmyadmin');
 

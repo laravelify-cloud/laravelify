@@ -358,7 +358,7 @@ SQL;
             $this->assertStringNotContainsString('node_modules', $list);
             $this->assertContains('shop/public', $result['entries']);
 
-            $restored = app(FileArchiver::class)->restore($archive, 'shop/public', false);
+            $restored = app(FileArchiver::class)->restore($archive, ['shop/public'], false);
             $this->assertFileExists($restored.'/shop/public/index.php');
             $this->assertFileDoesNotExist($restored.'/shop/node_modules/big.js');
         } finally {

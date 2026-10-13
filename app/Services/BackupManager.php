@@ -23,10 +23,13 @@ class BackupManager
         private DatabaseDumper $databases,
         private FileArchiver $files,
         private Telegram $telegram,
+        private BackupInspector $inspector,
     ) {}
 
     /**
-     * Queue a schedule to run now. Returns false while the same schedule is still running.
+     * Queue a schedule to run now. One run per database (or one for the folders) is listed
+     * right away as waiting, so the page shows it before the queue worker picks it up.
+     * Returns false while the same schedule is still running.
      */
     public function queue(BackupSchedule $schedule, string $trigger = 'manual'): bool
     {
@@ -35,9 +38,47 @@ class BackupManager
         }
 
         $schedule->forceFill(['last_run_at' => now()])->save();
-        RunBackupSchedule::dispatch($schedule->id, $trigger);
+        $runs = $this->prepareRuns($schedule, $trigger);
+
+        if ($runs === []) {
+            $this->notifyNothingToDo($schedule);
+
+            return true;
+        }
+
+        RunBackupSchedule::dispatch($schedule->id, $trigger, array_map(fn (BackupRun $run) => $run->id, $runs));
 
         return true;
+    }
+
+    /**
+     * A waiting run for every target of the schedule.
+     *
+     * @return list<BackupRun>
+     */
+    public function prepareRuns(BackupSchedule $schedule, string $trigger): array
+    {
+        return array_map(fn (array $target) => BackupRun::query()->create([
+            'backup_schedule_id' => $schedule->id,
+            'backup_storage_id' => $schedule->backup_storage_id,
+            'type' => BackupRun::TYPE_BACKUP,
+            'kind' => $schedule->kind,
+            'target' => $target['label'],
+            'status' => BackupRun::QUEUED,
+            'trigger' => $trigger,
+        ]), $this->targets($schedule));
+    }
+
+    /**
+     * Mark the waiting runs of a schedule as cancelled, for when the queue worker is not running.
+     */
+    public function cancelWaiting(BackupSchedule $schedule): int
+    {
+        return $schedule->runs()->where('status', BackupRun::QUEUED)->update([
+            'status' => BackupRun::FAILED,
+            'log' => 'Cancelled before it started.',
+            'finished_at' => now(),
+        ]);
     }
 
     public function isRunning(BackupSchedule $schedule): bool
@@ -49,34 +90,36 @@ class BackupManager
     }
 
     /**
-     * Back up every target of the schedule, one after the other.
+     * Back up every target of the schedule, one after the other. $runIds are the waiting runs
+     * made by queue(); without them, new runs are made here.
      *
+     * @param  list<int>|null  $runIds
      * @return list<BackupRun>
      */
-    public function run(BackupSchedule $schedule, string $trigger): array
+    public function run(BackupSchedule $schedule, string $trigger, ?array $runIds = null): array
     {
-        $storage = $schedule->storage;
-        $runs = [];
+        $waiting = $runIds === null
+            ? $this->prepareRuns($schedule, $trigger)
+            : BackupRun::query()->whereIn('id', $runIds)->where('status', BackupRun::QUEUED)->orderBy('id')->get()->all();
 
-        foreach ($this->targets($schedule) as $target) {
-            $run = BackupRun::query()->create([
-                'backup_schedule_id' => $schedule->id,
-                'backup_storage_id' => $storage?->id,
-                'type' => BackupRun::TYPE_BACKUP,
-                'kind' => $schedule->kind,
-                'target' => $target['label'],
-                'status' => BackupRun::QUEUED,
-                'trigger' => $trigger,
-            ]);
-
-            $runs[] = $this->execute($schedule, $run, $target);
+        if ($waiting === [] && $runIds === null) {
+            $this->notifyNothingToDo($schedule);
         }
 
-        if ($runs === []) {
-            $this->telegram->notify('backup_failed', '⚠️ <b>Backup skipped</b>'."\n".Telegram::escape($schedule->name).': nothing to back up. Choose a database or folder.');
-        }
+        $folders = $schedule->isDatabase() ? null : ($this->targets($schedule)[0] ?? null);
 
-        return $runs;
+        return array_map(fn (BackupRun $run) => $this->execute(
+            $schedule,
+            $run,
+            $schedule->isDatabase()
+                ? ['label' => $run->target, 'database' => $run->target]
+                : ($folders ?? ['label' => $run->target, 'paths' => [], 'excludes' => []]),
+        ), $waiting);
+    }
+
+    private function notifyNothingToDo(BackupSchedule $schedule): void
+    {
+        $this->telegram->notify('backup_failed', '⚠️ <b>Backup skipped</b>'."\n".Telegram::escape($schedule->name).': nothing to back up. Choose a database or folder.');
     }
 
     /**
@@ -154,6 +197,12 @@ class BackupManager
             ])->save();
             $log->line('Done. '.$key);
 
+            try {
+                $this->inspector->remember($run, $file);
+            } catch (Throwable $exception) {
+                $log->line('Saved, but the list of what is inside could not be read: '.$exception->getMessage());
+            }
+
             $this->prune($schedule, $run, $log);
             $this->telegram->notify('backup_succeeded', '💾 <b>Backup finished</b>'."\n".Telegram::escape($schedule->name).' · '.Telegram::escape($target['label']).' · '.$run->sizeLabel());
         } catch (Throwable $exception) {
@@ -207,6 +256,7 @@ class BackupManager
             $this->storage->delete($copy->storage, $copy->object_key);
         }
 
+        $this->inspector->forget($copy);
         $copy->delete();
     }
 
@@ -260,9 +310,9 @@ class BackupManager
                 $log->line($tables === null ? 'Restoring the whole database into '.$database.'...' : 'Restoring '.implode(', ', $tables).' into '.$database.'...');
                 $this->databases->restore($file, $database, $tables);
             } else {
-                $member = ! empty($options['member']) ? (string) $options['member'] : null;
-                $folder = $this->files->restore($file, $member, (bool) ($options['original'] ?? false));
-                $log->line('Restored '.($member ?? 'everything').' into '.$folder.'.');
+                $members = array_values(array_filter(array_map('strval', (array) ($options['members'] ?? (empty($options['member']) ? [] : [$options['member']])))));
+                $folder = $this->files->restore($file, $members, (bool) ($options['original'] ?? false));
+                $log->line('Restored '.($members === [] ? 'everything' : implode(', ', $members)).' into '.$folder.'.');
             }
 
             $restore->forceFill(['status' => BackupRun::SUCCESS, 'finished_at' => now()])->save();

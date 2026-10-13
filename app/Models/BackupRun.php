@@ -87,6 +87,19 @@ class BackupRun extends Model
         return $this->isBackup() && $this->status === self::SUCCESS && filled($this->object_key) && $this->storage !== null;
     }
 
+    public function isActive(): bool
+    {
+        return in_array($this->status, [self::QUEUED, self::RUNNING], true);
+    }
+
+    /**
+     * Still waiting after half a minute: the queue worker is probably not running.
+     */
+    public function isStuck(): bool
+    {
+        return $this->status === self::QUEUED && $this->created_at !== null && $this->created_at->lt(now()->subSeconds(30));
+    }
+
     public function sizeLabel(): string
     {
         return $this->size_bytes === null ? '—' : Number::fileSize($this->size_bytes, precision: 1);

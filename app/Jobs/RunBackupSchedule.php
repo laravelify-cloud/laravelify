@@ -15,14 +15,17 @@ class RunBackupSchedule implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public int $scheduleId, public string $trigger = 'schedule') {}
+    /**
+     * @param  list<int>|null  $runIds  The waiting runs to carry out.
+     */
+    public function __construct(public int $scheduleId, public string $trigger = 'schedule', public ?array $runIds = null) {}
 
     public function handle(BackupManager $backups): void
     {
         $schedule = BackupSchedule::query()->with('storage')->find($this->scheduleId);
 
         if ($schedule) {
-            $backups->run($schedule, $this->trigger);
+            $backups->run($schedule, $this->trigger, $this->runIds);
         }
     }
 }

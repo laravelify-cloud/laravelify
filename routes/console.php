@@ -12,6 +12,9 @@ Artisan::command('inspire', function () {
 Schedule::command('laravelify:monitor')->everyMinute()->withoutOverlapping(10);
 Schedule::command('laravelify:monitor --patches')->dailyAt('06:00')->withoutOverlapping(30);
 
+// Background tasks (zips, backup exports) and their files are removed after a day.
+Schedule::command('laravelify:prune-tasks')->hourly()->withoutOverlapping(10);
+
 // Backups: starts every schedule that is due this minute (Backups in the sidebar).
 Schedule::command('laravelify:run-backups')->everyMinute()->withoutOverlapping(5);
 

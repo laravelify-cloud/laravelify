@@ -3,8 +3,11 @@
 namespace App\Livewire\Websites;
 
 use App\Livewire\PanelComponent;
+use App\Models\PanelTask;
 use App\Models\Website;
 use App\Services\DisplayTime;
+use App\Services\FileOperations;
+use App\Services\PanelTaskRunner;
 use App\Services\SitePaths;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Renderless;
@@ -13,7 +16,6 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 use RuntimeException;
 use Throwable;
-use ZipArchive;
 
 class Files extends PanelComponent
 {
@@ -24,11 +26,6 @@ class Files extends PanelComponent
      * and the content travels both in the snapshot and as the update.
      */
     public const int EDITABLE_LIMIT = 256 * 1024;
-
-    /**
-     * Largest total size an archive may unpack to, in bytes.
-     */
-    public const int EXTRACT_LIMIT = 2 * 1024 * 1024 * 1024;
 
     public const array IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp', 'avif'];
 
@@ -49,6 +46,9 @@ class Files extends PanelComponent
     public string $sortBy = 'name';
 
     public bool $sortDescending = false;
+
+    /** @var list<int> Background tasks whose end was already shown. */
+    public array $announced = [];
 
     public string $folderName = '';
 
@@ -74,6 +74,7 @@ class Files extends PanelComponent
     public function mount(SitePaths $paths, ?Website $website = null): void
     {
         $this->website = $website;
+        $this->announced = PanelTask::query()->where('scope', $this->taskScope())->whereIn('status', [PanelTask::SUCCESS, PanelTask::FAILED])->pluck('id')->all();
         $this->directory = trim(str_replace('\\', '/', $this->directory), '/');
         $this->refreshList();
 
@@ -484,22 +485,20 @@ class Files extends PanelComponent
         }
 
         try {
-            $root = $this->rootPath();
+            $relatives = array_column($selected, 'relative');
 
-            foreach ($selected as $entry) {
-                $full = $paths->locateIn($this->rootPath(), $entry['relative']);
-
-                if ($full === $root) {
-                    throw new RuntimeException('The site folder cannot be deleted.');
-                }
-
-                $this->remove($full, $root, $paths);
-
-                if ($this->openPath === $entry['relative']) {
-                    $this->closeFile();
-                }
+            if (in_array($this->openPath, $relatives, true)) {
+                $this->closeFile();
             }
 
+            if (! $this->operations()->isSmall($this->rootPath(), $relatives)) {
+                $this->startTask('files.delete', 'Deleting '.$this->describe($selected), ['relatives' => $relatives]);
+                $this->dispatch('entry-deleted');
+
+                return;
+            }
+
+            $this->operations()->delete($this->rootPath(), $relatives);
             $this->refreshList();
             $this->dispatch('entry-deleted');
             $this->toast(count($selected) === 1 ? $selected[0]['name'].' deleted.' : count($selected).' items deleted.');
@@ -513,16 +512,20 @@ class Files extends PanelComponent
     {
         try {
             $entry = $this->selectedEntries([$relative])[0] ?? throw new RuntimeException('That file is no longer there.');
-            $source = $paths->locateIn($this->rootPath(), $entry['relative']);
 
-            if (is_link($source)) {
+            if ($entry['link']) {
                 throw new RuntimeException('Links cannot be duplicated.');
             }
 
-            $target = $this->uniquePath(dirname($source), $entry['name'], ! $entry['directory']);
-            $this->copyRecursive($source, $target);
+            if (! $this->operations()->isSmall($this->rootPath(), [$entry['relative']])) {
+                $this->startTask('files.copy', 'Duplicating '.$entry['name'], ['relatives' => [$entry['relative']], 'destination' => $this->directory]);
+
+                return;
+            }
+
+            $this->operations()->copy($this->rootPath(), [$entry['relative']], $this->directory);
             $this->refreshList();
-            $this->toast('Created '.basename($target).'.');
+            $this->toast('Duplicated '.$entry['name'].'.');
         } catch (Throwable $e) {
             $this->toast($e->getMessage(), 'error');
         }
@@ -557,6 +560,25 @@ class Files extends PanelComponent
                 throw new RuntimeException('That folder does not exist.');
             }
 
+            if ($mode === 'copy') {
+                $relatives = array_column($selected, 'relative');
+                $where = $paths->relative($root, $destinationPath);
+
+                if (! $this->operations()->isSmall($root, $relatives)) {
+                    $this->startTask('files.copy', 'Copying '.$this->describe($selected).' to /'.$where, ['relatives' => $relatives, 'destination' => $where]);
+                    $this->dispatch('entries-transferred');
+
+                    return;
+                }
+
+                $done = $this->operations()->copy($root, $relatives, $where);
+                $this->refreshList();
+                $this->dispatch('entries-transferred');
+                $this->toast(($done === 1 ? '1 item' : $done.' items').' copied to /'.$where.'.');
+
+                return;
+            }
+
             foreach ($selected as $entry) {
                 $source = $paths->locateIn($this->rootPath(), $entry['relative']);
 
@@ -570,32 +592,20 @@ class Files extends PanelComponent
 
                 $target = $destinationPath.DIRECTORY_SEPARATOR.$entry['name'];
 
-                if ($mode === 'move') {
-                    if (dirname($source) === $destinationPath) {
-                        continue;
-                    }
+                if (dirname($source) === $destinationPath) {
+                    continue;
+                }
 
-                    if (file_exists($target) || is_link($target)) {
-                        throw new RuntimeException($entry['name'].' already exists there.');
-                    }
+                if (file_exists($target) || is_link($target)) {
+                    throw new RuntimeException($entry['name'].' already exists there.');
+                }
 
-                    if (! rename($source, $target)) {
-                        throw new RuntimeException('Could not move '.$entry['name'].'.');
-                    }
+                if (! rename($source, $target)) {
+                    throw new RuntimeException('Could not move '.$entry['name'].'.');
+                }
 
-                    if ($this->openPath === $entry['relative']) {
-                        $this->closeFile();
-                    }
-                } else {
-                    if (is_link($source)) {
-                        throw new RuntimeException('Links cannot be copied.');
-                    }
-
-                    if (file_exists($target) || is_link($target)) {
-                        $target = $this->uniquePath($destinationPath, $entry['name'], ! $entry['directory']);
-                    }
-
-                    $this->copyRecursive($source, $target);
+                if ($this->openPath === $entry['relative']) {
+                    $this->closeFile();
                 }
 
                 $done++;
@@ -604,7 +614,7 @@ class Files extends PanelComponent
             $where = $paths->relative($root, $destinationPath);
             $this->refreshList();
             $this->dispatch('entries-transferred');
-            $this->toast(($done === 1 ? '1 item' : $done.' items').' '.($mode === 'move' ? 'moved' : 'copied').' to /'.$where.'.');
+            $this->toast($done === 0 ? 'Already in /'.$where.'.' : ($done === 1 ? '1 item' : $done.' items').' moved to /'.$where.'.');
         } catch (Throwable $e) {
             $this->refreshList();
             $this->toast($e->getMessage(), 'error');
@@ -639,14 +649,14 @@ class Files extends PanelComponent
     }
 
     /**
-     * Zip entries of the current folder into an archive next to them.
+     * Zip entries of the current folder into an archive next to them, in the background.
      *
      * @param  list<string>  $relatives
      */
-    public function compressEntries(array $relatives, SitePaths $paths): void
+    public function compressEntries(array $relatives): void
     {
         try {
-            if (! class_exists(ZipArchive::class)) {
+            if (! FileOperations::canZip()) {
                 throw new RuntimeException('The PHP zip extension is not installed.');
             }
 
@@ -656,91 +666,99 @@ class Files extends PanelComponent
                 throw new RuntimeException('Choose something to compress.');
             }
 
-            $dir = $paths->resolveIn($this->rootPath(), $this->directory);
-            $name = count($selected) === 1 ? $selected[0]['name'].'.zip' : 'archive.zip';
-            $target = $this->uniquePath($dir, $name, true);
-            $zip = new ZipArchive;
-
-            if ($zip->open($target, ZipArchive::CREATE | ZipArchive::EXCL) !== true) {
-                throw new RuntimeException('Could not create the archive.');
-            }
-
-            foreach ($selected as $entry) {
-                $full = $paths->locateIn($this->rootPath(), $entry['relative']);
-
-                if (is_link($full)) {
-                    continue;
-                }
-
-                is_dir($full) ? $this->zipDirectory($zip, $full, $entry['name']) : $zip->addFile($full, $entry['name']);
-            }
-
-            if ($zip->numFiles === 0) {
-                $zip->addEmptyDir(pathinfo($name, PATHINFO_FILENAME));
-            }
-
-            $zip->close();
-            @chmod($target, 0644);
-            $this->refreshList();
-            $this->toast('Created '.basename($target).'.');
+            $this->startTask('files.compress', 'Compressing '.$this->describe($selected), ['relatives' => array_column($selected, 'relative'), 'directory' => $this->directory]);
+            $this->dispatch('entries-queued');
         } catch (Throwable $e) {
             $this->toast($e->getMessage(), 'error');
         }
     }
 
-    public function extractEntry(string $relative, SitePaths $paths): void
+    public function extractEntry(string $relative): void
     {
         try {
-            if (! class_exists(ZipArchive::class)) {
-                throw new RuntimeException('The PHP zip extension is not installed.');
-            }
-
             $entry = $this->selectedEntries([$relative])[0] ?? throw new RuntimeException('That file is no longer there.');
-            $full = $paths->locateIn($this->rootPath(), $entry['relative']);
 
-            if (is_link($full) || ! is_file($full) || $entry['extension'] !== 'zip') {
+            if ($entry['link'] || $entry['directory'] || $entry['extension'] !== 'zip') {
                 throw new RuntimeException('Only .zip archives can be extracted.');
             }
 
-            $zip = new ZipArchive;
-
-            if ($zip->open($full, ZipArchive::RDONLY) !== true) {
-                throw new RuntimeException('That archive cannot be read.');
-            }
-
-            $total = 0;
-
-            for ($i = 0; $i < $zip->numFiles; $i++) {
-                $name = str_replace('\\', '/', (string) $zip->getNameIndex($i));
-                $stat = $zip->statIndex($i);
-                $total += is_array($stat) ? (int) $stat['size'] : 0;
-
-                if ($name === '' || str_starts_with($name, '/') || str_contains($name, "\0") || preg_match('/^[A-Za-z]:/', $name) === 1 || in_array('..', explode('/', $name), true)) {
-                    $zip->close();
-
-                    throw new RuntimeException('That archive contains unsafe paths and was not extracted.');
-                }
-            }
-
-            if ($total > self::EXTRACT_LIMIT) {
-                $zip->close();
-
-                throw new RuntimeException('That archive is larger than 2 GB when extracted.');
-            }
-
-            $target = $this->uniquePath(dirname($full), pathinfo($entry['name'], PATHINFO_FILENAME), false);
-
-            if (! mkdir($target, 0755) || ! $zip->extractTo($target)) {
-                $zip->close();
-
-                throw new RuntimeException('Could not extract that archive.');
-            }
-
-            $zip->close();
-            $this->refreshList();
-            $this->toast('Extracted to '.basename($target).'.');
+            $this->startTask('files.extract', 'Extracting '.$entry['name'], ['relatives' => [$entry['relative']]]);
         } catch (Throwable $e) {
             $this->toast($e->getMessage(), 'error');
+        }
+    }
+
+    /**
+     * Zip a folder in the background; the browser downloads it when it is ready.
+     */
+    public function prepareDownload(string $relative): void
+    {
+        try {
+            if (! FileOperations::canZip()) {
+                throw new RuntimeException('The PHP zip extension is not installed.');
+            }
+
+            $relative = trim(str_replace('\\', '/', $relative), '/');
+
+            if ($relative === '' && $this->website === null) {
+                throw new RuntimeException('Open a folder to download it. The whole root is not zipped.');
+            }
+
+            $full = app(SitePaths::class)->locateIn($this->rootPath(), $relative);
+
+            if (is_link($full) || ! is_dir($full)) {
+                throw new RuntimeException('That folder does not exist.');
+            }
+
+            $this->startTask('files.download', 'Preparing '.(basename($full) ?: 'folder').'.zip', ['relatives' => [$relative]], 'Zipping '.(basename($full) ?: 'the folder').'. The download starts when it is ready.');
+        } catch (Throwable $e) {
+            $this->toast($e->getMessage(), 'error');
+        }
+    }
+
+    /**
+     * Called while background tasks run: tell about the ones that finished since the last call.
+     */
+    public function pollTasks(): void
+    {
+        $finished = PanelTask::query()
+            ->where('scope', $this->taskScope())
+            ->whereIn('status', [PanelTask::SUCCESS, PanelTask::FAILED])
+            ->whereNotIn('id', $this->announced ?: [0])
+            ->where('updated_at', '>', now()->subHour())
+            ->get();
+
+        foreach ($finished as $task) {
+            $this->announced[] = $task->id;
+
+            if ($task->status === PanelTask::FAILED) {
+                $this->toast($task->label.' failed: '.$task->message, 'error');
+
+                continue;
+            }
+
+            if ($task->kind === 'files.download') {
+                $this->dispatch('download-ready', url: route('tasks.download', $task));
+            }
+
+            $this->toast((string) ($task->message ?: $task->label.' finished.'));
+        }
+
+        if ($finished->isNotEmpty()) {
+            $this->refreshList();
+        }
+    }
+
+    public function dismissTask(int $id): void
+    {
+        $task = PanelTask::query()->where('scope', $this->taskScope())->find($id);
+
+        if ($task && ! $task->isActive()) {
+            if ($file = $task->resultFile()) {
+                @unlink($file);
+            }
+
+            $task->delete();
         }
     }
 
@@ -793,7 +811,9 @@ class Files extends PanelComponent
             'crumbs' => $crumbs,
             'folderCount' => $folders,
             'fileCount' => count($this->entries) - $folders,
-            'canZip' => class_exists(ZipArchive::class),
+            'canZip' => FileOperations::canZip(),
+            'tasks' => $tasks = PanelTask::query()->where('scope', $this->taskScope())->where('updated_at', '>', now()->subHours(6))->latest('id')->limit(5)->get(),
+            'tasksActive' => $tasks->contains(fn (PanelTask $task) => $task->isActive()),
             'downloadBase' => $this->website
                 ? route('websites.files.download', $this->website, false)
                 : route('files.download', [], false),
@@ -817,6 +837,45 @@ class Files extends PanelComponent
     }
 
     /**
+     * Start a background task for this file manager and say so.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function startTask(string $kind, string $label, array $payload, ?string $toast = null): void
+    {
+        $task = app(PanelTaskRunner::class)->start($kind, $this->taskScope(), $label, $payload);
+
+        if ($task->isFinished()) {
+            // The sync queue (tests, or a server without a worker) already ran it.
+            $this->pollTasks();
+
+            return;
+        }
+
+        $this->toast($toast ?? $label.'. This runs in the background; keep working.');
+    }
+
+    private function taskScope(): string
+    {
+        return $this->website ? 'files:website:'.$this->website->id : 'files:global';
+    }
+
+    private function operations(): FileOperations
+    {
+        return app(FileOperations::class);
+    }
+
+    /**
+     * "app.css" for one entry, "3 items" for more.
+     *
+     * @param  list<array<string, mixed>>  $selected
+     */
+    private function describe(array $selected): string
+    {
+        return count($selected) === 1 ? (string) $selected[0]['name'] : count($selected).' items';
+    }
+
+    /**
      * The folder every path is relative to: the site's deploy folder, or the global root.
      */
     private function rootPath(): string
@@ -837,74 +896,6 @@ class Files extends PanelComponent
         $wanted = array_map('strval', $relatives);
 
         return array_values(array_filter($this->entries, fn (array $entry): bool => in_array($entry['relative'], $wanted, true)));
-    }
-
-    /**
-     * A free path in the folder, adding " copy", " copy 2"... before the extension.
-     */
-    private function uniquePath(string $dir, string $name, bool $keepExtension): string
-    {
-        $candidate = $dir.DIRECTORY_SEPARATOR.$name;
-
-        if (! file_exists($candidate) && ! is_link($candidate)) {
-            return $candidate;
-        }
-
-        $extension = $keepExtension ? pathinfo($name, PATHINFO_EXTENSION) : '';
-        $base = $extension !== '' ? substr($name, 0, -strlen($extension) - 1) : $name;
-        $suffix = $extension !== '' ? '.'.$extension : '';
-
-        for ($i = 1; $i < 1000; $i++) {
-            $candidate = $dir.DIRECTORY_SEPARATOR.$base.($i === 1 ? ' copy' : ' copy '.$i).$suffix;
-
-            if (! file_exists($candidate) && ! is_link($candidate)) {
-                return $candidate;
-            }
-        }
-
-        throw new RuntimeException('Could not find a free name.');
-    }
-
-    private function copyRecursive(string $source, string $target): void
-    {
-        if (is_link($source)) {
-            return;
-        }
-
-        if (is_file($source)) {
-            if (! copy($source, $target)) {
-                throw new RuntimeException('Could not copy '.basename($source).'.');
-            }
-
-            @chmod($target, @fileperms($source) & 0777);
-
-            return;
-        }
-
-        if (! mkdir($target, @fileperms($source) & 0777 ?: 0755)) {
-            throw new RuntimeException('Could not create '.basename($target).'.');
-        }
-
-        foreach (scandir($source) ?: [] as $name) {
-            if ($name !== '.' && $name !== '..') {
-                $this->copyRecursive($source.DIRECTORY_SEPARATOR.$name, $target.DIRECTORY_SEPARATOR.$name);
-            }
-        }
-    }
-
-    private function zipDirectory(ZipArchive $zip, string $directory, string $base): void
-    {
-        $zip->addEmptyDir($base);
-
-        foreach (scandir($directory) ?: [] as $name) {
-            $full = $directory.DIRECTORY_SEPARATOR.$name;
-
-            if ($name === '.' || $name === '..' || is_link($full)) {
-                continue;
-            }
-
-            is_dir($full) ? $this->zipDirectory($zip, $full, $base.'/'.$name) : $zip->addFile($full, $base.'/'.$name);
-        }
     }
 
     /**
@@ -950,59 +941,6 @@ class Files extends PanelComponent
         }
 
         return $target;
-    }
-
-    private function remove(string $full, string $root, SitePaths $paths): void
-    {
-        if (is_link($full)) {
-            $parent = realpath(dirname($full));
-
-            if ($parent === false || ! $paths->inside($root, $parent)) {
-                throw new RuntimeException('That path is outside the site folder.');
-            }
-
-            if (! unlink($full)) {
-                throw new RuntimeException('Could not delete that link.');
-            }
-
-            return;
-        }
-
-        $resolved = realpath($full);
-
-        if ($resolved === false || ! $paths->inside($root, $resolved) || $resolved === $root) {
-            throw new RuntimeException('That path is outside the site folder.');
-        }
-
-        if (is_file($resolved)) {
-            if (! unlink($resolved)) {
-                throw new RuntimeException('Could not delete that file.');
-            }
-
-            return;
-        }
-
-        if (! is_dir($resolved)) {
-            throw new RuntimeException('That path cannot be deleted.');
-        }
-
-        $items = scandir($resolved);
-
-        if ($items === false) {
-            throw new RuntimeException('Could not read that folder.');
-        }
-
-        foreach ($items as $name) {
-            if ($name === '.' || $name === '..') {
-                continue;
-            }
-
-            $this->remove($resolved.DIRECTORY_SEPARATOR.$name, $root, $paths);
-        }
-
-        if (! rmdir($resolved)) {
-            throw new RuntimeException('Could not delete that folder.');
-        }
     }
 
     private function writeUpload(string $dir, TemporaryUploadedFile $upload): void

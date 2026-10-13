@@ -11,6 +11,7 @@
     $label = match ($status) {
         'success' => 'Finished',
         'running' => 'In progress',
+        'queued' => 'Waiting',
         default => ucfirst($status),
     };
 @endphp

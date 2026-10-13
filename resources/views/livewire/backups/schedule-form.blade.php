@@ -36,7 +36,7 @@
             </label>
         </x-layer-card>
 
-        <x-layer-card title="{{ $isDatabase ? 'Databases' : 'Folders' }}" helper="{{ $isDatabase ? 'Pick the databases this schedule backs up. Make another schedule for a different frequency.' : 'Folders are inside '.$rootLabel.'. Browse and add as many as you like.' }}">
+        <x-layer-card title="{{ $isDatabase ? 'Databases' : 'Folders' }}" helper="{{ $isDatabase ? 'Pick the databases this schedule backs up. Make another schedule for a different frequency.' : 'Tick folders and files in '.$rootLabel.' and add them to the backup, or skip ones you do not need.' }}">
             @if ($isDatabase)
                 <label class="mb-3 flex items-center gap-2">
                     <input type="checkbox" wire:model.live="all_databases">
@@ -61,7 +61,7 @@
                         <p class="text-muted">No databases found. You can type a name below.</p>
                     @endif
 
-                    @php($extras = array_values(array_diff($databases, $availableDatabases)))
+                    @php $extras = array_values(array_diff($databases, $availableDatabases)); @endphp
                     @if ($extras !== [])
                         <div class="mt-3 flex flex-wrap gap-2">
                             @foreach ($extras as $extra)
@@ -81,65 +81,176 @@
                 @endunless
                 @error('databases') <small class="error mt-2 block">{{ $message }}</small> @enderror
             @else
-                <div class="flex flex-wrap items-center gap-1.5 text-[13px]">
-                    <button class="btn" type="button" wire:click="openRoot"><x-menu-icon name="home" /> {{ $rootLabel }}</button>
-                    @if ($browse !== '')
-                        <button class="btn" type="button" wire:click="openParent"><x-menu-icon name="up" /> Up</button>
-                        <span class="font-mono text-muted">/{{ $browse }}</span>
-                        <button class="btn btn-primary ml-auto" type="button" wire:click="addBrowsedFolder"><x-menu-icon name="plus" /> Add this folder</button>
-                    @else
-                        <button class="btn ml-auto" type="button" wire:click="addBrowsedFolder"><x-menu-icon name="plus" /> Add everything in {{ $rootLabel }}</button>
-                    @endif
-                </div>
+                @php
+                    $excludeList = $activeExcludes;
+                    $crumbs = [];
+                    $prefix = '';
+                    foreach ($browse === '' ? [] : explode('/', $browse) as $part) {
+                        $prefix = ltrim($prefix.'/'.$part, '/');
+                        $crumbs[] = ['label' => $part, 'path' => $prefix];
+                    }
+                    $included = function (string $path) use ($paths) {
+                        foreach ($paths as $chosen) {
+                            if ($chosen === '' || $path === $chosen || str_starts_with($path, $chosen.'/')) {
+                                return true;
+                            }
+                        }
 
-                @if ($pickerError)
-                    <p class="error mt-3">{{ $pickerError }}</p>
-                @else
-                    <ul class="mt-3 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-                        @forelse ($folders as $folder)
-                            <li class="flex items-center gap-1 rounded-lg border border-line" wire:key="folder-{{ $browse }}-{{ $folder }}">
-                                <button class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left hover:text-accent" type="button" wire:click="openFolder(@js($folder))">
-                                    <x-menu-icon name="groups" class="size-4 shrink-0 text-muted" />
-                                    <span class="truncate">{{ $folder }}</span>
-                                </button>
-                                <button class="icon-btn" type="button" title="Add {{ $folder }}" wire:click="addFolder(@js($folder))"><x-menu-icon name="plus" class="size-4" /></button>
-                            </li>
-                        @empty
-                            <li class="text-muted">No subfolders here.</li>
-                        @endforelse
-                    </ul>
-                @endif
+                        return false;
+                    };
+                @endphp
 
-                <div class="mt-5 border-t border-line pt-4">
-                    <p class="mb-2 font-medium">Selected folders</p>
-                    @if ($paths === [])
-                        <p class="text-muted">None yet. Add at least one.</p>
+                <div
+                    class="card fm overflow-hidden"
+                    x-data="{
+                        selected: [],
+                        query: '',
+                        rows: @js(array_column($listing, 'relative')),
+                        names: @js(array_combine(array_column($listing, 'relative'), array_column($listing, 'name')) ?: (object) []),
+                        matches(name) { return this.query.trim() === '' || name.toLowerCase().includes(this.query.trim().toLowerCase()); },
+                        visible() { return this.rows.filter((path) => this.matches(this.names[path] ?? path)); },
+                        toggle(path) { this.selected = this.selected.includes(path) ? this.selected.filter((item) => item !== path) : this.selected.concat([path]); },
+                        allSelected() { const visible = this.visible(); return visible.length > 0 && visible.every((path) => this.selected.includes(path)); },
+                        toggleAll() { this.selected = this.allSelected() ? [] : this.visible(); },
+                    }"
+                    @picker-done.window="selected = []"
+                    wire:key="picker-{{ md5($browse) }}"
+                >
+                    <div class="fm-toolbar">
+                        <div class="fm-nav">
+                            <button class="icon-btn" type="button" wire:click="openParent" title="Up one folder" aria-label="Up one folder" @disabled($browse === '')><x-menu-icon name="up" /></button>
+                            <nav class="fm-crumbs" aria-label="Current folder">
+                                <button type="button" class="fm-crumb" wire:click="openRoot"><x-menu-icon name="home" class="size-4" /> <span>{{ basename($rootLabel) ?: '/' }}</span></button>
+                                @foreach ($crumbs as $crumb)
+                                    <x-menu-icon name="chevron-right" class="size-3.5 shrink-0 text-muted" />
+                                    <button type="button" class="fm-crumb" wire:click="openPath(@js($crumb['path']))">{{ $crumb['label'] }}</button>
+                                @endforeach
+                            </nav>
+                        </div>
+                        <div class="fm-tools">
+                            <label class="fm-search">
+                                <x-menu-icon name="search" class="size-4" />
+                                <input type="search" x-model="query" placeholder="Filter this folder" autocomplete="off">
+                            </label>
+                            <button class="btn btn-sm" type="button" wire:click="addBrowsedFolder" title="Back up the folder you are in">
+                                <x-menu-icon name="plus" /> {{ $browse === '' ? 'Back up everything' : 'Back up this folder' }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="fm-selection" x-cloak x-show="selected.length > 0">
+                        <div class="flex items-center gap-2">
+                            <button class="icon-btn" type="button" @click="selected = []" aria-label="Clear selection"><x-menu-icon name="close" class="size-4" /></button>
+                            <span class="font-medium"><span x-text="selected.length"></span> selected</span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <button class="btn btn-sm btn-primary" type="button" @click="$wire.includePaths(selected)"><x-menu-icon name="plus" /> Add to backup</button>
+                            <button class="btn btn-sm" type="button" @click="$wire.excludePaths(selected)"><x-menu-icon name="ban" /> Skip</button>
+                        </div>
+                    </div>
+
+                    @if ($pickerError)
+                        <p class="fm-alert">{{ $pickerError }}</p>
+                    @elseif ($listing === [])
+                        <p class="px-4 py-8 text-center text-muted">This folder is empty.</p>
                     @else
-                        <div class="flex flex-wrap gap-2">
-                            @foreach ($paths as $index => $path)
-                                <span class="pill gap-1 font-mono" wire:key="path-{{ $index }}-{{ $path }}">
-                                    {{ $path === '' ? $rootLabel : $path }}
-                                    <button type="button" class="opacity-70 hover:opacity-100" wire:click="removePath({{ $index }})" aria-label="Remove"><x-menu-icon name="close" class="size-3.5" /></button>
+                        <div class="fm-table" role="table" style="max-height: 30rem; overflow-y: auto">
+                            <div class="fm-row fm-row-head" role="row">
+                                <span class="fm-check" role="columnheader">
+                                    <input type="checkbox" aria-label="Select all" :checked="allSelected()" :indeterminate="selected.length > 0 && ! allSelected()" @change="toggleAll()">
                                 </span>
+                                <span role="columnheader">Name</span>
+                                <span role="columnheader" class="fm-col-size">Size</span>
+                                <span role="columnheader" class="fm-col-date">Modified</span>
+                                <span role="columnheader" class="fm-col-perm">In backup</span>
+                                <span role="columnheader" class="sr-only">Actions</span>
+                            </div>
+                            @foreach ($listing as $row)
+                                @php $isSkipped = \App\Services\FileArchiver::excluded($row['relative'], $excludeList); @endphp
+                                @php $isIncluded = ! $isSkipped && $included($row['relative']); @endphp
+                                <div class="fm-row" role="row" wire:key="pk-{{ $row['relative'] }}" x-show="matches(@js($row['name']))" :class="{ 'is-selected': selected.includes(@js($row['relative'])) }">
+                                    <span class="fm-check" role="cell">
+                                        <input type="checkbox" aria-label="Select {{ $row['name'] }}" :checked="selected.includes(@js($row['relative']))" @change="toggle(@js($row['relative']))">
+                                    </span>
+                                    <button type="button" class="fm-name-cell" role="cell" @if ($row['dir']) wire:click="openPath(@js($row['relative']))" @else @click="toggle(@js($row['relative']))" @endif>
+                                        @include('livewire.websites.partials.file-icon', ['kind' => $row['dir'] ? 'folder' : 'file'])
+                                        <span class="fm-name">{{ $row['name'] }}</span>
+                                        @if ($row['link'])
+                                            <span class="pill">link</span>
+                                        @endif
+                                    </button>
+                                    <span role="cell" class="fm-col-size">{{ $row['dir'] ? '—' : \Illuminate\Support\Number::fileSize($row['size'], precision: 1) }}</span>
+                                    <span role="cell" class="fm-col-date">{{ $row['modified'] ? app(\App\Services\DisplayTime::class)->datetime($row['modified']) : '' }}</span>
+                                    <span role="cell" class="fm-col-perm">
+                                        @if ($isSkipped)
+                                            <span class="badge-exclude">Skipped</span>
+                                        @elseif ($isIncluded)
+                                            <span class="badge-include">Included</span>
+                                        @else
+                                            <span class="text-muted">—</span>
+                                        @endif
+                                    </span>
+                                    <span role="cell" class="fm-row-actions">
+                                        @if ($isSkipped)
+                                            <button class="icon-btn" type="button" title="Stop skipping" aria-label="Stop skipping {{ $row['name'] }}" wire:click="includePaths(@js([$row['relative']]))"><x-menu-icon name="refresh" class="size-4" /></button>
+                                        @elseif (! $isIncluded)
+                                            <button class="icon-btn" type="button" title="Add to backup" aria-label="Add {{ $row['name'] }} to the backup" wire:click="includePaths(@js([$row['relative']]))"><x-menu-icon name="plus" class="size-4" /></button>
+                                        @endif
+                                        @unless ($isSkipped)
+                                            <button class="icon-btn icon-btn-danger" type="button" title="Skip" aria-label="Skip {{ $row['name'] }}" wire:click="excludePaths(@js([$row['relative']]))"><x-menu-icon name="ban" class="size-4" /></button>
+                                        @endunless
+                                    </span>
+                                </div>
                             @endforeach
                         </div>
                     @endif
-                    @error('paths') <small class="error mt-2 block">{{ $message }}</small> @enderror
                 </div>
 
-                <div class="mt-5 border-t border-line pt-4">
-                    <p class="mb-1 font-medium">Do not back up</p>
-                    <p class="mb-2 text-[12.5px] text-muted">One pattern per line, like <code>node_modules</code> or <code>storage/logs</code>. A name matches in every folder.</p>
-                    <div class="mb-3 flex flex-wrap gap-1.5">
-                        @foreach ($suggestedExcludes as $pattern)
-                            <button type="button" class="pill {{ in_array($pattern, $activeExcludes, true) ? '' : 'opacity-60' }}" wire:click="toggleExclude(@js($pattern))">
-                                <x-menu-icon name="{{ in_array($pattern, $activeExcludes, true) ? 'check' : 'plus' }}" class="size-3.5" /> {{ $pattern }}
-                            </button>
-                        @endforeach
+                <div class="mt-5 grid gap-5 lg:grid-cols-2">
+                    <div>
+                        <p class="mb-2 font-medium">Backed up <span class="text-muted">({{ count($paths) }})</span></p>
+                        @if ($paths === [])
+                            <p class="text-[13px] text-muted">Nothing yet. Tick folders or files above and press Add to backup.</p>
+                        @else
+                            <div class="flex flex-wrap gap-2">
+                                @foreach ($paths as $index => $path)
+                                    <span class="pill gap-1 font-mono" wire:key="path-{{ $index }}-{{ $path }}">
+                                        <x-menu-icon name="{{ $path === '' ? 'home' : 'groups' }}" class="size-3.5" /> {{ $path === '' ? basename($rootLabel).' (everything)' : $path }}
+                                        <button type="button" class="opacity-70 hover:opacity-100" wire:click="removePath({{ $index }})" aria-label="Remove {{ $path }}"><x-menu-icon name="close" class="size-3.5" /></button>
+                                    </span>
+                                @endforeach
+                            </div>
+                        @endif
+                        @error('paths') <small class="error mt-2 block">{{ $message }}</small> @enderror
                     </div>
-                    <textarea class="textarea font-mono" style="min-height: 96px" wire:model.live.debounce.500ms="excludes" placeholder="node_modules&#10;storage/logs"></textarea>
-                    @error('excludes') <small class="error">{{ $message }}</small> @enderror
+
+                    <div>
+                        <p class="mb-2 font-medium">Skipped <span class="text-muted">({{ count($activeExcludes) }})</span></p>
+                        @if ($activeExcludes !== [])
+                            <div class="mb-3 flex flex-wrap gap-2">
+                                @foreach ($activeExcludes as $pattern)
+                                    <span class="pill gap-1 font-mono" wire:key="ex-{{ $pattern }}">
+                                        <x-menu-icon name="ban" class="size-3.5" /> {{ $pattern }}
+                                        <button type="button" class="opacity-70 hover:opacity-100" wire:click="removeExclude(@js($pattern))" aria-label="Stop skipping {{ $pattern }}"><x-menu-icon name="close" class="size-3.5" /></button>
+                                    </span>
+                                @endforeach
+                            </div>
+                        @endif
+                        <p class="mb-1.5 text-[12.5px] text-muted">Common ones (a name is skipped in every folder):</p>
+                        <div class="flex flex-wrap gap-1.5">
+                            @foreach (array_diff($suggestedExcludes, $activeExcludes) as $pattern)
+                                <button type="button" class="pill opacity-70 hover:opacity-100" wire:click="toggleExclude(@js($pattern))"><x-menu-icon name="plus" class="size-3.5" /> {{ $pattern }}</button>
+                            @endforeach
+                        </div>
+                    </div>
                 </div>
+
+                <details class="mt-4">
+                    <summary class="cursor-pointer text-[13px] text-muted">Edit skip patterns as text</summary>
+                    <textarea class="textarea mt-2 font-mono" style="min-height: 96px" wire:model.live.debounce.500ms="excludes" placeholder="node_modules&#10;storage/logs&#10;*.log"></textarea>
+                    <small class="text-muted">One per line. A name (node_modules) is skipped in every folder; a path (shop/storage/logs) only there. * and ? work.</small>
+                    @error('excludes') <small class="error block">{{ $message }}</small> @enderror
+                </details>
             @endif
         </x-layer-card>
 
