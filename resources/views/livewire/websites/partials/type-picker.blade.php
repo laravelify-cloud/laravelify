@@ -1,46 +1,61 @@
-{{-- Pick what to deploy: Backend, Frontend, or Full-stack. Backend is split into PHP and TypeScript / JavaScript. --}}
+{{-- Pick what to deploy. Tabs for Backend / Frontend / Full-stack, a search box, and pins kept in this browser. --}}
 @php
     use App\Support\SiteTypes;
 
-    $stacks = collect(SiteTypes::stacks());
+    $cards = [];
+
+    foreach (SiteTypes::all() as $key => $item) {
+        $cards[] = ['key' => $key, 'stack' => '', 'item' => $item, 'group' => $item['group']];
+    }
+
+    foreach (SiteTypes::stacks() as $stackKey => $item) {
+        $cards[] = ['key' => $item['type'], 'stack' => $stackKey, 'item' => $item, 'group' => $item['group']];
+    }
+
+    $selectedGroup = SiteTypes::stacks()[$stack]['group'] ?? SiteTypes::all()[$type]['group'] ?? array_key_first($groups);
 @endphp
 
-<div class="flex flex-col gap-6">
-    @foreach ($groups as $groupKey => $group)
-        <section class="flex flex-col gap-3" aria-labelledby="type-group-{{ $groupKey }}">
-            <div>
-                <h3 class="text-[13px] font-semibold tracking-wide uppercase" id="type-group-{{ $groupKey }}">{{ $group['label'] }}</h3>
-                <p class="text-[12.5px] text-muted">{{ $group['blurb'] }}</p>
-            </div>
-
-            @foreach (SiteTypes::inGroup($groupKey) as $subgroup => $types)
-                <div class="flex flex-col gap-2">
-                    @if ($subgroup !== '')
-                        <p class="text-[12px] font-medium text-muted">{{ $subgroup }}</p>
-                    @endif
-                    <div class="type-grid">
-                        @foreach ($types as $key => $item)
-                            @include('livewire.websites.partials.type-card', ['key' => $key, 'item' => $item, 'stack' => '', 'selected' => $type === $key && $stack === ''])
-                        @endforeach
-                    </div>
-                </div>
+<div
+    class="flex flex-col gap-3"
+    x-data="{
+        tab: @js($selectedGroup),
+        query: '',
+        pins: [],
+        init() {
+            try { this.pins = JSON.parse(localStorage.getItem('laravelify.pinned-types') || '[]'); } catch (e) { this.pins = []; }
+        },
+        isPinned(id) { return this.pins.includes(id); },
+        togglePin(id) {
+            this.pins = this.isPinned(id) ? this.pins.filter((pin) => pin !== id) : [...this.pins, id];
+            try { localStorage.setItem('laravelify.pinned-types', JSON.stringify(this.pins)); } catch (e) {}
+        },
+        shows(group, text) {
+            const term = this.query.trim().toLowerCase();
+            return term === '' ? group === this.tab : text.includes(term);
+        },
+    }"
+>
+    <div class="flex flex-wrap items-center gap-2">
+        <div class="segmented" role="group" aria-label="Type of site">
+            @foreach ($groups as $groupKey => $group)
+                <button type="button" :aria-pressed="query.trim() === '' && tab === '{{ $groupKey }}'" x-on:click="tab = '{{ $groupKey }}'; query = ''">{{ $group['label'] }}</button>
             @endforeach
-
-            @if ($groupKey === 'fullstack')
-                <div class="type-grid">
-                    @foreach ($stacks as $stackKey => $item)
-                        @include('livewire.websites.partials.type-card', ['key' => $item['type'], 'item' => $item, 'stack' => $stackKey, 'selected' => $type === $item['type'] && $stack === $stackKey])
-                    @endforeach
-                </div>
-            @endif
-        </section>
-    @endforeach
-
-    <div class="callout" role="note">
-        <x-menu-icon name="link" class="size-4 shrink-0 text-muted" />
-        <p class="min-w-0 flex-1 text-[12.5px] text-muted">
-            <span class="font-medium text-ink">Backend and frontend as separate sites?</span>
-            Create each as its own website in the same group: for example <b>Next.js</b> + <b>Express</b> or <b>NestJS</b> (the full-JavaScript stack), or <b>Vue.js</b> / <b>React</b> + <b>Laravel</b>. Point the frontend at the API's domain.
-        </p>
+        </div>
+        <input class="input min-w-40 flex-1" type="search" x-model="query" placeholder="Search frameworks" aria-label="Search frameworks">
     </div>
+
+    <div class="type-grid">
+        @foreach ($cards as $card)
+            @include('livewire.websites.partials.type-card', [
+                'key' => $card['key'],
+                'item' => $card['item'],
+                'stack' => $card['stack'],
+                'group' => $card['group'],
+                'pinId' => $card['stack'] !== '' ? $card['key'].':'.$card['stack'] : $card['key'],
+                'selected' => $type === $card['key'] && $stack === $card['stack'],
+            ])
+        @endforeach
+    </div>
+
+    <p class="text-[12.5px] text-muted">Backend and frontend as separate sites? Create each as its own website and point the frontend at the API's domain.</p>
 </div>

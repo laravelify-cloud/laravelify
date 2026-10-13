@@ -92,19 +92,25 @@
         @error('type') <small class="error">{{ $message }}</small> @enderror
     </div>
 
-    <label class="field">
-        <span>Domain</span>
-        <input class="input" wire:model="domain" placeholder="optional, for example api.example.com">
-        <small class="text-muted">Leave this empty to open the site on a port. A domain is only required when you select a Cloudflare tunnel.</small>
-        @error('domain') <small class="error">{{ $message }}</small> @enderror
-    </label>
+    <div class="field" x-data="{ access: @js($domain === '' && $http_port !== '' ? 'port' : 'domain') }">
+        <span>Address</span>
+        <div class="segmented self-start" role="group" aria-label="How to open the site">
+            <button type="button" :aria-pressed="access === 'domain'" x-on:click="access = 'domain'; $wire.http_port = ''">Domain</button>
+            <button type="button" :aria-pressed="access === 'port'" x-on:click="access = 'port'; $wire.domain = ''">HTTP port</button>
+        </div>
 
-    <label class="field">
-        <span>HTTP port</span>
-        <input class="input" wire:model="http_port" inputmode="numeric" placeholder="8081">
-        <small class="text-muted">With no domain, the next free port from 8081 is used. Open http://127.0.0.1:that-port. The Docker test container publishes 8081–8090.</small>
-        @error('http_port') <small class="error">{{ $message }}</small> @enderror
-    </label>
+        <div x-show="access === 'domain'">
+            <input class="input" wire:model="domain" placeholder="api.example.com">
+            <small class="text-muted">Needed for a Cloudflare tunnel.</small>
+            @error('domain') <small class="error">{{ $message }}</small> @enderror
+        </div>
+
+        <div x-show="access === 'port'" x-cloak>
+            <input class="input" wire:model="http_port" inputmode="numeric" placeholder="8081">
+            <small class="text-muted">Leave empty for the next free port from 8081, then open http://127.0.0.1:port.</small>
+            @error('http_port') <small class="error">{{ $message }}</small> @enderror
+        </div>
+    </div>
 
     <label class="field">
         <span>Git repository</span>
