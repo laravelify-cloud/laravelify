@@ -102,6 +102,37 @@ printf '%s' "$CLOUDFLARE_TUNNEL_TOKEN" > /tmp/laravelify-install/tunnel-token
 chmod 600 /tmp/laravelify-install/tunnel-token
 unset CLOUDFLARE_TUNNEL_TOKEN
 
+# Get the panel first: later steps use its helper scripts, and a bad download
+# should fail now, not after ten minutes of package installs.
+APP_ROOT="/opt/laravelify"
+SOURCE=""
+if [[ -n "${LARAVELIFY_SOURCE:-}" && -f "${LARAVELIFY_SOURCE}/artisan" ]]; then
+  SOURCE="$LARAVELIFY_SOURCE"
+elif [[ -n "${BASH_SOURCE[0]:-}" && -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/artisan" ]]; then
+  SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+else
+  # curl | bash: download the release (built assets included, vendor installed below).
+  ARCHIVE_URL="${LARAVELIFY_ARCHIVE_URL:-$DEFAULT_ARCHIVE_URL}"
+  echo "Downloading Laravelify from ${ARCHIVE_URL}"
+  install -d "$APP_ROOT"
+  if ! curl -fsSL "$ARCHIVE_URL" | tar -xz -C "$APP_ROOT" --strip-components=1; then
+    echo "Could not download ${ARCHIVE_URL}." >&2
+    echo "Check LARAVELIFY_REPO / LARAVELIFY_VERSION, or that the GitHub release has laravelify.tar.gz attached." >&2
+    exit 1
+  fi
+fi
+
+if [[ -n "$SOURCE" && "$SOURCE" != "$APP_ROOT" ]]; then
+  install -d "$APP_ROOT"
+  tar -C "$SOURCE" --exclude=vendor --exclude=node_modules --exclude=storage/logs --exclude=.git -cf - . | tar -C "$APP_ROOT" -xf -
+fi
+
+if [[ ! -f "$APP_ROOT/artisan" ]]; then
+  echo "The panel source was not found."
+  echo "Re-run with LARAVELIFY_SOURCE=/path/to/laravelify, LARAVELIFY_VERSION=x.y.z, or LARAVELIFY_ARCHIVE_URL=https://..."
+  exit 1
+fi
+
 . /etc/os-release
 CODENAME="${VERSION_CODENAME}"
 
@@ -124,7 +155,7 @@ drop_extra_sources "ppa.launchpadcontent.net/ondrej/php"
 
 apt-get update
 apt-get install -y ca-certificates curl gnupg lsb-release software-properties-common \
-  nginx supervisor git unzip redis-server ufw
+  nginx supervisor git unzip redis-server ufw debconf-utils
 
 if awk -v v="${VERSION_ID:-0}" 'BEGIN { exit !(v+0 >= 26.04) }'; then
   curl -fsSLo /tmp/debsuryorg-archive-keyring.deb https://packages.sury.org/debsuryorg-archive-keyring.deb
@@ -255,7 +286,7 @@ else
 fi
 
 if [[ -f /etc/phpmyadmin/config-db.php && -f /usr/share/phpmyadmin/sql/create_tables.sql ]]; then
-  php "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/configure-phpmyadmin.php" /tmp/laravelify-install/password
+  php "$APP_ROOT/scripts/configure-phpmyadmin.php" /tmp/laravelify-install/password
 fi
 
 install -d /etc/mysql/mysql.conf.d
@@ -316,34 +347,6 @@ server {
 EOF
 ln -sfn /etc/nginx/sites-available/laravelify-phpmyadmin.conf /etc/nginx/sites-enabled/laravelify-phpmyadmin.conf
 
-APP_ROOT="/opt/laravelify"
-SOURCE=""
-if [[ -n "${LARAVELIFY_SOURCE:-}" && -f "${LARAVELIFY_SOURCE}/artisan" ]]; then
-  SOURCE="$LARAVELIFY_SOURCE"
-elif [[ -n "${BASH_SOURCE[0]:-}" && -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/artisan" ]]; then
-  SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-else
-  # curl | bash: download the release (built assets included, vendor installed below).
-  ARCHIVE_URL="${LARAVELIFY_ARCHIVE_URL:-$DEFAULT_ARCHIVE_URL}"
-  echo "Downloading Laravelify from ${ARCHIVE_URL}"
-  install -d "$APP_ROOT"
-  if ! curl -fsSL "$ARCHIVE_URL" | tar -xz -C "$APP_ROOT" --strip-components=1; then
-    echo "Could not download ${ARCHIVE_URL}." >&2
-    echo "Check LARAVELIFY_REPO / LARAVELIFY_VERSION, or that the GitHub release has laravelify.tar.gz attached." >&2
-    exit 1
-  fi
-fi
-
-if [[ -n "$SOURCE" && "$SOURCE" != "$APP_ROOT" ]]; then
-  install -d "$APP_ROOT"
-  tar -C "$SOURCE" --exclude=vendor --exclude=node_modules --exclude=storage/logs --exclude=.git -cf - . | tar -C "$APP_ROOT" -xf -
-fi
-
-if [[ ! -f "$APP_ROOT/artisan" ]]; then
-  echo "Packages are installed, but the panel source was not found."
-  echo "Re-run with LARAVELIFY_SOURCE=/path/to/laravelify, LARAVELIFY_VERSION=x.y.z, or LARAVELIFY_ARCHIVE_URL=https://..."
-  exit 1
-fi
 
 if [[ ! -f "$APP_ROOT/.env" ]]; then
   cp "$APP_ROOT/.env.example" "$APP_ROOT/.env"

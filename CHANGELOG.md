@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.1.0-beta.2] - 2026-10-13
+
+- Installer: `curl … | sudo bash` stopped with "BASH_SOURCE[0]: unbound variable" while configuring phpMyAdmin. The panel is now downloaded first, before any package installs, so its helper scripts are always there and a bad download fails right away.
+- Installer: install `debconf-utils` so phpMyAdmin's answers are loaded without a warning.
+
 ## [0.1.0-beta.1] - 2026-10-13
 
 First public beta.
