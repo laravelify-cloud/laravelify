@@ -43,4 +43,21 @@ jobs:
         run: vendor/bin/pint --test
 
       - name: Tests
-        run: php artisan test --compact
+        run: vendor/bin/phpunit --log-junit junit.xml
+
+      # Failing tests become annotations (visible on pull requests without opening the log).
+      - name: Report failures
+        if: failure() && hashFiles('junit.xml') != ''
+        run: |
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          summary = open(os.environ['GITHUB_STEP_SUMMARY'], 'a')
+          summary.write('## Failing tests\n\n')
+          for case in ET.parse('junit.xml').iter('testcase'):
+              for problem in list(case.findall('failure')) + list(case.findall('error')):
+                  name = f"{case.get('class')}::{case.get('name')}"
+                  text = (problem.text or problem.get('message') or '').strip()
+                  short = text[:900].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+                  print(f"::error file={case.get('file', '')},line={case.get('line', 1)},title={name}::{short}")
+                  summary.write(f"### {name}\n\n```\n{text[:3000]}\n```\n\n")
+          PY
