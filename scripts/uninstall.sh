@@ -98,7 +98,7 @@ rm -f /etc/redis/laravelify.conf
 if [[ -f /etc/redis/redis.conf ]]; then
   sed -i '\|/etc/redis/laravelify.conf|d' /etc/redis/redis.conf || true
 fi
-rm -rf /etc/cloudflared /opt/laravelify /usr/local/n /usr/local/bin/composer
+rm -rf /etc/cloudflared /etc/laravelify /opt/laravelify /usr/local/n /usr/local/bin/composer
 rm -f /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/pm2 /usr/local/bin/n
 
 if command -v pm2 >/dev/null 2>&1; then

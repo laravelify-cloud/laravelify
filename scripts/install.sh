@@ -48,6 +48,54 @@ read_tty() {
   fi
 }
 
+# Re-running the installer (to repair or finish an install) offers the answers
+# from last time. They are saved root-only in /etc/laravelify/install.env, or,
+# for older installs, read back from the existing installation.
+STATE_FILE=/etc/laravelify/install.env
+
+env_value() {
+  grep -m1 "^$1=" /opt/laravelify/.env 2>/dev/null | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true
+}
+
+previous_settings() {
+  if [[ -f "$STATE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    . "$STATE_FILE"
+  elif [[ -f /opt/laravelify/.env ]]; then
+    PREV_PANEL_DOMAIN="$(env_value APP_URL | sed -e 's#^https\?://##' -e 's#/.*$##')"
+    if [[ "$(env_value DB_USERNAME)" == "root" ]]; then
+      PREV_MYSQL_ROOT_PASSWORD="$(env_value DB_PASSWORD)"
+    fi
+    PREV_PHPMYADMIN_DOMAIN="$(grep -m1 -oP 'server_name\s+\K[^;]+' /etc/nginx/sites-available/laravelify-phpmyadmin.conf 2>/dev/null || true)"
+    PREV_CLOUDFLARE_TUNNEL_TOKEN="$(grep -h -oP -- '--token "\K[^"]+' /etc/systemd/system/laravelify-tunnel-*.service 2>/dev/null | head -n 1 || true)"
+  fi
+
+  [[ -n "${PREV_PANEL_DOMAIN:-}" ]]
+}
+
+masked() {
+  if [[ -n "$1" ]]; then echo "******** (saved)"; else echo "(not found, you will be asked)"; fi
+}
+
+if [[ -z "${MYSQL_ROOT_PASSWORD:-}" || -z "${PANEL_DOMAIN:-}" || -z "${PHPMYADMIN_DOMAIN:-}" || -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]] && previous_settings; then
+  echo
+  echo "Found the settings from a previous install:"
+  echo "  Panel domain:            ${PREV_PANEL_DOMAIN}"
+  echo "  phpMyAdmin domain:       ${PREV_PHPMYADMIN_DOMAIN:-(not found, you will be asked)}"
+  echo "  MySQL root password:     $(masked "${PREV_MYSQL_ROOT_PASSWORD:-}")"
+  echo "  Cloudflare tunnel token: $(masked "${PREV_CLOUDFLARE_TUNNEL_TOKEN:-}")"
+  REUSE_ANSWER=""
+  # No terminal (automated install): reuse them.
+  read_tty -p "Use these settings? [Y/n] " REUSE_ANSWER || REUSE_ANSWER="y"
+  echo
+  if [[ ! "$REUSE_ANSWER" =~ ^[Nn] ]]; then
+    MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-${PREV_MYSQL_ROOT_PASSWORD:-}}"
+    PANEL_DOMAIN="${PANEL_DOMAIN:-${PREV_PANEL_DOMAIN:-}}"
+    PHPMYADMIN_DOMAIN="${PHPMYADMIN_DOMAIN:-${PREV_PHPMYADMIN_DOMAIN:-}}"
+    CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-${PREV_CLOUDFLARE_TUNNEL_TOKEN:-}}"
+  fi
+fi
+
 if [[ -z "${MYSQL_ROOT_PASSWORD:-}" ]]; then
   read_tty -s -p "MySQL root password: " MYSQL_ROOT_PASSWORD
   echo
@@ -96,6 +144,15 @@ if [[ -z "$CLOUDFLARE_TUNNEL_TOKEN" || "$CLOUDFLARE_TUNNEL_TOKEN" =~ [[:space:]]
   echo "The Cloudflare tunnel token is required and cannot contain spaces." >&2
   exit 1
 fi
+
+# Save the answers (root-only) so a re-run can offer them again.
+install -d -m 700 /etc/laravelify
+(
+  umask 077
+  printf 'PREV_MYSQL_ROOT_PASSWORD=%q\nPREV_PANEL_DOMAIN=%q\nPREV_PHPMYADMIN_DOMAIN=%q\nPREV_CLOUDFLARE_TUNNEL_TOKEN=%q\n' \
+    "$MYSQL_ROOT_PASSWORD" "$PANEL_DOMAIN" "$PHPMYADMIN_DOMAIN" "$CLOUDFLARE_TUNNEL_TOKEN" > "$STATE_FILE"
+)
+chmod 600 "$STATE_FILE"
 
 install -d -m 700 /tmp/laravelify-install
 printf '%s' "$CLOUDFLARE_TUNNEL_TOKEN" > /tmp/laravelify-install/tunnel-token
