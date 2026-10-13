@@ -112,6 +112,20 @@
         </div>
     </div>
 
+    @if ($hasExample)
+        <div class="field">
+            <span>Source</span>
+            <div class="segmented self-start" role="group" aria-label="Where the code comes from">
+                <button type="button" aria-pressed="{{ $use_example ? 'false' : 'true' }}" wire:click="$set('use_example', false)">Git repository</button>
+                <button type="button" aria-pressed="{{ $use_example ? 'true' : 'false' }}" wire:click="$set('use_example', true)">Example project</button>
+            </div>
+            @if ($use_example)
+                <small class="text-muted">A small working {{ $definition['label'] }} app, ready to deploy. No repository needed.</small>
+            @endif
+        </div>
+    @endif
+
+    @unless ($use_example && $hasExample)
     <label class="field">
         <span>Git repository</span>
         <input class="input" wire:model="repository" placeholder="https://github.com/org/repo.git">
@@ -124,6 +138,7 @@
         <small class="text-muted">https://github.com/laravel/laravel.git uses branch 13.x.</small>
         @error('branch') <small class="error">{{ $message }}</small> @enderror
     </label>
+    @endunless
 
     <div class="callout" role="note">
         <x-menu-icon name="{{ $definition['icon'] }}" class="size-4 shrink-0 text-muted" />

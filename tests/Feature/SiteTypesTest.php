@@ -13,6 +13,7 @@ use App\Services\ConfigRenderer;
 use App\Services\Deployer;
 use App\Services\TwoFactor;
 use App\Support\BuildOutput;
+use App\Support\Examples;
 use App\Support\SiteTypes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -39,6 +40,39 @@ class SiteTypesTest extends TestCase
         File::deleteDirectory($this->root);
 
         parent::tearDown();
+    }
+
+    public function test_every_type_has_an_example_project(): void
+    {
+        foreach (SiteTypes::keys() as $type) {
+            $this->assertTrue(Examples::has($type), $type.' needs a folder in resources/examples');
+        }
+
+        $this->assertFalse(Examples::has('../app'));
+    }
+
+    public function test_a_site_can_start_from_an_example_without_a_repository(): void
+    {
+        $this->signIn();
+        config(['laravelify.sites_root' => $this->root]);
+        $group = Group::factory()->create();
+
+        Livewire::test(WebsiteForm::class, ['group' => $group])
+            ->call('chooseType', 'express')
+            ->set('name', 'Try express')
+            ->set('use_example', true)
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertRedirect();
+
+        $website = Website::query()->where('type', 'express')->sole();
+
+        $this->assertSame('main', $website->branch);
+        $this->assertSame(storage_path('app/examples/'.$website->slug), $website->repository);
+        $this->assertDirectoryExists($website->repository.'/.git');
+        $this->assertFileExists($website->repository.'/server.js');
+
+        File::deleteDirectory($website->repository);
     }
 
     public function test_the_catalog_groups_backend_frontend_and_full_stack(): void

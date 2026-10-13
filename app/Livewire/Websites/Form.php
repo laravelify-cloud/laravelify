@@ -12,6 +12,7 @@ use App\Services\DatabaseProvisioner;
 use App\Services\GithubAppClient;
 use App\Services\HostWriter;
 use App\Support\BuildOutput;
+use App\Support\Examples;
 use App\Support\SiteTypes;
 use App\Support\Slugs;
 use Illuminate\Validation\Rule;
@@ -35,6 +36,8 @@ class Form extends PanelComponent
     public string $repository = '';
 
     public string $branch = 'main';
+
+    public bool $use_example = false;
 
     public string $php_version = '8.4';
 
@@ -142,7 +145,7 @@ class Form extends PanelComponent
                 ? ['nullable']
                 : ['integer', 'between:80,65535', Rule::unique('websites', 'http_port'), Rule::notIn([8000, 3306, 6379])],
             'repository' => ['nullable', 'string', 'max:500'],
-            'branch' => ['required', 'string', 'max:120'],
+            'branch' => $this->use_example ? ['nullable'] : ['required', 'string', 'max:120'],
             'php_version' => $runtime === SiteTypes::RUNTIME_PHP ? ['required', Rule::in($phpVersions)] : ['nullable'],
             'node_version' => $usesNode ? ['required', Rule::in($nodeVersions)] : ['nullable'],
             'install_command' => $command,
@@ -178,6 +181,8 @@ class Form extends PanelComponent
         }
 
         $slug = Slugs::unique(Website::class, $this->name);
+
+        $useExample = $this->use_example && Examples::has($validated['type']);
         $root = rtrim((string) config('laravelify.sites_root'), '/');
         $isLaravel = $validated['type'] === 'laravel';
         $isPhp = $runtime === SiteTypes::RUNTIME_PHP;
@@ -192,8 +197,8 @@ class Form extends PanelComponent
             'type' => $validated['type'],
             'domain' => $domain,
             'http_port' => $httpPort,
-            'repository' => $this->repository !== '' ? $this->repository : null,
-            'branch' => $this->branch,
+            'repository' => $useExample ? Examples::prepare($validated['type'], $slug) : ($this->repository !== '' ? $this->repository : null),
+            'branch' => $useExample ? 'main' : $this->branch,
             'php_version' => $isPhp ? $this->php_version : null,
             'node_version' => $usesNode ? $this->node_version : null,
             'install_command' => $usesNode && $this->install_command !== '' ? $this->install_command : null,
@@ -248,6 +253,7 @@ class Form extends PanelComponent
         return view('livewire.websites.form', [
             'groups' => SiteTypes::GROUPS,
             'definition' => SiteTypes::get($this->type),
+            'hasExample' => Examples::has($this->type),
             'runtime' => SiteTypes::runtime($this->type),
             'phpVersions' => config('laravelify.php_versions'),
             'nodeVersions' => config('laravelify.node_versions'),
