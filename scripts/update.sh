@@ -81,9 +81,10 @@ tar -C "${SOURCE}" \
   --exclude=bootstrap/cache \
   --exclude=.env \
   --exclude=.git \
-  -cf - . | tar -C "${APP_ROOT}" -xf -
+  -cf - . | tar -C "${APP_ROOT}" -xf - --no-overwrite-dir
 
 sed -i 's/\r$//' "${APP_ROOT}"/scripts/*.sh
+chmod 755 "${APP_ROOT}"
 chmod 755 "${APP_ROOT}/scripts/host-apply.sh" "${APP_ROOT}/scripts/with-node.sh" "${APP_ROOT}/scripts/update.sh"
 
 cd "${APP_ROOT}"
