@@ -75,6 +75,20 @@
                         </a>
                     @endif
 
+                    <p class="nav-section">Backups</p>
+                    <a class="menu-item {{ request()->routeIs('backups.databases', 'backups.schedules.*') && (request()->route('kind') ?? request()->route('schedule')?->kind ?? 'database') !== 'files' ? 'menu-item-active' : '' }}" href="{{ route('backups.databases') }}" wire:navigate>
+                        <x-menu-icon name="database" />
+                        <span>Databases</span>
+                    </a>
+                    <a class="menu-item {{ request()->routeIs('backups.files', 'backups.schedules.*') && (request()->route('kind') ?? request()->route('schedule')?->kind) === 'files' ? 'menu-item-active' : '' }}" href="{{ route('backups.files') }}" wire:navigate>
+                        <x-menu-icon name="backup" />
+                        <span>Files</span>
+                    </a>
+                    <a class="menu-item {{ request()->routeIs('backups.storages') ? 'menu-item-active' : '' }}" href="{{ route('backups.storages') }}" wire:navigate>
+                        <x-menu-icon name="s3" />
+                        <span>S3 storage</span>
+                    </a>
+
                     <p class="nav-section">Infrastructure</p>
                     <a class="menu-item {{ request()->routeIs('server.*') ? 'menu-item-active' : '' }}" href="{{ route('server.index') }}" wire:navigate>
                         <x-menu-icon name="server" />

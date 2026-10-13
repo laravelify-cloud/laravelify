@@ -71,7 +71,7 @@ class DatabaseProvisioner
         return 'Database '.$website->db_name.' is ready.';
     }
 
-    private function clientDefaultsFile(): string
+    public function clientDefaultsFile(): string
     {
         $username = (string) config('database.connections.mysql.username');
         $password = (string) config('database.connections.mysql.password');

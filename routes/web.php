@@ -8,6 +8,9 @@ use App\Http\Controllers\MonitoringLiveController;
 use App\Http\Controllers\PhpMyAdminController;
 use App\Http\Controllers\WebsiteFileController;
 use App\Livewire\Auth\Login;
+use App\Livewire\Backups\Index as BackupsIndex;
+use App\Livewire\Backups\ScheduleForm as BackupScheduleForm;
+use App\Livewire\Backups\Storages as BackupStorages;
 use App\Livewire\Dashboard;
 use App\Livewire\Groups\Form as GroupForm;
 use App\Livewire\Groups\Index as GroupIndex;
@@ -65,6 +68,13 @@ Route::get('/monitoring', MonitoringIndex::class)->name('monitoring.index');
 Route::get('/monitoring/server', MonitoringServer::class)->name('monitoring.server');
 Route::get('/monitoring/server/live', [MonitoringLiveController::class, 'server'])->name('monitoring.server.live');
 Route::get('/monitoring/websites/{website}/live', [MonitoringLiveController::class, 'website'])->name('monitoring.website.live');
+
+Route::redirect('/backups', '/backups/databases');
+Route::get('/backups/databases', BackupsIndex::class)->defaults('kind', 'database')->name('backups.databases');
+Route::get('/backups/files', BackupsIndex::class)->defaults('kind', 'files')->name('backups.files');
+Route::get('/backups/storages', BackupStorages::class)->name('backups.storages');
+Route::get('/backups/schedules/create/{kind}', BackupScheduleForm::class)->whereIn('kind', ['database', 'files'])->name('backups.schedules.create');
+Route::get('/backups/schedules/{schedule}/edit', BackupScheduleForm::class)->name('backups.schedules.edit');
 
 Route::get('/files', FileManager::class)->name('files.index');
 Route::get('/files/download', [WebsiteFileController::class, 'global'])->name('files.download');

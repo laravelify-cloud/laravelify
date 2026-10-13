@@ -41,6 +41,10 @@ class Telegram
             'threat_detected' => 'Attack detected (SQL injection, XSS, scanners)',
             'heartbeat_missed' => 'Cron job missed its heartbeat, and when it reports again',
         ],
+        'Backups' => [
+            'backup_failed' => 'A backup or restore failed',
+            'backup_succeeded' => 'A backup finished',
+        ],
         'Server' => [
             'disk_high' => 'Disk usage above the limit',
             'server_patches' => 'Server patches available (daily check)',
@@ -64,9 +68,11 @@ class Telegram
         'slow_site' => 'Slow responses',
         'threat_detected' => 'Attack detected',
         'heartbeat_missed' => 'Heartbeat missed',
+        'backup_failed' => 'A backup or restore failed',
+        'backup_succeeded' => 'A backup finished',
     ];
 
-    public const DEFAULT_EVENTS = ['deploy_started', 'deploy_succeeded', 'deploy_failed', 'site_down', 'site_up', 'process_crashed', 'process_recovered', 'disk_high', 'server_patches', 'issue_new', 'error_spike', 'slow_site', 'heartbeat_missed'];
+    public const DEFAULT_EVENTS = ['deploy_started', 'deploy_succeeded', 'deploy_failed', 'site_down', 'site_up', 'process_crashed', 'process_recovered', 'disk_high', 'server_patches', 'issue_new', 'error_spike', 'slow_site', 'heartbeat_missed', 'backup_failed'];
 
     public function configured(): bool
     {

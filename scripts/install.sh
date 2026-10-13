@@ -265,7 +265,7 @@ fi
 
 apt-get update
 apt_install ca-certificates curl gnupg lsb-release software-properties-common \
-  nginx supervisor git unzip redis-server ufw debconf-utils
+  nginx supervisor git unzip redis-server ufw debconf-utils rclone
 
 # The PHP repository is added once.
 php_repository_present() {

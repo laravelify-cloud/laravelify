@@ -55,6 +55,7 @@ See the [installation guide](https://docs.laravelify.cloud/installation/install)
 | 🧱 **Backend** | Laravel and plain PHP (PHP 8.0–8.5, Composer, queue and scheduler workers, Reverb, one-click MySQL), Express, NestJS, any Node.js server |
 | 🎨 **Frontend** | React, Vue.js, Angular, Svelte, Astro, and static HTML, built on the server and served by nginx |
 | ▲ **Full-stack** | Next.js, Nuxt, SvelteKit, Laravel + Livewire, Laravel + Inertia (Node 20/22/24 under PM2) |
+| 💾 **S3 backups** | Databases (one by one) and folders (with excludes) to your own S3 bucket on a schedule, restore a whole database, one table, or one folder |
 | 📈 **Live monitoring** | Requests, response times (p95), uptime, top routes, countries, a live request feed |
 | 🐞 **Issues** | Laravel errors grouped by exception and line, with stack traces |
 | 🛡️ **Attack detection** | SQL injection, XSS, scanners, attack tools, with one-click IP blocking |

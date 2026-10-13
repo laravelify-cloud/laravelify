@@ -26,8 +26,9 @@ class CommandRunner
 
     /**
      * @param  list<string>  $command
+     * @param  array<string, string>  $env  Extra variables for this command only, such as storage keys.
      */
-    public function run(array $command, ?string $cwd = null): CommandResult
+    public function run(array $command, ?string $cwd = null, array $env = []): CommandResult
     {
         if ($this->stopped()) {
             return new CommandResult(false, false, $command, 'Stopped.', 130, true);
@@ -37,7 +38,7 @@ class CommandRunner
             return new CommandResult(true, true, $command, '[skipped] host commands are disabled', 0);
         }
 
-        $process = new Process($command, $cwd, $this->environment(), null, 3600);
+        $process = new Process($command, $cwd, array_merge($this->environment(), $env), null, 3600);
         $process->start();
 
         while ($process->isRunning()) {

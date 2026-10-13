@@ -533,7 +533,7 @@ class SiteTypesTest extends TestCase
                 return true;
             }
 
-            public function run(array $command, ?string $cwd = null): CommandResult
+            public function run(array $command, ?string $cwd = null, array $env = []): CommandResult
             {
                 $this->commands[] = implode(' ', $command);
 

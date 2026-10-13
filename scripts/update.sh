@@ -127,6 +127,12 @@ else
   supervisorctl restart laravelify-scheduler >/dev/null 2>&1 || true
 fi
 
+# Backups to S3 use rclone. Older installs do not have it yet; add it once, quietly.
+if ! command -v rclone >/dev/null 2>&1; then
+  echo "Installing rclone for backups..."
+  apt-get install -y rclone >/dev/null 2>&1 || echo "Could not install rclone. Backups need it: sudo apt-get install -y rclone" >&2
+fi
+
 # Next.js sites: one PM2 daemon under /root, saved, and restored on boot by pm2-root.
 bash "${APP_ROOT}/scripts/host-apply.sh" pm2-boot all || echo "PM2 boot setup failed; run: sudo bash ${APP_ROOT}/scripts/host-apply.sh pm2-boot all" >&2
 

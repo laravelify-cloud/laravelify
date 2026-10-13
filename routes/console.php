@@ -12,6 +12,9 @@ Artisan::command('inspire', function () {
 Schedule::command('laravelify:monitor')->everyMinute()->withoutOverlapping(10);
 Schedule::command('laravelify:monitor --patches')->dailyAt('06:00')->withoutOverlapping(30);
 
+// Backups: starts every schedule that is due this minute (Backups in the sidebar).
+Schedule::command('laravelify:run-backups')->everyMinute()->withoutOverlapping(5);
+
 // Monitoring tab: new requests and Laravel errors every minute, old data pruned nightly.
 Schedule::command('laravelify:collect')->everyMinute()->withoutOverlapping(10);
 Schedule::command('laravelify:sample-server')->everyMinute()->withoutOverlapping(5);
