@@ -31,6 +31,7 @@ else
   fi
 
   SOURCE="$(mktemp -d /tmp/laravelify-update.XXXXXX)"
+  LARAVELIFY_RELEASE=1
   trap 'rm -rf "$SOURCE"' EXIT
   echo "Downloading ${ARCHIVE_URL}"
   curl -fsSL "$ARCHIVE_URL" | tar -xz -C "$SOURCE" --strip-components=1
@@ -58,7 +59,12 @@ if [[ ! -f "${MANIFEST}" ]]; then
 fi
 
 # Tailwind scans the Blade views, so any newer view, CSS, or JS file means the build is stale.
-STALE="$(find "${SOURCE}/resources" -type f -newer "${MANIFEST}" -print -quit)"
+# A release is built by the release workflow and unpacked with its own file times, so only a
+# source checkout is compared.
+STALE=""
+if [[ -z "${LARAVELIFY_RELEASE:-}" ]]; then
+  STALE="$(find "${SOURCE}/resources" -type f -newer "${MANIFEST}" -print -quit)"
+fi
 
 if [[ -n "${STALE}" ]]; then
   echo "Built assets are older than ${STALE#"${SOURCE}"/}." >&2

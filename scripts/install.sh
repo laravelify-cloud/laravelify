@@ -48,6 +48,42 @@ read_tty() {
   fi
 }
 
+# Already installed? Update Laravelify only: the new release, migrations, and a restart of
+# its workers. PHP, MySQL, nginx, Node, and the other packages are not touched.
+# LARAVELIFY_REINSTALL=1 skips this and runs the full install (a repair).
+INSTALLED_ROOT="${LARAVELIFY_ROOT:-/opt/laravelify}"
+
+if [[ "${LARAVELIFY_REINSTALL:-}" != "1" && -z "${LARAVELIFY_SOURCE:-}" \
+  && -f "${INSTALLED_ROOT}/artisan" && -f "${INSTALLED_ROOT}/.env" && -f "${INSTALLED_ROOT}/vendor/autoload.php" ]]; then
+  UPDATE_DIR="$(mktemp -d /tmp/laravelify-update.XXXXXX)"
+  UPDATE_ARCHIVE_URL="${LARAVELIFY_ARCHIVE_URL:-$DEFAULT_ARCHIVE_URL}"
+  INSTALLED_VERSION="$(tr -d '\r\n' < "${INSTALLED_ROOT}/VERSION" 2>/dev/null || true)"
+  echo "Laravelify ${INSTALLED_VERSION:-(unknown version)} is already installed. Checking the release..."
+
+  if ! curl -fsSL "$UPDATE_ARCHIVE_URL" | tar -xz -C "$UPDATE_DIR" --strip-components=1; then
+    rm -rf "$UPDATE_DIR"
+    echo "Could not download ${UPDATE_ARCHIVE_URL}." >&2
+    echo "Check LARAVELIFY_REPO / LARAVELIFY_VERSION, or that the GitHub release has laravelify.tar.gz attached." >&2
+    exit 1
+  fi
+
+  echo "  Installed: ${INSTALLED_VERSION:-unknown}"
+  echo "  Release:   $(tr -d '\r\n' < "${UPDATE_DIR}/VERSION" 2>/dev/null || echo unknown)"
+  UPDATE_ANSWER=""
+  # No terminal (automated run): update only.
+  read_tty -p "Update Laravelify only? Packages and settings stay as they are. [Y/n] (n = reinstall everything) " UPDATE_ANSWER || UPDATE_ANSWER="y"
+  echo
+
+  if [[ ! "$UPDATE_ANSWER" =~ ^[Nn] ]]; then
+    UPDATE_STATUS=0
+    LARAVELIFY_SOURCE="$UPDATE_DIR" LARAVELIFY_ROOT="$INSTALLED_ROOT" LARAVELIFY_RELEASE=1 bash "${UPDATE_DIR}/scripts/update.sh" || UPDATE_STATUS=$?
+    rm -rf "$UPDATE_DIR"
+    exit "$UPDATE_STATUS"
+  fi
+
+  rm -rf "$UPDATE_DIR"
+fi
+
 # Re-running the installer (to repair or finish an install) offers the answers
 # from last time. They are saved root-only in /etc/laravelify/install.env, or,
 # for older installs, read back from the existing installation.
@@ -193,6 +229,21 @@ fi
 . /etc/os-release
 CODENAME="${VERSION_CODENAME}"
 
+# apt-get install only for the packages that are not installed yet (quiet when all are).
+package_installed() {
+  dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
+}
+
+apt_install() {
+  local missing=() package
+  for package in "$@"; do
+    package_installed "$package" || missing+=("$package")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    apt-get install -y "${missing[@]}"
+  fi
+}
+
 drop_extra_sources() {
   local pattern="$1"
   local file
@@ -208,29 +259,50 @@ drop_extra_sources() {
 
 # A previous run may have added the Ondřej PPA. Ubuntu 26.04 has no Release
 # file there, and apt then refuses every update.
-drop_extra_sources "ppa.launchpadcontent.net/ondrej/php"
+if awk -v v="${VERSION_ID:-0}" 'BEGIN { exit !(v+0 >= 26.04) }'; then
+  drop_extra_sources "ppa.launchpadcontent.net/ondrej/php"
+fi
 
 apt-get update
-apt-get install -y ca-certificates curl gnupg lsb-release software-properties-common \
+apt_install ca-certificates curl gnupg lsb-release software-properties-common \
   nginx supervisor git unzip redis-server ufw debconf-utils
 
-if awk -v v="${VERSION_ID:-0}" 'BEGIN { exit !(v+0 >= 26.04) }'; then
-  curl -fsSLo /tmp/debsuryorg-archive-keyring.deb https://packages.sury.org/debsuryorg-archive-keyring.deb
-  dpkg -i /tmp/debsuryorg-archive-keyring.deb
-  rm -f /tmp/debsuryorg-archive-keyring.deb
-  echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${CODENAME} main" > /etc/apt/sources.list.d/php.list
-else
-  add-apt-repository -y ppa:ondrej/php
+# The PHP repository is added once.
+php_repository_present() {
+  grep -rqsE 'ondrej/php|packages\.sury\.org/php' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null
+}
+
+if ! php_repository_present; then
+  if awk -v v="${VERSION_ID:-0}" 'BEGIN { exit !(v+0 >= 26.04) }'; then
+    curl -fsSLo /tmp/debsuryorg-archive-keyring.deb https://packages.sury.org/debsuryorg-archive-keyring.deb
+    dpkg -i /tmp/debsuryorg-archive-keyring.deb
+    rm -f /tmp/debsuryorg-archive-keyring.deb
+    echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${CODENAME} main" > /etc/apt/sources.list.d/php.list
+  else
+    add-apt-repository -y ppa:ondrej/php
+  fi
+  apt-get update
 fi
-apt-get update
 
 install_php() {
   local version="$1"
-  if apt-cache show "php${version}-fpm" >/dev/null 2>&1; then
-    apt-get install -y \
-      "php${version}-fpm" "php${version}-cli" "php${version}-mysql" "php${version}-xml" \
-      "php${version}-mbstring" "php${version}-curl" "php${version}-zip" "php${version}-redis" \
-      "php${version}-bcmath" "php${version}-intl"
+  local packages=()
+  local extension
+
+  for extension in fpm cli mysql xml mbstring curl zip redis bcmath intl; do
+    packages+=("php${version}-${extension}")
+  done
+
+  local missing=()
+  local package
+  for package in "${packages[@]}"; do
+    package_installed "$package" || missing+=("$package")
+  done
+
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    echo "PHP ${version} is already installed."
+  elif apt-cache show "php${version}-fpm" >/dev/null 2>&1; then
+    apt-get install -y "${missing[@]}"
   else
     echo "Skipping PHP ${version}: the package is not in this archive."
   fi
@@ -254,22 +326,26 @@ if [[ -z "$PANEL_PHP" ]]; then
   exit 1
 fi
 
-install -d -m 0755 /usr/share/keyrings
-if [[ ! -f /usr/share/keyrings/mysql-archive-keyring.gpg ]]; then
-  curl -fsSL https://repo.mysql.com/RPM-GPG-KEY-mysql-2025 | gpg --dearmor -o /usr/share/keyrings/mysql-archive-keyring.gpg
-fi
+if package_installed mysql-community-server || package_installed mysql-server; then
+  echo "MySQL is already installed."
+else
+  install -d -m 0755 /usr/share/keyrings
+  if [[ ! -f /usr/share/keyrings/mysql-archive-keyring.gpg ]]; then
+    curl -fsSL https://repo.mysql.com/RPM-GPG-KEY-mysql-2025 | gpg --dearmor -o /usr/share/keyrings/mysql-archive-keyring.gpg
+  fi
 
-cat > /etc/apt/sources.list.d/mysql-8.4-lts.list <<EOF
+  cat > /etc/apt/sources.list.d/mysql-8.4-lts.list <<EOF
 deb [signed-by=/usr/share/keyrings/mysql-archive-keyring.gpg] http://repo.mysql.com/apt/ubuntu ${CODENAME} mysql-8.4-lts
 EOF
 
-if ! apt-get update; then
-  echo "MySQL 8.4 repository has no packages for ${CODENAME}. Using the Ubuntu MySQL package."
-  rm -f /etc/apt/sources.list.d/mysql-8.4-lts.list
-  apt-get update
-  apt-get install -y mysql-server
-else
-  apt-get install -y mysql-community-server mysql-community-client || apt-get install -y mysql-server
+  if ! apt-get update; then
+    echo "MySQL 8.4 repository has no packages for ${CODENAME}. Using the Ubuntu MySQL package."
+    rm -f /etc/apt/sources.list.d/mysql-8.4-lts.list
+    apt-get update
+    apt-get install -y mysql-server
+  else
+    apt-get install -y mysql-community-server mysql-community-client || apt-get install -y mysql-server
+  fi
 fi
 
 # Ubuntu 26.04 rejects debconf answers for templates that are not loaded yet.
@@ -290,8 +366,12 @@ preseed_phpmyadmin() {
   fi
   rm -rf "$tmp"
 }
-preseed_phpmyadmin
-apt-get install -y phpmyadmin || echo "phpMyAdmin package was not installed. nginx still points at /usr/share/phpmyadmin."
+if package_installed phpmyadmin; then
+  echo "phpMyAdmin is already installed."
+else
+  preseed_phpmyadmin
+  apt-get install -y phpmyadmin || echo "phpMyAdmin package was not installed. nginx still points at /usr/share/phpmyadmin."
+fi
 
 if ! command -v node >/dev/null 2>&1; then
   if curl -fsSL https://deb.nodesource.com/setup_22.x | bash -; then
@@ -304,12 +384,18 @@ if ! command -v node >/dev/null 2>&1; then
   fi
 fi
 
-npm install -g pm2 n
-# Next.js sites run in root's PM2 daemon; pm2-root restores them after a reboot.
-HOME=/root PM2_HOME=/root/.pm2 pm2 startup systemd -u root --hp /root >/dev/null || true
-n 20 || true
-n 22 || true
-n 24 || true
+if ! command -v pm2 >/dev/null 2>&1 || ! command -v n >/dev/null 2>&1; then
+  npm install -g pm2 n
+fi
+# Node sites run in root's PM2 daemon; pm2-root restores them after a reboot.
+if ! systemctl is-enabled --quiet pm2-root 2>/dev/null; then
+  HOME=/root PM2_HOME=/root/.pm2 pm2 startup systemd -u root --hp /root >/dev/null || true
+fi
+for node_major in 20 22 24; do
+  if ! compgen -G "/usr/local/n/versions/node/${node_major}.*" >/dev/null; then
+    n "$node_major" || true
+  fi
+done
 
 if ! command -v composer >/dev/null 2>&1; then
   curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php
