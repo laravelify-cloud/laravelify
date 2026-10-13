@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="brand/laravelify-brand-assets/04-social/png/laravelify-readme-banner-dark-1600.png">
-    <img alt="Laravelify, self-hosted deploys for Laravel and Next.js" src="brand/laravelify-brand-assets/04-social/png/laravelify-readme-banner-light-1600.png">
+    <img alt="Laravelify, self-hosted deploys for Laravel, Node.js, and front-end apps" src="brand/laravelify-brand-assets/04-social/png/laravelify-readme-banner-light-1600.png">
   </picture>
 </p>
 
