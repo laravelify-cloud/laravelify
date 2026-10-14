@@ -19,6 +19,7 @@ use App\Livewire\Groups\Index as GroupIndex;
 use App\Livewire\Groups\Show as GroupShow;
 use App\Livewire\Monitoring\Index as MonitoringIndex;
 use App\Livewire\Monitoring\Server as MonitoringServer;
+use App\Livewire\Security\Access as SecurityAccess;
 use App\Livewire\Security\PrivateKeys;
 use App\Livewire\Server\Edit as ServerEdit;
 use App\Livewire\Server\Index as ServerIndex;
@@ -97,6 +98,7 @@ Route::get('/settings/general', General::class)->name('settings.general');
 Route::get('/settings/github', Github::class)->name('settings.github');
 Route::get('/settings/telegram', Telegram::class)->name('settings.telegram');
 Route::get('/settings/links', Links::class)->name('settings.links');
+Route::get('/security/access', SecurityAccess::class)->name('security.access');
 Route::get('/security/private-keys', PrivateKeys::class)->name('security.private-keys');
 Route::get('/account/security', AccountSecurity::class)->name('account.security');
 

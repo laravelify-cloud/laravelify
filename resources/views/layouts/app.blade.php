@@ -105,6 +105,10 @@
                     </a>
 
                     <p class="nav-section">Security</p>
+                    <a class="menu-item {{ request()->routeIs('security.access') ? 'menu-item-active' : '' }}" href="{{ route('security.access') }}" wire:navigate>
+                        <x-menu-icon name="lock" />
+                        <span>Access</span>
+                    </a>
                     <a class="menu-item {{ request()->routeIs('security.private-keys') ? 'menu-item-active' : '' }}" href="{{ route('security.private-keys') }}" wire:navigate>
                         <x-menu-icon name="keys" />
                         <span>Private keys</span>

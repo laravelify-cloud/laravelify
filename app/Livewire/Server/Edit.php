@@ -5,6 +5,7 @@ namespace App\Livewire\Server;
 use App\Livewire\PanelComponent;
 use App\Models\ServerService;
 use App\Services\HostWriter;
+use App\Services\PhpMyAdminAccess;
 use App\Services\ServerCatalog;
 use App\Services\ServicePassword;
 use Illuminate\Validation\Rule;
@@ -131,6 +132,13 @@ class Edit extends PanelComponent
                 'unix:/run/php/php'.$this->php_version.'-fpm.sock',
                 $this->config,
             );
+
+            // The access prompt runs the panel's code and keeps the panel's PHP.
+            $access = app(PhpMyAdminAccess::class);
+
+            if ($access->hasGate($this->config)) {
+                $this->config = $access->withGate($this->config, true, PhpMyAdminAccess::panelPhpVersion(), base_path());
+            }
 
             return;
         }
