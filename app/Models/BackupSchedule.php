@@ -77,6 +77,10 @@ class BackupSchedule extends Model
             return ! empty($targets['all']) ? 'All databases' : implode(', ', $targets['databases'] ?? []);
         }
 
+        if (! empty($targets['websites'])) {
+            return 'Every website';
+        }
+
         return implode(', ', $targets['paths'] ?? []);
     }
 }

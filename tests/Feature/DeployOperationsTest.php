@@ -250,7 +250,7 @@ class DeployOperationsTest extends TestCase
                 return true;
             }
 
-            public function run(array $command, ?string $cwd = null, array $env = []): CommandResult
+            public function run(array $command, ?string $cwd = null, array $env = [], ?callable $onOutput = null): CommandResult
             {
                 $this->commands[] = $command;
 
@@ -304,7 +304,7 @@ class DeployOperationsTest extends TestCase
                 return true;
             }
 
-            public function run(array $command, ?string $cwd = null, array $env = []): CommandResult
+            public function run(array $command, ?string $cwd = null, array $env = [], ?callable $onOutput = null): CommandResult
             {
                 $this->commands[] = implode(' ', $command);
 

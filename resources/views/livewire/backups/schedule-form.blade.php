@@ -81,6 +81,40 @@
                 @endunless
                 @error('databases') <small class="error mt-2 block">{{ $message }}</small> @enderror
             @else
+                <label class="check-card mb-4">
+                    <input class="mt-0.5" type="checkbox" wire:model.live="all_websites">
+                    <span>
+                        <span class="block font-medium">Every website</span>
+                        <span class="block text-[12.5px] text-muted">One archive per website, including websites added later. What a deploy rebuilds is skipped by site type: node_modules, vendor, dist, .next, caches, logs.</span>
+                    </span>
+                </label>
+
+                @if ($all_websites)
+                    <div class="overflow-hidden rounded-lg border border-line">
+                        <table class="table">
+                            <thead>
+                                <tr><th>Website</th><th>Folder</th><th>Skipped automatically</th></tr>
+                            </thead>
+                            <tbody>
+                                @forelse ($websiteSites as $site)
+                                    <tr wire:key="ws-{{ $site['folder'] }}">
+                                        <td><span class="font-medium">{{ $site['name'] }}</span> <span class="pill">{{ $site['type'] }}</span></td>
+                                        <td class="font-mono text-[13px] text-muted">{{ $site['folder'] }}</td>
+                                        <td>
+                                            <div class="flex flex-wrap gap-1">
+                                                @foreach ($site['skips'] as $skip)
+                                                    <span class="badge-exclude font-mono">{{ $skip }}</span>
+                                                @endforeach
+                                            </div>
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr><td colspan="3" class="table-empty">No deployed websites in {{ $rootLabel }} yet.</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                @else
                 @php
                     $excludeList = $activeExcludes;
                     $crumbs = [];
@@ -251,6 +285,7 @@
                     <small class="text-muted">One per line. A name (node_modules) is skipped in every folder; a path (shop/storage/logs) only there. * and ? work.</small>
                     @error('excludes') <small class="error block">{{ $message }}</small> @enderror
                 </details>
+                @endif
             @endif
         </x-layer-card>
 

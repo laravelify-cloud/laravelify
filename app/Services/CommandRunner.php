@@ -27,8 +27,9 @@ class CommandRunner
     /**
      * @param  list<string>  $command
      * @param  array<string, string>  $env  Extra variables for this command only, such as storage keys.
+     * @param  (callable(string): void)|null  $onOutput  Called with each piece of output while the command runs.
      */
-    public function run(array $command, ?string $cwd = null, array $env = []): CommandResult
+    public function run(array $command, ?string $cwd = null, array $env = [], ?callable $onOutput = null): CommandResult
     {
         if ($this->stopped()) {
             return new CommandResult(false, false, $command, 'Stopped.', 130, true);
@@ -39,7 +40,9 @@ class CommandRunner
         }
 
         $process = new Process($command, $cwd, array_merge($this->environment(), $env), null, 3600);
-        $process->start();
+        $process->start($onOutput === null ? null : function (string $type, string $buffer) use ($onOutput): void {
+            $onOutput($buffer);
+        });
 
         while ($process->isRunning()) {
             if ($this->stopped()) {

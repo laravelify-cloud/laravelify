@@ -118,6 +118,85 @@ class Index extends PanelComponent
         }
     }
 
+    /**
+     * Every database, or every website, now.
+     */
+    public function fullBackup(BackupManager $backups): void
+    {
+        try {
+            $schedule = $backups->fullBackup($this->kind);
+            $count = $schedule->runs()->where('status', BackupRun::QUEUED)->count();
+            $this->toast('Full backup started: '.$count.' '.($this->kind === BackupSchedule::KIND_DATABASE ? 'database' : 'website').($count === 1 ? '' : 's').'. Progress shows in the list below.');
+        } catch (Throwable $exception) {
+            $this->toast($exception->getMessage(), 'error');
+        }
+    }
+
+    /**
+     * @param  list<int>  $ids
+     */
+    public function runSchedules(BackupManager $backups, array $ids): void
+    {
+        $started = 0;
+
+        foreach (BackupSchedule::query()->with('storage')->where('kind', $this->kind)->whereKey($ids)->get() as $schedule) {
+            try {
+                $started += $schedule->storage && $backups->queue($schedule, 'manual') ? 1 : 0;
+            } catch (Throwable $exception) {
+                $this->toast($schedule->name.': '.$exception->getMessage(), 'error');
+            }
+        }
+
+        $this->dispatch('bulk-done');
+        $this->toast($started === 0 ? 'Nothing started: the selected schedules are already running.' : 'Started '.$started.' schedule(s).');
+    }
+
+    /**
+     * @param  list<int>  $ids
+     */
+    public function setSchedulesEnabled(array $ids, bool $enabled): void
+    {
+        $count = BackupSchedule::query()->where('kind', $this->kind)->whereKey($ids)->update(['enabled' => $enabled]);
+        $this->dispatch('bulk-done');
+        $this->toast(($enabled ? 'Resumed ' : 'Paused ').$count.' schedule(s).');
+    }
+
+    /**
+     * @param  list<int>  $ids
+     */
+    public function deleteSchedules(array $ids): void
+    {
+        $count = 0;
+
+        foreach (BackupSchedule::query()->where('kind', $this->kind)->whereKey($ids)->get() as $schedule) {
+            $schedule->delete();
+            $count++;
+        }
+
+        $this->dispatch('bulk-done');
+        $this->toast('Deleted '.$count.' schedule(s). Their backups are kept.');
+    }
+
+    /**
+     * @param  list<int>  $ids
+     */
+    public function deleteBackups(BackupManager $backups, array $ids): void
+    {
+        $deleted = 0;
+
+        foreach (BackupRun::query()->with('storage')->where('kind', $this->kind)->where('type', BackupRun::TYPE_BACKUP)->whereKey($ids)->get() as $run) {
+            try {
+                $backups->deleteCopy($run);
+                $deleted++;
+            } catch (Throwable $exception) {
+                $this->toast($run->target.': '.$exception->getMessage(), 'error');
+            }
+        }
+
+        $this->dispatch('bulk-done');
+        $this->toast('Deleted '.$deleted.' backup(s) from the bucket.');
+    }
+
     public function cancelWaiting(BackupManager $backups, int $id): void
     {
         $schedule = BackupSchedule::query()->where('kind', $this->kind)->findOrFail($id);
@@ -545,11 +624,11 @@ class Index extends PanelComponent
     }
 
     /**
-     * Backups are grouped by database name, or by schedule for files.
+     * Backups are grouped by database name, or by schedule and folder for files.
      */
     private function targetKey(BackupRun $run): string
     {
-        return $run->isDatabase() ? $run->target : (string) $run->backup_schedule_id;
+        return $run->isDatabase() ? $run->target : $run->backup_schedule_id.'|'.$run->target;
     }
 
     /**
@@ -563,8 +642,8 @@ class Index extends PanelComponent
         return $restorable->groupBy(fn (BackupRun $run) => $this->targetKey($run))
             ->map(fn (Collection $runs, string $key) => [
                 'key' => $key,
-                'label' => $runs->first()->isDatabase() ? $key : ($runs->first()->schedule?->name ?? 'Deleted schedule'),
-                'detail' => $runs->first()->isDatabase() ? null : $runs->first()->target,
+                'label' => $runs->first()->target,
+                'detail' => $runs->first()->isDatabase() ? null : ($runs->first()->schedule?->name ?? 'Deleted schedule'),
                 'count' => $runs->count(),
                 'latest' => $runs->first(),
             ])

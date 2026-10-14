@@ -72,7 +72,7 @@ class Telegram
         'backup_succeeded' => 'A backup finished',
     ];
 
-    public const DEFAULT_EVENTS = ['deploy_started', 'deploy_succeeded', 'deploy_failed', 'site_down', 'site_up', 'process_crashed', 'process_recovered', 'disk_high', 'server_patches', 'issue_new', 'error_spike', 'slow_site', 'heartbeat_missed', 'backup_failed'];
+    public const DEFAULT_EVENTS = ['deploy_started', 'deploy_succeeded', 'deploy_failed', 'site_down', 'site_up', 'process_crashed', 'process_recovered', 'disk_high', 'server_patches', 'issue_new', 'error_spike', 'slow_site', 'heartbeat_missed', 'backup_failed', 'backup_succeeded'];
 
     public function configured(): bool
     {

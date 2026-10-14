@@ -47,7 +47,7 @@
 
     {{-- 2. Which backup --}}
     @if ($restoreStep === 2)
-        <p class="mb-3 text-[13px] text-muted">Choose the backup of <span class="font-mono text-ink">{{ $restoreChoices->first()?->isDatabase() ? $restoreTarget : ($restoreChoices->first()?->schedule?->name ?? '') }}</span> to restore from. Newest first.</p>
+        <p class="mb-3 text-[13px] text-muted">Choose the backup of <span class="font-mono text-ink">{{ $restoreChoices->first()?->target }}</span> to restore from. Newest first.</p>
         <div class="pick-list">
             @forelse ($restoreChoices as $choice)
                 <button class="pick-item" type="button" wire:click="chooseRestoreRun({{ $choice->id }})" wire:key="rc-{{ $choice->id }}">

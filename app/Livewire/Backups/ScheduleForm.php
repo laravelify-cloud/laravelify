@@ -8,6 +8,8 @@ use App\Models\BackupStorage;
 use App\Services\DatabaseDumper;
 use App\Services\FileArchiver;
 use App\Support\BackupCron;
+use App\Support\BackupExcludes;
+use App\Support\SiteTypes;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
 use Throwable;
@@ -35,6 +37,9 @@ class ScheduleForm extends PanelComponent
     public string $custom_cron = '';
 
     public bool $all_databases = false;
+
+    /** Every website, each in its own archive, with skips by site type. */
+    public bool $all_websites = false;
 
     /** @var list<string> */
     public array $databases = [];
@@ -73,6 +78,7 @@ class ScheduleForm extends PanelComponent
         $this->weekday = $this->schedule->weekday;
         $this->custom_cron = $this->schedule->frequency === 'custom' ? $this->schedule->cron : '';
         $this->all_databases = (bool) ($targets['all'] ?? false);
+        $this->all_websites = (bool) ($targets['websites'] ?? false);
         $this->databases = array_values($targets['databases'] ?? []);
         $this->paths = array_values($targets['paths'] ?? []);
         $this->excludes = implode("\n", $targets['excludes'] ?? []);
@@ -124,9 +130,27 @@ class ScheduleForm extends PanelComponent
      */
     public function includePaths(array $relatives): void
     {
+        $skipped = [];
+        $sites = collect(BackupExcludes::websites(app(FileArchiver::class)->root()))->keyBy('folder');
+
         foreach ($relatives as $relative) {
-            $this->addPath((string) $relative);
-            $this->excludes = implode("\n", array_values(array_diff($this->excludeLines(), [trim((string) $relative, '/')])));
+            $relative = trim((string) $relative, '/');
+            $this->addPath($relative);
+            $lines = array_values(array_diff($this->excludeLines(), [$relative]));
+
+            // A website folder: leave out what a deploy rebuilds (node_modules, vendor, dist ...).
+            foreach ($sites->get($relative)['excludes'] ?? [] as $pattern) {
+                if (! in_array($pattern, $lines, true)) {
+                    $lines[] = $pattern;
+                    $skipped[] = $pattern;
+                }
+            }
+
+            $this->excludes = implode("\n", $lines);
+        }
+
+        if ($skipped !== []) {
+            $this->toast('Skipped for the website type: '.implode(', ', array_values(array_unique(array_map('basename', $skipped)))).'. Remove any you want to keep.');
         }
 
         $this->dispatch('picker-done');
@@ -229,7 +253,7 @@ class ScheduleForm extends PanelComponent
 
             $targets = ['all' => $this->all_databases, 'databases' => $this->all_databases ? [] : $databases];
         } else {
-            if ($this->paths === []) {
+            if (! $this->all_websites && $this->paths === []) {
                 $this->addError('paths', 'Choose at least one folder to back up.');
 
                 return;
@@ -237,7 +261,8 @@ class ScheduleForm extends PanelComponent
 
             try {
                 $targets = [
-                    'paths' => array_values(array_unique(array_map(FileArchiver::cleanPath(...), $this->paths))),
+                    'websites' => $this->all_websites,
+                    'paths' => $this->all_websites ? [] : array_values(array_unique(array_map(FileArchiver::cleanPath(...), $this->paths))),
                     'excludes' => array_values(array_unique(array_map(FileArchiver::cleanPath(...), $this->excludeLines()))),
                 ];
             } catch (Throwable $exception) {
@@ -266,6 +291,27 @@ class ScheduleForm extends PanelComponent
 
         $this->toastAfterRedirect('Backup schedule saved: '.BackupCron::describe($attributes['frequency'], $attributes['interval'], $attributes['run_time'], $attributes['weekday'], $cron).'.');
         $this->redirect(route($isDatabase ? 'backups.databases' : 'backups.files'), navigate: true);
+    }
+
+    /**
+     * Each website with its folder and what is skipped for its type, for the "every website" preview.
+     *
+     * @return list<array{name: string, type: string, folder: string, skips: list<string>}>
+     */
+    private function websiteSummaries(FileArchiver $archiver): array
+    {
+        try {
+            $sites = BackupExcludes::websites($archiver->root());
+        } catch (Throwable) {
+            return [];
+        }
+
+        return array_map(fn (array $site) => [
+            'name' => $site['website']->name,
+            'type' => SiteTypes::label((string) $site['website']->type),
+            'folder' => $site['folder'],
+            'skips' => array_map(fn (string $pattern) => str_starts_with($pattern, $site['folder'].'/') ? substr($pattern, strlen($site['folder']) + 1) : $pattern, $site['excludes']),
+        ], $sites);
     }
 
     private function addPath(string $relative): void
@@ -315,6 +361,7 @@ class ScheduleForm extends PanelComponent
             'weekdays' => BackupCron::WEEKDAYS,
             'availableDatabases' => $available,
             'listing' => $folders,
+            'websiteSites' => $isDatabase ? [] : $this->websiteSummaries($archiver),
             'pickerError' => $pickerError,
             'suggestedExcludes' => FileArchiver::SUGGESTED_EXCLUDES,
             'activeExcludes' => $this->excludeLines(),

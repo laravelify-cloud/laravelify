@@ -13,6 +13,7 @@
         :summary="$isDatabase ? 'Dump databases to your S3 storage on a schedule. Restore a whole database or some tables, look inside a backup, or download parts of it as SQL.' : 'Archive folders to your S3 storage on a schedule. Restore everything or picked folders and files, or download a backup.'"
     >
         <x-slot:actions>
+            <button class="btn" type="button" wire:click="fullBackup" wire:loading.attr="disabled" wire:target="fullBackup" @disabled(! $hasStorage) title="{{ $isDatabase ? 'Back up every database now' : 'Back up every website now, each in its own archive, without dependencies and build output' }}"><x-menu-icon name="backup" /> Full backup</button>
             <button class="btn" type="button" wire:click="openRestore" @disabled(! $hasStorage)><x-menu-icon name="restore" /> Restore</button>
             <a class="btn" href="{{ route('backups.storages') }}" wire:navigate><x-menu-icon name="s3" /> Storage</a>
             <a class="btn btn-primary" href="{{ route('backups.schedules.create', $isDatabase ? 'database' : 'files') }}" wire:navigate><x-menu-icon name="plus" /> New schedule</a>
@@ -34,9 +35,23 @@
 
     {{-- Schedules --}}
     <x-layer-card title="Schedules" flush>
+        <div x-data="{ selected: [], all: @js($schedules->pluck('id')->all()) }" @bulk-done.window="selected = []">
+        <div class="fm-selection" x-cloak x-show="selected.length > 0">
+            <div class="flex items-center gap-2">
+                <button class="icon-btn" type="button" @click="selected = []" aria-label="Clear selection"><x-menu-icon name="close" class="size-4" /></button>
+                <span class="font-medium"><span x-text="selected.length"></span> selected</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+                <button class="btn btn-sm btn-primary" type="button" @click="$wire.runSchedules(selected)"><x-menu-icon name="play" /> Run now</button>
+                <button class="btn btn-sm" type="button" @click="$wire.setSchedulesEnabled(selected, false)"><x-menu-icon name="pause" /> Pause</button>
+                <button class="btn btn-sm" type="button" @click="$wire.setSchedulesEnabled(selected, true)"><x-menu-icon name="play" /> Resume</button>
+                <button class="btn btn-sm btn-danger" type="button" @click="if (confirm('Delete the selected schedules? Backups they made are kept.')) $wire.deleteSchedules(selected)"><x-menu-icon name="trash" /> Delete</button>
+            </div>
+        </div>
         <table class="table">
             <thead>
                 <tr>
+                    <th class="w-10"><input type="checkbox" aria-label="Select all schedules" :checked="all.length > 0 && selected.length === all.length" @change="selected = $event.target.checked ? [...all] : []"></th>
                     <th>Name</th>
                     <th>{{ $isDatabase ? 'Databases' : 'Folders' }}</th>
                     <th>When</th>
@@ -49,6 +64,7 @@
                     @php $last = $lastRuns[$schedule->id] ?? null; @endphp
                     @php $isRunning = $running[$schedule->id] ?? false; @endphp
                     <tr wire:key="schedule-{{ $schedule->id }}">
+                        <td><input type="checkbox" aria-label="Select {{ $schedule->name }}" :checked="selected.includes({{ $schedule->id }})" @change="selected = $event.target.checked ? [...selected, {{ $schedule->id }}] : selected.filter((id) => id !== {{ $schedule->id }})"></td>
                         <td>
                             <span class="flex items-center gap-2">
                                 <span class="font-medium {{ $schedule->enabled ? '' : 'text-muted' }}">{{ $schedule->name }}</span>
@@ -88,7 +104,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="5" class="table-empty">
+                        <td colspan="6" class="table-empty">
                             <p>No schedules yet.</p>
                             @if ($isDatabase && $hasStorage)
                                 <div class="mt-3 flex flex-wrap justify-center gap-2">
@@ -101,6 +117,7 @@
                 @endforelse
             </tbody>
         </table>
+        </div>
     </x-layer-card>
 
     {{-- Backups and restores --}}
@@ -116,9 +133,20 @@
             @endif
         </x-slot:actions>
 
+        <div x-data="{ selected: [], all: @js($runs->filter->restorable()->pluck('id')->values()->all()) }" @bulk-done.window="selected = []">
+        <div class="fm-selection" x-cloak x-show="selected.length > 0">
+            <div class="flex items-center gap-2">
+                <button class="icon-btn" type="button" @click="selected = []" aria-label="Clear selection"><x-menu-icon name="close" class="size-4" /></button>
+                <span class="font-medium"><span x-text="selected.length"></span> selected</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+                <button class="btn btn-sm btn-danger" type="button" @click="if (confirm('Delete the selected backups from the bucket? This cannot be undone.')) $wire.deleteBackups(selected)"><x-menu-icon name="trash" /> Delete from bucket</button>
+            </div>
+        </div>
         <table class="table">
             <thead>
                 <tr>
+                    <th class="w-10"><input type="checkbox" aria-label="Select all backups" :checked="all.length > 0 && selected.length === all.length" @change="selected = $event.target.checked ? [...all] : []" :disabled="all.length === 0"></th>
                     <th>{{ $isDatabase ? 'Database' : 'Folders' }}</th>
                     <th>Status</th>
                     <th>Size</th>
@@ -129,6 +157,11 @@
             <tbody>
                 @forelse ($runs as $run)
                     <tr wire:key="run-{{ $run->id }}-{{ $run->status }}">
+                        <td>
+                            @if ($run->restorable())
+                                <input type="checkbox" aria-label="Select backup {{ $run->id }}" :checked="selected.includes({{ $run->id }})" @change="selected = $event.target.checked ? [...selected, {{ $run->id }}] : selected.filter((id) => id !== {{ $run->id }})">
+                            @endif
+                        </td>
                         <td class="max-w-xs">
                             <span class="flex items-center gap-2">
                                 <x-menu-icon name="{{ $run->isBackup() ? ($run->isDatabase() ? 'database' : 'backup') : 'restore' }}" class="size-4 shrink-0 text-muted" />
@@ -143,9 +176,22 @@
                             </span>
                         </td>
                         <td>
-                            <x-status-badge :status="$run->status" />
-                            @if ($run->isStuck())
-                                <span class="block max-w-[14rem] text-[11.5px] text-muted">Waiting for the queue worker</span>
+                            @if ($run->status === 'running')
+                                <div class="min-w-[12rem] max-w-[16rem]">
+                                    <div class="flex items-center gap-2 text-[12.5px]">
+                                        <span class="task-spinner shrink-0"></span>
+                                        <span class="truncate">{{ $run->phase ?: 'Working' }}</span>
+                                        @if ($run->progress !== null)
+                                            <span class="ml-auto font-medium tabular-nums">{{ $run->progress }}%</span>
+                                        @endif
+                                    </div>
+                                    <div @class(['task-bar', 'is-waiting' => $run->progress === null])><span style="width: {{ max(3, (int) $run->progress) }}%"></span></div>
+                                </div>
+                            @else
+                                <x-status-badge :status="$run->status" />
+                                @if ($run->isStuck())
+                                    <span class="block max-w-[14rem] text-[11.5px] text-muted">Waiting for the queue worker</span>
+                                @endif
                             @endif
                         </td>
                         <td class="text-muted">{{ $run->isBackup() ? $run->sizeLabel() : '—' }}</td>
@@ -171,11 +217,12 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="5" class="table-empty">{{ $filter !== '' ? 'No backups for this choice yet.' : 'Nothing yet. Press Run now on a schedule to make the first backup.' }}</td>
+                        <td colspan="6" class="table-empty">{{ $filter !== '' ? 'No backups for this choice yet.' : 'Nothing yet. Press Run now on a schedule to make the first backup.' }}</td>
                     </tr>
                 @endforelse
             </tbody>
         </table>
+        </div>
     </x-layer-card>
 
     {{-- Log --}}

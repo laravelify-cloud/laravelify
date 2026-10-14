@@ -2,6 +2,15 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.3] - 2026-10-14
+
+- **Full backup:** one button backs up every database, or every website, now. It uses a "Full backup" schedule that only runs by hand.
+- **Every website** option for file backups: one archive per website (including ones added later), skipping what a deploy rebuilds by site type: node_modules and .git everywhere, vendor and Laravel caches and logs, dist, build, .next, .nuxt, .output, .svelte-kit, .angular, .astro. Adding a website folder by hand skips the same folders.
+- **Bulk actions:** run, pause, resume, or delete several schedules; delete several backups from the bucket.
+- **Progress:** a running backup shows its step (dumping, packing, uploading) and the upload percent with a progress bar.
+- **Telegram:** one message per finished schedule, with a 24-hour download link for each backup (signed with AWS Signature V4, so it works with every S3 provider; the keys are never in the link). "A backup finished" is now on by default.
+- New schedule frequency: "Only when started by hand".
+
 ## [0.3.0-beta.2] - 2026-10-13
 
 - **Backups, Run now:** each database shows up in the list at once as Waiting, and the page updates by itself until it is finished. A schedule's menu can cancel runs that wait for a stopped queue worker.

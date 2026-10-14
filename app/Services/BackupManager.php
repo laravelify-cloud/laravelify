@@ -6,6 +6,9 @@ use App\Jobs\RunBackupSchedule;
 use App\Jobs\RunRestore;
 use App\Models\BackupRun;
 use App\Models\BackupSchedule;
+use App\Models\BackupStorage;
+use App\Support\BackupCron;
+use App\Support\BackupExcludes;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Number;
 use Illuminate\Support\Str;
@@ -49,6 +52,41 @@ class BackupManager
         RunBackupSchedule::dispatch($schedule->id, $trigger, array_map(fn (BackupRun $run) => $run->id, $runs));
 
         return true;
+    }
+
+    /**
+     * Back up everything now: every database, or every website (each in its own archive,
+     * without dependencies and build output). Uses a "Full backup" schedule that only runs
+     * by hand, made the first time, so the backups are listed and kept like any other.
+     */
+    public function fullBackup(string $kind): BackupSchedule
+    {
+        $isDatabase = $kind === BackupSchedule::KIND_DATABASE;
+        $schedule = BackupSchedule::query()->where('kind', $kind)->where('name', 'Full backup')->first();
+
+        if (! $schedule) {
+            $storage = BackupStorage::query()->where('is_default', true)->first() ?? BackupStorage::query()->first()
+                ?? throw new RuntimeException('Add an S3 storage first.');
+
+            $schedule = BackupSchedule::query()->create([
+                'name' => 'Full backup',
+                'kind' => $kind,
+                'backup_storage_id' => $storage->id,
+                'frequency' => 'manual',
+                'interval' => 1,
+                'run_time' => '00:00',
+                'weekday' => 0,
+                'cron' => BackupCron::NEVER,
+                'targets' => $isDatabase ? ['all' => true, 'databases' => []] : ['websites' => true, 'paths' => [], 'excludes' => []],
+                'retention_count' => 5,
+            ]);
+        }
+
+        if (! $this->queue($schedule->load('storage'), 'manual')) {
+            throw new RuntimeException('A full backup is already running.');
+        }
+
+        return $schedule;
     }
 
     /**
@@ -106,16 +144,60 @@ class BackupManager
             $this->notifyNothingToDo($schedule);
         }
 
-        $folders = $schedule->isDatabase() ? null : ($this->targets($schedule)[0] ?? null);
+        $folders = $schedule->isDatabase() ? [] : collect($this->targets($schedule))->keyBy('label')->all();
 
-        return array_map(fn (BackupRun $run) => $this->execute(
+        $done = array_map(fn (BackupRun $run) => $this->execute(
             $schedule,
             $run,
             $schedule->isDatabase()
                 ? ['label' => $run->target, 'database' => $run->target]
-                : ($folders ?? ['label' => $run->target, 'paths' => [], 'excludes' => []]),
+                : ($folders[$run->target] ?? ['label' => $run->target, 'paths' => [], 'excludes' => []]),
         ), $waiting);
+
+        $this->notifyFinished($schedule, $done);
+
+        return $done;
     }
+
+    /**
+     * One Telegram message for a whole run of a schedule, with a download link for each backup
+     * that works for a day.
+     *
+     * @param  list<BackupRun>  $runs
+     */
+    private function notifyFinished(BackupSchedule $schedule, array $runs): void
+    {
+        $succeeded = array_values(array_filter($runs, fn (BackupRun $run) => $run->status === BackupRun::SUCCESS));
+
+        if ($succeeded === [] || ! $this->telegram->enabled('backup_succeeded')) {
+            return;
+        }
+
+        $lines = [];
+        $buttons = [];
+
+        foreach ($succeeded as $run) {
+            $url = $run->storage ? $this->storage->temporaryUrl($run->storage, (string) $run->object_key, self::LINK_SECONDS) : null;
+            $name = Telegram::escape($run->target);
+            $lines[] = '• '.($url ? '<a href="'.htmlspecialchars($url, ENT_QUOTES).'">'.$name.'</a>' : $name).' · '.$run->sizeLabel();
+
+            if ($url && count($succeeded) === 1) {
+                $buttons[] = ['text' => 'Download backup', 'url' => $url];
+            }
+        }
+
+        $total = count($runs);
+        $title = count($succeeded) === $total ? 'Backup finished' : 'Backup finished, '.($total - count($succeeded)).' of '.$total.' failed';
+
+        $this->telegram->notify(
+            'backup_succeeded',
+            '💾 <b>'.$title.'</b>'."\n".Telegram::escape($schedule->name)."\n\n".implode("\n", array_slice($lines, 0, 40))."\n\n".'<i>Download links work for 24 hours.</i>',
+            $buttons,
+        );
+    }
+
+    /** How long the download links in Telegram work. */
+    public const LINK_SECONDS = 86400;
 
     private function notifyNothingToDo(BackupSchedule $schedule): void
     {
@@ -133,6 +215,17 @@ class BackupManager
             $names = ! empty($targets['all']) ? $this->databases->databases() : array_values($targets['databases'] ?? []);
 
             return array_map(fn (string $name) => ['label' => $name, 'database' => $name], $names);
+        }
+
+        // Every website, each in its own archive, without what a deploy rebuilds.
+        if (! empty($targets['websites'])) {
+            $extra = array_values($targets['excludes'] ?? []);
+
+            return array_map(fn (array $site) => [
+                'label' => $site['folder'],
+                'paths' => [$site['folder']],
+                'excludes' => array_values(array_unique([...$site['excludes'], ...$extra])),
+            ], BackupExcludes::websites($this->files->root()));
         }
 
         $paths = array_values($targets['paths'] ?? []);
@@ -154,7 +247,8 @@ class BackupManager
     private function execute(BackupSchedule $schedule, BackupRun $run, array $target): BackupRun
     {
         $log = new RunLog($run);
-        $run->forceFill(['status' => BackupRun::RUNNING, 'started_at' => now()])->save();
+        $run->forceFill(['status' => BackupRun::RUNNING, 'started_at' => now(), 'phase' => 'Starting', 'progress' => null])->save();
+        $phase = fn (string $text, ?int $percent = null) => $run->forceFill(['phase' => $text, 'progress' => $percent])->save();
         $workDir = $this->workDir();
         $extension = $schedule->isDatabase() ? 'sql.gz' : 'tar.gz';
         $file = $workDir.'/'.Str::random(12).'.'.$extension;
@@ -164,11 +258,13 @@ class BackupManager
             $meta = [];
 
             if ($schedule->isDatabase()) {
+                $phase('Dumping the database');
                 $log->line('Dumping database '.$target['database'].'...');
                 $this->databases->dump($target['database'], $file);
                 $meta['tables'] = $this->databases->tables($target['database']);
                 $log->line('Dumped '.count($meta['tables']).' tables.');
             } else {
+                $phase('Packing the files');
                 $log->line('Archiving '.$target['label'].'...');
                 $archive = $this->files->archive($target['paths'], $target['excludes'], $file);
                 $meta['entries'] = $archive['entries'];
@@ -186,10 +282,20 @@ class BackupManager
             $key = $this->objectKey($schedule, $target['label'], $extension);
             $size = is_file($file) ? (int) filesize($file) : 0;
             $log->line('Uploading '.Number::fileSize($size, precision: 1).' to '.$storage->name.'...');
-            $this->storage->upload($storage, $file, $key);
+            $run->forceFill(['size_bytes' => $size])->save();
+            $phase('Uploading to '.$storage->name, 0);
+            $savedAt = 0.0;
+            $this->storage->upload($storage, $file, $key, function (int $percent) use ($phase, $storage, &$savedAt): void {
+                if (microtime(true) - $savedAt >= 1 || $percent >= 100) {
+                    $savedAt = microtime(true);
+                    $phase('Uploading to '.$storage->name, $percent);
+                }
+            });
 
             $run->forceFill([
                 'status' => BackupRun::SUCCESS,
+                'phase' => null,
+                'progress' => null,
                 'object_key' => $key,
                 'size_bytes' => $size,
                 'meta' => $meta,
@@ -204,10 +310,9 @@ class BackupManager
             }
 
             $this->prune($schedule, $run, $log);
-            $this->telegram->notify('backup_succeeded', '💾 <b>Backup finished</b>'."\n".Telegram::escape($schedule->name).' · '.Telegram::escape($target['label']).' · '.$run->sizeLabel());
         } catch (Throwable $exception) {
             $log->line('FAILED: '.$exception->getMessage());
-            $run->forceFill(['status' => BackupRun::FAILED, 'finished_at' => now()])->save();
+            $run->forceFill(['status' => BackupRun::FAILED, 'phase' => null, 'progress' => null, 'finished_at' => now()])->save();
             $this->telegram->notify('backup_failed', '❌ <b>Backup failed</b>'."\n".Telegram::escape($schedule->name).' · '.Telegram::escape($target['label'])."\n".Telegram::escape(Str::limit($exception->getMessage(), 300)));
         } finally {
             @unlink($file);

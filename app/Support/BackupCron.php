@@ -18,7 +18,11 @@ class BackupCron
         'daily' => 'Every day',
         'weekly' => 'Every week',
         'custom' => 'Custom cron',
+        'manual' => 'Only when started by hand',
     ];
+
+    /** A valid expression that is never due (30 February), for schedules run by hand only. */
+    public const NEVER = '0 0 30 2 *';
 
     public const WEEKDAYS = [
         0 => 'Sunday',
@@ -46,6 +50,7 @@ class BackupCron
             'daily' => $minute.' '.$hour.' * * *',
             'weekly' => $minute.' '.$hour.' * * '.max(0, min(6, $weekday)),
             'custom' => trim((string) $custom),
+            'manual' => self::NEVER,
             default => throw new InvalidArgumentException('Choose how often to run.'),
         };
 
@@ -88,6 +93,7 @@ class BackupCron
             'hours' => $interval <= 1 ? 'Every hour at :'.substr($runTime, -2) : 'Every '.$interval.' hours at :'.substr($runTime, -2),
             'daily' => 'Every day at '.$at,
             'weekly' => 'Every '.(self::WEEKDAYS[$weekday] ?? 'week').' at '.$at,
+            'manual' => 'By hand (Run now)',
             default => 'Cron '.$cron,
         };
     }

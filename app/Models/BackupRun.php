@@ -33,6 +33,8 @@ class BackupRun extends Model
         'kind',
         'target',
         'status',
+        'phase',
+        'progress',
         'trigger',
         'object_key',
         'size_bytes',
