@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.12] - 2026-10-15
+
+- **Fixed "mkdir(): Permission denied"** on Server monitoring and other pages that run commands. On installs from before 0.3.0, the folder the panel's tools use (`storage/app/process-home`) belonged to root, so a newer sub-folder could not be created. The panel now falls back to a private temp folder instead of failing, the updater gives `storage` back to `www-data` every time, and new installs create the folder for `www-data`.
+
 ## [0.3.0-beta.11] - 2026-10-15
 
 - **Account → Security** (the menu under your name): change your password, see your authenticator key, or change it to a new key or a key you already use. Every change asks for your current authenticator code after you press the button; a new key also needs a code from the new key first, so you cannot lock yourself out.

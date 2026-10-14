@@ -150,14 +150,26 @@ class CommandRunner
         return $env;
     }
 
+    /**
+     * A writable folder for tool caches. When the panel user cannot create it (on older
+     * installs the folder above was made by root), a private temp folder is used instead,
+     * so a page never fails because of a cache folder.
+     */
     private function ensureDirectory(string $path): string
     {
-        if (! is_dir($path)) {
-            mkdir($path, 0777, true);
+        if (is_dir($path) || @mkdir($path, 0777, true) || is_dir($path)) {
+            @chmod($path, 0777);
+
+            return $path;
         }
 
-        @chmod($path, 0777);
+        $user = function_exists('posix_geteuid') ? (string) posix_geteuid() : get_current_user();
+        $fallback = sys_get_temp_dir().DIRECTORY_SEPARATOR.'laravelify-'.$user.DIRECTORY_SEPARATOR.basename($path);
 
-        return $path;
+        if (! is_dir($fallback)) {
+            @mkdir($fallback, 0700, true);
+        }
+
+        return $fallback;
     }
 }

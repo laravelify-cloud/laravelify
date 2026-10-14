@@ -94,6 +94,11 @@ composer install --no-dev --optimize-autoloader --no-interaction --no-ansi
 "${PHP_BIN}" artisan config:clear --no-ansi
 "${PHP_BIN}" artisan route:clear --no-ansi
 "${PHP_BIN}" artisan migrate --force --no-ansi
+
+# The steps above run as root. The panel runs as www-data and must own what it writes:
+# logs, caches, and the home folder its tools use (older installs made that one as root).
+install -d "${APP_ROOT}/storage/app/process-home/.composer" "${APP_ROOT}/storage/app/process-home/.npm" "${APP_ROOT}/storage/app/process-home/.corepack"
+chown -R www-data:www-data "${APP_ROOT}/storage" "${APP_ROOT}/bootstrap/cache"
 systemctl reload php8.4-fpm
 
 # Deploys run inside the queue worker, a long-running process that keeps the old

@@ -681,7 +681,7 @@ stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=3
 EOF
 
-install -d -m 0777 "$APP_ROOT/storage/app/process-home/.composer" "$APP_ROOT/storage/app/process-home/.npm"
+install -d -o www-data -g www-data "$APP_ROOT/storage/app/process-home" "$APP_ROOT/storage/app/process-home/.composer" "$APP_ROOT/storage/app/process-home/.npm" "$APP_ROOT/storage/app/process-home/.corepack"
 supervisorctl reread || true
 supervisorctl update || true
 

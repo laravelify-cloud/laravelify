@@ -57,4 +57,22 @@ class CommandRunnerTest extends TestCase
         $this->assertTrue($result->ok, $result->output);
         $this->assertSame([false, false, true, true], json_decode($result->output, true));
     }
+
+    public function test_a_tool_folder_that_cannot_be_created_falls_back_instead_of_failing(): void
+    {
+        $home = storage_path('app/process-home');
+        @mkdir($home, 0777, true);
+        @rmdir($home.DIRECTORY_SEPARATOR.'.corepack');
+        file_put_contents($home.DIRECTORY_SEPARATOR.'.corepack', 'blocks the folder');
+
+        try {
+            $env = (new CommandRunner)->environment();
+
+            $this->assertSame($home, $env['HOME']);
+            $this->assertNotSame($home.DIRECTORY_SEPARATOR.'.corepack', $env['COREPACK_HOME']);
+            $this->assertDirectoryExists($env['COREPACK_HOME']);
+        } finally {
+            @unlink($home.DIRECTORY_SEPARATOR.'.corepack');
+        }
+    }
 }
