@@ -172,6 +172,9 @@
                             </div>
                         </div>
                         <div class="dropdown-sep"></div>
+                        <a class="dropdown-option" role="menuitem" href="{{ route('account.security') }}" wire:navigate>
+                            <x-menu-icon name="shield" /> Security
+                        </a>
                         <a class="dropdown-option" role="menuitem" href="{{ route('settings.github') }}" wire:navigate>
                             <x-menu-icon name="keys" /> Personal access token
                         </a>

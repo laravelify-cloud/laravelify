@@ -29,6 +29,14 @@ abstract class PanelComponent extends Component
         return true;
     }
 
+    /**
+     * Clear an old authenticator-code error when a code dialog opens again.
+     */
+    public function clearCodeError(): void
+    {
+        $this->resetErrorBag('code');
+    }
+
     public function boot(): void
     {
         $user = auth()->user();

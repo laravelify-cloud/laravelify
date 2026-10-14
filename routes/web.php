@@ -8,6 +8,7 @@ use App\Http\Controllers\MonitoringLiveController;
 use App\Http\Controllers\PanelTaskController;
 use App\Http\Controllers\PhpMyAdminController;
 use App\Http\Controllers\WebsiteFileController;
+use App\Livewire\Account\Security as AccountSecurity;
 use App\Livewire\Auth\Login;
 use App\Livewire\Backups\Index as BackupsIndex;
 use App\Livewire\Backups\ScheduleForm as BackupScheduleForm;
@@ -97,6 +98,7 @@ Route::get('/settings/github', Github::class)->name('settings.github');
 Route::get('/settings/telegram', Telegram::class)->name('settings.telegram');
 Route::get('/settings/links', Links::class)->name('settings.links');
 Route::get('/security/private-keys', PrivateKeys::class)->name('security.private-keys');
+Route::get('/account/security', AccountSecurity::class)->name('account.security');
 
 Route::get('/sources', SourceIndex::class)->name('sources.index');
 Route::get('/sources/github/create', GithubForm::class)->name('sources.github.create');

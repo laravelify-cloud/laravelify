@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.11] - 2026-10-15
+
+- **Account → Security** (the menu under your name): change your password, see your authenticator key, or change it to a new key or a key you already use. Every change asks for your current authenticator code after you press the button; a new key also needs a code from the new key first, so you cannot lock yourself out.
+- **Use your own authenticator key** when setting up the superadmin: paste a key you already use elsewhere (or an otpauth:// link) and your app gives codes for both. New keys are now 32 characters, and **Make a different key** creates another one.
+- File manager trash: the authenticator code dialog no longer fails with an error when it opens.
+
 ## [0.3.0-beta.10] - 2026-10-14
 
 - **Turn on / Turn off runs in the background** for groups and selected websites, like backups. A progress card shows which website it is on ("Turning off shop (3 of 15)"), and lists every website with its result: turned off, already off, or the error that stopped it. Rows still waiting show "Switching…", and a website that failed keeps its state.

@@ -6,7 +6,6 @@ use App\Models\TrashItem;
 use App\Models\User;
 use FilesystemIterator;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\RateLimiter;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
@@ -116,19 +115,7 @@ class FileTrash
      */
     public function confirmCode(User $user, string $code): void
     {
-        $key = 'trash-purge:'.$user->id;
-
-        if (RateLimiter::tooManyAttempts($key, 5)) {
-            throw new RuntimeException('Too many wrong codes. Try again in '.RateLimiter::availableIn($key).' seconds.');
-        }
-
-        if (! $this->twoFactor->verify($user, trim($code))) {
-            RateLimiter::hit($key, 60);
-
-            throw new RuntimeException('That code is not right. Enter the current 6-digit code from your authenticator app.');
-        }
-
-        RateLimiter::clear($key);
+        $this->twoFactor->confirmCode($user, $code, 'trash-purge');
     }
 
     /**

@@ -12,7 +12,7 @@
         all: @js($trashGroups->pluck('path')->all()),
         ask(action, id = null, name = '') {
             this.otp = { open: true, action: action, id: id, name: name, code: '', busy: false };
-            $wire.resetErrorBag('code');
+            $wire.clearCodeError();
             this.$nextTick(() => this.$refs.code && this.$refs.code.focus());
         },
         submit() {
