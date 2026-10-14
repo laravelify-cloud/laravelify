@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use FilesystemIterator;
+use RecursiveCallbackFilterIterator;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
@@ -67,11 +68,90 @@ class FileOperations
     }
 
     /**
-     * Zip entries into an archive in $directory. Returns the archive path relative to the root.
+     * Folders a zip usually does not need, by name, and whether they are ticked to leave out at first.
+     * Dependencies and caches are rebuilt by an install or a build; build output and logs often matter.
+     *
+     * @var array<string, bool>
+     */
+    public const SKIPPABLE = [
+        'node_modules' => true,
+        'vendor' => true,
+        '.git' => true,
+        '.next' => true,
+        '.nuxt' => true,
+        '.output' => true,
+        '.svelte-kit' => true,
+        '.angular' => true,
+        '.astro' => true,
+        '.cache' => true,
+        '.turbo' => true,
+        'storage/framework/cache' => true,
+        'storage/framework/views' => true,
+        'storage/framework/sessions' => false,
+        'storage/logs' => false,
+        'dist' => false,
+        'build' => false,
+    ];
+
+    /** How many folders the search for skippable folders looks at, at most. */
+    private const SKIPPABLE_SCAN_LIMIT = 20000;
+
+    /**
+     * The skippable folders inside the entries, for the "compress" dialog. It does not look
+     * inside a folder it found (no node_modules inside node_modules).
      *
      * @param  list<string>  $relatives
+     * @return list<array{path: string, name: string, checked: bool}>
      */
-    public function compress(string $root, string $directory, array $relatives, ?callable $progress = null): string
+    public function skippable(string $root, array $relatives): array
+    {
+        $found = [];
+        $queue = [];
+        $seen = 0;
+
+        foreach ($this->sources($root, $relatives) as $full => $name) {
+            if (is_dir($full)) {
+                $queue[] = $full;
+            }
+        }
+
+        while ($queue !== [] && $seen < self::SKIPPABLE_SCAN_LIMIT) {
+            $directory = array_shift($queue);
+
+            foreach (scandir($directory) ?: [] as $name) {
+                $path = $directory.DIRECTORY_SEPARATOR.$name;
+
+                if ($name === '.' || $name === '..' || is_link($path) || ! is_dir($path)) {
+                    continue;
+                }
+
+                $seen++;
+                $relative = $this->paths->relative($root, $path);
+                $match = $this->skippableName($relative);
+
+                if ($match !== null) {
+                    $found[] = ['path' => $relative, 'name' => $match, 'checked' => self::SKIPPABLE[$match]];
+
+                    continue;
+                }
+
+                $queue[] = $path;
+            }
+        }
+
+        usort($found, fn (array $a, array $b) => [$b['checked'], $a['name'], $a['path']] <=> [$a['checked'], $b['name'], $b['path']]);
+
+        return $found;
+    }
+
+    /**
+     * Zip entries into an archive in $directory. Returns the archive path relative to the root.
+     * $skip lists folders (relative to the root) to leave out, with everything inside them.
+     *
+     * @param  list<string>  $relatives
+     * @param  list<string>  $skip
+     */
+    public function compress(string $root, string $directory, array $relatives, ?callable $progress = null, array $skip = [], ?string $name = null): string
     {
         $this->requireZip();
         $dir = $this->paths->resolveIn($root, $directory);
@@ -81,9 +161,20 @@ class FileOperations
             throw new RuntimeException('Choose something to compress.');
         }
 
-        $name = count($sources) === 1 ? basename(array_key_first($sources)).'.zip' : 'archive.zip';
+        $name = $this->zipName($name) ?? (count($sources) === 1 ? basename(array_key_first($sources)).'.zip' : 'archive.zip');
         $target = $this->uniquePath($dir, $name, true);
-        $files = $this->zipList($sources);
+        $skipped = [];
+
+        foreach ($skip as $relative) {
+            try {
+                $full = $this->paths->locateIn($root, (string) $relative);
+                $skipped[rtrim(str_replace('\\', '/', $full), '/')] = true;
+            } catch (RuntimeException) {
+                // Gone since the dialog was opened: nothing to leave out.
+            }
+        }
+
+        $files = $this->zipList($sources, $skipped);
 
         $this->writeZip($target, $files, $progress);
 
@@ -286,9 +377,10 @@ class FileOperations
      * Every folder and file to put in a zip, as full path => name inside the zip.
      *
      * @param  array<string, string>  $sources
+     * @param  array<string, true>  $skipped  Full paths (with forward slashes) of folders to leave out.
      * @return array<string, string>
      */
-    private function zipList(array $sources): array
+    private function zipList(array $sources, array $skipped = []): array
     {
         $files = [];
 
@@ -305,7 +397,7 @@ class FileOperations
 
             $files[$full.DIRECTORY_SEPARATOR] = $base.'/';
 
-            foreach ($this->walk($full) as $path => $item) {
+            foreach ($this->walk($full, $skipped) as $path => $item) {
                 $name = $base.'/'.str_replace('\\', '/', substr($path, strlen($full) + 1));
                 $files[$item->isDir() ? $path.DIRECTORY_SEPARATOR : $path] = $item->isDir() ? $name.'/' : $name;
             }
@@ -357,16 +449,49 @@ class FileOperations
     }
 
     /**
-     * Everything under a folder, without following links.
+     * Everything under a folder, without following links, and without the $skipped folders.
      *
-     * @return RecursiveIteratorIterator<RecursiveDirectoryIterator>
+     * @param  array<string, true>  $skipped
+     * @return RecursiveIteratorIterator<RecursiveCallbackFilterIterator>
      */
-    private function walk(string $directory): RecursiveIteratorIterator
+    private function walk(string $directory, array $skipped = []): RecursiveIteratorIterator
     {
+        $iterator = new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS);
+
         return new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
+            new RecursiveCallbackFilterIterator($iterator, fn (\SplFileInfo $item) => $skipped === [] || ! isset($skipped[str_replace('\\', '/', $item->getPathname())])),
             RecursiveIteratorIterator::SELF_FIRST,
         );
+    }
+
+    /**
+     * Which skippable name a folder path matches: its own name, or a path like storage/logs.
+     */
+    private function skippableName(string $relative): ?string
+    {
+        $relative = str_replace('\\', '/', $relative);
+
+        foreach (array_keys(self::SKIPPABLE) as $pattern) {
+            if (str_contains($pattern, '/') ? ($relative === $pattern || str_ends_with($relative, '/'.$pattern)) : basename($relative) === $pattern) {
+                return $pattern;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * A safe file name ending in .zip, or null for the default name.
+     */
+    private function zipName(?string $name): ?string
+    {
+        $name = trim((string) $name);
+
+        if ($name === '' || str_contains($name, '/') || str_contains($name, '\\') || str_contains($name, "\0") || $name === '.' || $name === '..') {
+            return null;
+        }
+
+        return str_ends_with(strtolower($name), '.zip') ? $name : $name.'.zip';
     }
 
     private function copyRecursive(string $source, string $target, callable $tick): void

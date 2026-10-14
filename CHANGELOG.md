@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.5] - 2026-10-14
+
+- File manager, **Compress to .zip**: a dialog lists the folders inside the selection a zip usually does not need (node_modules, vendor, .git, .next, .nuxt, .output, .svelte-kit, .angular, .astro, .cache, Laravel cached views), ticked to leave out; dist, build, and logs are listed unticked. Untick to keep, name the zip, and several apps go into one file.
+
 ## [0.3.0-beta.4] - 2026-10-14
 
 - Database backups never include phpMyAdmin's own settings database (`phpmyadmin`), like `information_schema`, `mysql`, `performance_schema`, and `sys`.

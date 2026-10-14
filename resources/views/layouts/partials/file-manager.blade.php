@@ -25,6 +25,7 @@
             dirty: false,
             menu: { open: false, x: 0, y: 0, target: { relative: '', name: '', directory: false, link: false, extension: '', permissions: '' } },
             transfer: { mode: 'copy', path: '', folders: [], loading: false, error: '' },
+            zip: { name: '', folders: [], skip: [], loading: false, error: '' },
             pickTarget: null,
             dragging: false,
             dragDepth: 0,
@@ -230,7 +231,7 @@
                         this.askTransfer(action, [target]);
                         break;
                     case 'compress':
-                        this.$wire.compressEntries([target.relative]);
+                        this.askCompress([target]);
                         break;
                     case 'downloadZip':
                         this.$wire.prepareDownload(target.relative);
@@ -344,6 +345,41 @@
                 var digits = this.chmod.padStart(3, '0').slice(-3).split('');
                 digits[row] = String((parseInt(digits[row], 8) || 0) ^ bit);
                 this.chmod = digits.join('');
+            },
+
+            // Compress: list the folders a zip usually does not need, ticked to leave out.
+
+            askCompress(targets) {
+                if (targets.length === 0) {
+                    return;
+                }
+
+                this.targets = targets;
+                this.zip = { name: '', folders: [], skip: [], loading: true, error: '' };
+                this.dialog = 'compress';
+
+                this.$wire.compressPlan(targets.map((target) => target.relative)).then((plan) => {
+                    this.zip.name = plan.name;
+                    this.zip.folders = plan.folders;
+                    this.zip.skip = plan.folders.filter((folder) => folder.checked).map((folder) => folder.path);
+                    this.zip.error = plan.error;
+                    this.zip.loading = false;
+                });
+            },
+
+            toggleSkip(path) {
+                this.zip.skip = this.zip.skip.includes(path)
+                    ? this.zip.skip.filter((item) => item !== path)
+                    : this.zip.skip.concat([path]);
+            },
+
+            skipAll(skip) {
+                this.zip.skip = skip ? this.zip.folders.map((folder) => folder.path) : [];
+            },
+
+            submitCompress() {
+                this.$wire.compressEntries(this.targets.map((target) => target.relative), this.zip.skip, this.zip.name);
+                this.dialog = null;
             },
 
             askTransfer(mode, targets) {

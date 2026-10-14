@@ -125,7 +125,7 @@
             <button class="btn" type="button" @click="askTransfer('copy', selectedTargets())"><x-menu-icon name="copy" /> Copy to…</button>
             <button class="btn" type="button" @click="askTransfer('move', selectedTargets())"><x-menu-icon name="move" /> Move to…</button>
             @if ($canZip)
-                <button class="btn" type="button" @click="$wire.compressEntries(selected)" wire:loading.attr="disabled" wire:target="compressEntries"><x-menu-icon name="archive" /> Compress to .zip</button>
+                <button class="btn" type="button" @click="askCompress(selectedTargets())"><x-menu-icon name="archive" /> Compress to .zip</button>
             @endif
             <button class="btn btn-danger" type="button" @click="askDelete(selectedTargets())"><x-menu-icon name="trash" /> Delete</button>
         </div>
@@ -439,6 +439,55 @@
                 <button class="btn" type="button" @click="dialog = null">Cancel</button>
                 <button class="btn btn-primary" type="button" :disabled="transfer.loading || !!transfer.error" @click="submitTransfer()" x-text="transfer.mode === 'move' ? 'Move here' : 'Copy here'"></button>
             </div>
+        </x-modal-frame>
+    </template>
+
+    {{-- Compress --}}
+    <template x-teleport="body">
+        <x-modal-frame class="modal-root-top modal-medium" open="dialog === 'compress'" close="dialog = null">
+            <form class="flex flex-col gap-4" @submit.prevent="submitCompress()">
+                <div class="modal-head">
+                    <h2 x-text="'Compress ' + targetLabel() + ' to .zip'"></h2>
+                    <button class="icon-btn" type="button" @click="dialog = null" aria-label="Close"><x-menu-icon name="close" /></button>
+                </div>
+
+                <label class="field">
+                    <span>Zip name</span>
+                    <input class="input" x-model="zip.name" placeholder="archive.zip" autocomplete="off">
+                    <small class="text-muted">Saved in this folder. Big folders are zipped in the background.</small>
+                </label>
+
+                <div class="field">
+                    <div class="flex items-center justify-between gap-2">
+                        <span>Leave out</span>
+                        <span class="flex items-center gap-1.5" x-show="zip.folders.length > 0">
+                            <span class="text-[12px] text-muted"><span x-text="zip.skip.length"></span> of <span x-text="zip.folders.length"></span></span>
+                            <button class="btn btn-sm" type="button" @click="skipAll(true)">All</button>
+                            <button class="btn btn-sm" type="button" @click="skipAll(false)">None</button>
+                        </span>
+                    </div>
+                    <p class="text-[12.5px] text-muted">Dependencies, caches, and build output that an install or a build makes again. Untick a folder to put it in the zip.</p>
+
+                    <div class="pick-list" style="max-height: 20rem">
+                        <p class="flex items-center justify-center gap-2 bg-card px-3 py-8 text-muted" x-show="zip.loading"><span class="task-spinner"></span> Looking for folders to leave out…</p>
+                        <p class="bg-card px-3 py-8 text-center text-danger" x-show="!zip.loading && zip.error" x-text="zip.error"></p>
+                        <p class="bg-card px-3 py-8 text-center text-muted" x-show="!zip.loading && !zip.error && zip.folders.length === 0">Nothing to leave out: everything goes in the zip.</p>
+                        <template x-for="folder in zip.folders" :key="folder.path">
+                            <label class="pick-item cursor-pointer" :class="zip.skip.includes(folder.path) && 'is-selected'">
+                                <input type="checkbox" :checked="zip.skip.includes(folder.path)" @change="toggleSkip(folder.path)">
+                                @include('livewire.websites.partials.file-icon', ['kind' => 'folder'])
+                                <span class="min-w-0 flex-1 truncate font-mono text-[13px]" x-text="folder.path"></span>
+                                <span class="pill shrink-0" x-text="folder.name"></span>
+                            </label>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="modal-foot">
+                    <button class="btn" type="button" @click="dialog = null">Cancel</button>
+                    <button class="btn btn-primary" type="submit" :disabled="zip.loading"><x-menu-icon name="archive" /> Compress</button>
+                </div>
+            </form>
         </x-modal-frame>
     </template>
 

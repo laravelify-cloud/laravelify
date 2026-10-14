@@ -653,7 +653,7 @@ class Files extends PanelComponent
      *
      * @param  list<string>  $relatives
      */
-    public function compressEntries(array $relatives): void
+    public function compressEntries(array $relatives, array $skip = [], string $name = ''): void
     {
         try {
             if (! FileOperations::canZip()) {
@@ -666,10 +666,46 @@ class Files extends PanelComponent
                 throw new RuntimeException('Choose something to compress.');
             }
 
-            $this->startTask('files.compress', 'Compressing '.$this->describe($selected), ['relatives' => array_column($selected, 'relative'), 'directory' => $this->directory]);
+            // Only folders inside what is being zipped can be left out.
+            $roots = array_column($selected, 'relative');
+            $skip = array_values(array_filter(array_map('strval', $skip), fn (string $path) => collect($roots)->contains(fn (string $root) => str_starts_with($path, $root.'/'))));
+
+            $this->startTask('files.compress', 'Compressing '.$this->describe($selected).($skip === [] ? '' : ' without '.count($skip).' '.(count($skip) === 1 ? 'folder' : 'folders')), [
+                'relatives' => $roots,
+                'directory' => $this->directory,
+                'skip' => $skip,
+                'name' => trim($name),
+            ]);
             $this->dispatch('entries-queued');
         } catch (Throwable $e) {
             $this->toast($e->getMessage(), 'error');
+        }
+    }
+
+    /**
+     * For the compress dialog: the folders inside the selection a zip usually does not need
+     * (node_modules, vendor, .git, .nuxt ...), and a name for the zip.
+     *
+     * @param  list<string>  $relatives
+     * @return array{name: string, folders: list<array{path: string, name: string, checked: bool}>, error: string}
+     */
+    #[Renderless]
+    public function compressPlan(array $relatives): array
+    {
+        try {
+            $selected = $this->selectedEntries($relatives);
+
+            if ($selected === []) {
+                throw new RuntimeException('Choose something to compress.');
+            }
+
+            return [
+                'name' => count($selected) === 1 ? $selected[0]['name'].'.zip' : 'archive.zip',
+                'folders' => $this->operations()->skippable($this->rootPath(), array_column($selected, 'relative')),
+                'error' => '',
+            ];
+        } catch (Throwable $e) {
+            return ['name' => 'archive.zip', 'folders' => [], 'error' => $e->getMessage()];
         }
     }
 

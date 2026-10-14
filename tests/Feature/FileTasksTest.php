@@ -150,4 +150,51 @@ class FileTasksTest extends TestCase
 
         $this->assertModelMissing($task);
     }
+
+    public function test_compress_offers_to_leave_out_dependencies_and_skips_them(): void
+    {
+        if (! FileOperations::canZip()) {
+            $this->markTestSkipped('The zip extension is not installed.');
+        }
+
+        File::ensureDirectoryExists($this->root.'/shop/node_modules/lodash/node_modules');
+        File::ensureDirectoryExists($this->root.'/shop/.git');
+        File::ensureDirectoryExists($this->root.'/shop/dist');
+        File::ensureDirectoryExists($this->root.'/shop/storage/logs');
+        File::ensureDirectoryExists($this->root.'/api/vendor/laravel');
+        file_put_contents($this->root.'/shop/node_modules/lodash/index.js', 'x');
+        file_put_contents($this->root.'/shop/dist/app.js', 'built');
+        file_put_contents($this->root.'/shop/package.json', '{}');
+        file_put_contents($this->root.'/api/vendor/laravel/x.php', '<?php');
+        file_put_contents($this->root.'/api/index.php', '<?php');
+        $website = $this->site();
+
+        $component = Livewire::test(Files::class, ['website' => $website]);
+        $plan = $component->instance()->compressPlan(['shop', 'api']);
+
+        $this->assertSame('archive.zip', $plan['name']);
+        $this->assertSame(
+            ['api/vendor' => true, 'shop/.git' => true, 'shop/node_modules' => true, 'shop/dist' => false, 'shop/storage/logs' => false],
+            collect($plan['folders'])->mapWithKeys(fn (array $folder) => [$folder['path'] => $folder['checked']])->sortKeys()->sortByDesc(fn ($checked) => $checked)->all(),
+        );
+        $this->assertNotContains('shop/node_modules/lodash/node_modules', array_column($plan['folders'], 'path'), 'Nothing is listed inside a folder that is left out.');
+
+        $component->call('compressEntries', ['shop', 'api'], ['shop/node_modules', 'shop/.git', 'api/vendor', 'elsewhere/secret'], 'sites')
+            ->assertSee('sites.zip');
+
+        $zip = new \ZipArchive;
+        $zip->open($this->root.'/sites.zip');
+        $names = [];
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $names[] = $zip->getNameIndex($i);
+        }
+
+        $zip->close();
+
+        $this->assertContains('shop/package.json', $names);
+        $this->assertContains('shop/dist/app.js', $names, 'Unticked folders go in the zip.');
+        $this->assertContains('api/index.php', $names);
+        $this->assertEmpty(array_filter($names, fn (string $name) => str_contains($name, 'node_modules') || str_contains($name, 'vendor') || str_contains($name, '.git')));
+    }
 }

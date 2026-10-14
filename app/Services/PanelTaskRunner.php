@@ -92,7 +92,7 @@ class PanelTaskRunner
             $relatives = array_values(array_map('strval', (array) ($payload['relatives'] ?? [])));
 
             return match ($task->kind) {
-                'files.compress' => ['path' => $path = $this->files->compress($root, (string) ($payload['directory'] ?? ''), $relatives, $progress), 'message' => 'Created '.basename($path).'.'],
+                'files.compress' => ['path' => $path = $this->files->compress($root, (string) ($payload['directory'] ?? ''), $relatives, $progress, array_values(array_map('strval', (array) ($payload['skip'] ?? []))), isset($payload['name']) ? (string) $payload['name'] : null), 'message' => 'Created '.basename($path).'.'],
                 'files.extract' => ['path' => $path = $this->files->extract($root, $relatives[0] ?? '', $progress), 'message' => 'Extracted to '.basename($path).'.'],
                 'files.copy' => ['message' => $this->countLabel($this->files->copy($root, $relatives, (string) ($payload['destination'] ?? ''), $progress)).' copied to /'.($payload['destination'] ?? '').'.'],
                 'files.delete' => ['message' => $this->countLabel($this->files->delete($root, $relatives, $progress)).' deleted.'],
