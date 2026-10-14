@@ -16,23 +16,22 @@
                 <button class="btn" type="button" @click="open = false">Close</button>
             </div>
 
-            <div class="modal-warning">
-                <p><strong>Warning</strong></p>
-                <p>This operation is permanent and cannot be undone. Please think again before proceeding.</p>
-            </div>
+            <x-callout type="danger" title="This cannot be undone" class="mb-4">
+                This is permanent. Please think again before you continue.
+            </x-callout>
 
-            <p>The following actions will be performed:</p>
-            <ul class="modal-actions mb-4 mt-2 list-disc space-y-1 pl-5">
+            <p class="mb-2 text-[12.5px] font-medium">What will happen</p>
+            <ul class="delete-list mb-4">
                 @foreach ($actions as $line)
-                    <li>{{ $line }}</li>
+                    <li><span>{{ $line }}</span></li>
                 @endforeach
             </ul>
 
-            <p class="font-medium">Confirm actions</p>
-            <p class="mb-2 text-muted">Please confirm by entering the name below.</p>
-            <div class="mb-3 flex items-center gap-2">
-                <input class="input" value="{{ $name }}" readonly>
-                <button class="btn" type="button" @click="navigator.clipboard.writeText(@js($name))">Copy</button>
+            <p class="font-medium">Confirm</p>
+            <p class="mb-2 text-muted">Type the name below to confirm. Use the copy button to paste it.</p>
+            <div class="copy-field mb-3">
+                <input class="input font-mono" value="{{ $name }}" readonly tabindex="-1">
+                <x-copy-button :text="\Illuminate\Support\Js::from($name)->toHtml()" />
             </div>
             <label class="field">
                 <span>Name</span>

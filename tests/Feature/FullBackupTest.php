@@ -17,6 +17,7 @@ use App\Services\CommandResult;
 use App\Services\CommandRunner;
 use App\Services\DatabaseDumper;
 use App\Services\FileArchiver;
+use App\Services\Telegram;
 use App\Services\TwoFactor;
 use App\Support\BackupCron;
 use App\Support\BackupExcludes;
@@ -274,5 +275,25 @@ class FullBackupTest extends TestCase
         ));
 
         $this->assertSame(['laravelify', 'lv_shop'], app(DatabaseDumper::class)->databases());
+    }
+
+    public function test_events_added_later_are_on_for_people_who_saved_their_choice_before(): void
+    {
+        Setting::putValue('telegram_enabled', '1');
+        Setting::putValue('telegram_bot_token', '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0');
+        Setting::putValue('telegram_chat_id', '42');
+        // Saved by an older version: no backup events, and no list of known events.
+        Setting::putValue('telegram_events', json_encode(['deploy_failed', 'site_down']));
+        $telegram = app(Telegram::class);
+
+        $this->assertTrue($telegram->enabled('backup_failed'));
+        $this->assertTrue($telegram->enabled('backup_succeeded'));
+        $this->assertTrue($telegram->enabled('deploy_failed'));
+        $this->assertFalse($telegram->enabled('deploy_started'), 'Events that existed and were left off stay off.');
+
+        Telegram::saveEvents(['deploy_failed', 'backup_failed']);
+
+        $this->assertTrue($telegram->enabled('backup_failed'));
+        $this->assertFalse($telegram->enabled('backup_succeeded'), 'Once saved with it unticked, it stays off.');
     }
 }

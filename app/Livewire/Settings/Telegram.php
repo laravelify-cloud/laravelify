@@ -37,8 +37,7 @@ class Telegram extends PanelComponent
         $this->hasToken = filled(Setting::getValue('telegram_bot_token'));
         $this->chatId = (string) Setting::getValue('telegram_chat_id');
         $this->threadId = (string) Setting::getValue('telegram_thread_id');
-        $saved = json_decode((string) Setting::getValue('telegram_events'), true);
-        $this->events = is_array($saved) ? array_values(array_intersect($saved, array_keys(TelegramClient::EVENTS))) : TelegramClient::DEFAULT_EVENTS;
+        $this->events = app(TelegramClient::class)->chosenEvents();
         $threads = json_decode((string) Setting::getValue('telegram_threads'), true);
         $this->threads = array_map(fn ($event): string => is_array($threads) ? (string) ($threads[$event] ?? '') : '', array_combine(array_keys(TelegramClient::EVENTS), array_keys(TelegramClient::EVENTS)));
         $this->diskThreshold = (string) (Setting::getValue('telegram_disk_threshold') ?: '80');
@@ -71,7 +70,7 @@ class Telegram extends PanelComponent
         Setting::putValue('telegram_enabled', $this->enabled ? '1' : '0');
         Setting::putValue('telegram_chat_id', trim($this->chatId));
         Setting::putValue('telegram_thread_id', trim($this->threadId));
-        Setting::putValue('telegram_events', json_encode(array_values(array_intersect($this->events, array_keys(TelegramClient::EVENTS)))));
+        TelegramClient::saveEvents($this->events);
         Setting::putValue('telegram_threads', json_encode(array_filter(
             array_intersect_key(array_map(fn ($thread): string => trim((string) $thread), $this->threads), TelegramClient::EVENTS),
             fn (string $thread): bool => $thread !== '',

@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.6] - 2026-10-14
+
+- **Telegram:** backup messages were never sent when Telegram events had been saved before backups existed. Events added in a later version are now on by default for everyone, and stay as you set them once you save.
+- Background tasks look like alerts: a colored icon, the result, and a status pill (Done, Failed, Waiting, or the percent) centered on the right, with the time.
+- Delete dialogs (file manager and the rest of the panel): a warning callout, the list of what will be deleted, and the text to type with a copy button.
+
 ## [0.3.0-beta.5] - 2026-10-14
 
 - File manager, **Compress to .zip**: a dialog lists the folders inside the selection a zip usually does not need (node_modules, vendor, .git, .next, .nuxt, .output, .svelte-kit, .angular, .astro, .cache, Laravel cached views), ticked to leave out; dist, build, and logs are listed unticked. Untick to keep, name the zip, and several apps go into one file.

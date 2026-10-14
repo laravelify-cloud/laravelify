@@ -85,9 +85,51 @@ class Telegram
             return false;
         }
 
-        $events = json_decode((string) Setting::getValue('telegram_events'), true);
+        return in_array($event, $this->chosenEvents(), true);
+    }
 
-        return in_array($event, is_array($events) ? $events : self::DEFAULT_EVENTS, true);
+    /**
+     * The events that existed before saved choices remembered which events they knew about.
+     */
+    private const FIRST_EVENTS = [
+        'deploy_started', 'deploy_succeeded', 'deploy_failed', 'deploy_cancelled', 'webhook_ignored',
+        'site_down', 'site_up', 'process_crashed', 'process_recovered', 'disk_high', 'server_patches',
+        'issue_new', 'error_spike', 'slow_site', 'threat_detected', 'heartbeat_missed',
+    ];
+
+    /**
+     * The events to send: what was saved on the settings page, plus events added in a later
+     * version (on by default) that the saved choice did not know about yet.
+     *
+     * @return list<string>
+     */
+    public function chosenEvents(): array
+    {
+        $saved = json_decode((string) Setting::getValue('telegram_events'), true);
+
+        if (! is_array($saved)) {
+            return self::DEFAULT_EVENTS;
+        }
+
+        $known = json_decode((string) Setting::getValue('telegram_events_known'), true);
+        $known = is_array($known) ? $known : self::FIRST_EVENTS;
+        $added = array_diff(array_keys(self::EVENTS), $known);
+
+        return array_values(array_unique([
+            ...array_intersect($saved, array_keys(self::EVENTS)),
+            ...array_intersect($added, self::DEFAULT_EVENTS),
+        ]));
+    }
+
+    /**
+     * Save the chosen events, and which events existed when they were chosen.
+     *
+     * @param  list<string>  $events
+     */
+    public static function saveEvents(array $events): void
+    {
+        Setting::putValue('telegram_events', json_encode(array_values(array_intersect($events, array_keys(self::EVENTS)))));
+        Setting::putValue('telegram_events_known', json_encode(array_keys(self::EVENTS)));
     }
 
     /**
