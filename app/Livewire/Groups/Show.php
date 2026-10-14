@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Groups;
 
+use App\Livewire\Concerns\SwitchesWebsites;
 use App\Livewire\PanelComponent;
 use App\Models\Group;
 use App\Services\WebsiteSwitch;
@@ -9,6 +10,8 @@ use Throwable;
 
 class Show extends PanelComponent
 {
+    use SwitchesWebsites;
+
     public Group $group;
 
     public function delete(): void
@@ -31,46 +34,25 @@ class Show extends PanelComponent
     }
 
     /**
-     * Turn the whole group, with every website in it, off or on.
+     * Turn the whole group, with every website in it, off or on in the background.
      */
-    public function setGroupEnabled(WebsiteSwitch $switch, bool $enabled): void
+    public function setGroupEnabled(bool $enabled): void
     {
-        $errors = $switch->setGroup($this->group, $enabled);
-
-        $this->toast($errors === []
-            ? ($enabled ? 'The group and its websites are on.' : 'The group and its websites are turned off.')
-            : 'Some websites could not be switched: '.implode(' · ', $errors), $errors === [] ? 'success' : 'error');
+        $this->startSwitch($enabled, [$this->group->id], [], ($enabled ? 'Turning on ' : 'Turning off ').$this->group->name);
+        $this->group->refresh();
     }
 
     /**
+     * Turn the chosen websites of this group off or on in the background.
+     *
      * @param  list<int>  $ids
      */
-    public function setWebsitesEnabled(WebsiteSwitch $switch, array $ids, bool $enabled): void
+    public function setWebsitesEnabled(array $ids, bool $enabled): void
     {
-        $done = 0;
-        $errors = [];
+        $websites = $this->group->websites()->whereKey($ids)->orderBy('name')->get();
+        $names = $websites->count() === 1 ? $websites->first()->name : $websites->count().' websites';
 
-        foreach ($this->group->websites()->whereKey($ids)->get() as $website) {
-            if ($website->enabled === $enabled) {
-                continue;
-            }
-
-            try {
-                $enabled ? $switch->enable($website) : $switch->disable($website);
-                $done++;
-            } catch (Throwable $exception) {
-                $errors[] = $website->name.': '.$exception->getMessage();
-            }
-        }
-
-        if ($enabled && $done > 0 && ! $this->group->enabled) {
-            $this->group->forceFill(['enabled' => true])->save();
-        }
-
-        $this->dispatch('bulk-done');
-        $this->toast($errors === []
-            ? ($enabled ? 'Turned on ' : 'Turned off ').$done.' '.($done === 1 ? 'website' : 'websites').'.'
-            : 'Some websites could not be switched: '.implode(' · ', $errors), $errors === [] ? 'success' : 'error');
+        $this->startSwitch($enabled, [], $websites->modelKeys(), ($enabled ? 'Turning on ' : 'Turning off ').$names);
     }
 
     /**
@@ -104,7 +86,12 @@ class Show extends PanelComponent
 
     public function render()
     {
+        $tasks = $this->switchTasks();
+
         return view('livewire.groups.show', [
+            'tasks' => $tasks,
+            'tasksActive' => $tasks->contains(fn ($task) => $task->isActive()),
+            'switching' => $this->switchingWebsiteIds($tasks),
             'websites' => $this->group->websites()->orderBy('name')->get(),
         ])->layout('layouts.app')->title($this->group->name);
     }

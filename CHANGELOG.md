@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.10] - 2026-10-14
+
+- **Turn on / Turn off runs in the background** for groups and selected websites, like backups. A progress card shows which website it is on ("Turning off shop (3 of 15)"), and lists every website with its result: turned off, already off, or the error that stopped it. Rows still waiting show "Switching…", and a website that failed keeps its state.
+- **Database backups are grouped by database:** the list shows the newest backup of each database, with "N older backups" to open the rest underneath. File backups are grouped by schedule. The list now covers the latest 100.
+
 ## [0.3.0-beta.9] - 2026-10-14
 
 - **Turn websites and groups off and on.** A turned-off site answers with a short "This site is turned off" page (503) on its own address, its workers and Node process stop (and stay stopped after a reboot), and deploys, GitHub pushes, and down alerts pause. Files, database, environment, and settings stay; Turn on brings it all back. Turning a group off turns off every website in it.

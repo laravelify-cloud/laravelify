@@ -451,4 +451,16 @@ SQL;
         $this->assertStringNotContainsString($storage->secret_key, implode(' ', $captured['command']));
         $this->assertSame($storage->secret_key, $captured['env']['RCLONE_CONFIG_LV_SECRET_ACCESS_KEY']);
     }
+
+    public function test_backups_of_the_same_database_are_grouped_under_the_newest(): void
+    {
+        $this->signIn();
+        $schedule = BackupSchedule::factory()->create();
+        BackupRun::factory()->count(3)->create(['backup_schedule_id' => $schedule->id, 'backup_storage_id' => $schedule->backup_storage_id, 'target' => 'shop_db']);
+        BackupRun::factory()->create(['backup_schedule_id' => $schedule->id, 'backup_storage_id' => $schedule->backup_storage_id, 'target' => 'blog_db']);
+
+        $page = Livewire::test(BackupsIndex::class, ['kind' => 'database'])->assertSee('2 older backups');
+
+        $this->assertSame(['database:blog_db' => 1, 'database:shop_db' => 3], $page->viewData('runGroups')->map->count()->all());
+    }
 }

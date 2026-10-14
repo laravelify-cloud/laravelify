@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\Group;
+use App\Models\PanelTask;
 use App\Models\Website;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -37,29 +39,64 @@ class WebsiteSwitch
     }
 
     /**
-     * Turn a whole group off or on, with every website in it.
+     * Turn websites, and whole groups with every website in them, off or on in a background task.
+     * The task shows which website it is on, and lists every website with how it went.
      *
-     * @return list<string> Errors, one per website that could not be switched.
+     * @return array{message: string, failed: bool, lines: list<array{id: int, label: string, ok: bool, note: string}>}
      */
-    public function setGroup(Group $group, bool $enabled): array
+    public function switchTask(PanelTask $task): array
     {
-        $errors = [];
+        $payload = $task->payload ?? [];
+        $enabled = (bool) ($payload['enabled'] ?? false);
+        $groups = Group::query()->whereKey(array_map('intval', (array) ($payload['group_ids'] ?? [])))->get();
+        $websiteIds = array_map('intval', (array) ($payload['website_ids'] ?? []));
+        $websites = Website::query()
+            ->where(fn ($query) => $query->whereIn('group_id', $groups->modelKeys())->orWhereIn('id', $websiteIds))
+            ->orderBy('name')->get();
+        $verb = $enabled ? 'Turning on' : 'Turning off';
+        $lines = [];
 
-        foreach ($group->websites()->get() as $website) {
+        foreach ($websites->values() as $index => $website) {
+            $task->report((int) floor($index / max(1, $websites->count()) * 100), $verb.' '.$website->name.' ('.($index + 1).' of '.$websites->count().')', true);
+
             if ($website->enabled === $enabled) {
+                $lines[] = ['id' => $website->id, 'label' => $website->name, 'ok' => true, 'note' => $enabled ? 'Already on' : 'Already off'];
+
                 continue;
             }
 
             try {
                 $enabled ? $this->enable($website) : $this->disable($website);
+                $lines[] = ['id' => $website->id, 'label' => $website->name, 'ok' => true, 'note' => $enabled ? 'Turned on' : 'Turned off'];
             } catch (Throwable $exception) {
-                $errors[] = $website->name.': '.$exception->getMessage();
+                $lines[] = ['id' => $website->id, 'label' => $website->name, 'ok' => false, 'note' => Str::limit($exception->getMessage(), 300)];
             }
+
+            $task->forceFill(['result' => ['lines' => $lines]])->save();
         }
 
-        $group->forceFill(['enabled' => $enabled])->save();
+        foreach ($groups as $group) {
+            $group->forceFill(['enabled' => $enabled])->save();
+        }
 
-        return $errors;
+        if ($enabled && $websiteIds !== []) {
+            Group::query()->whereKey($websites->whereIn('id', $websiteIds)->pluck('group_id')->unique()->all())
+                ->where('enabled', false)->update(['enabled' => true]);
+        }
+
+        $failed = count(array_filter($lines, fn (array $line) => ! $line['ok']));
+        $count = count($lines);
+        $sites = $count === 1 ? '1 website' : $count.' websites';
+
+        return [
+            'message' => match (true) {
+                $count === 0 => 'No websites to switch.',
+                $failed === 0 => ($enabled ? 'Turned on ' : 'Turned off ').$sites.'.',
+                default => $failed.' of '.$sites.' could not be switched.',
+            },
+            'failed' => $failed > 0,
+            'lines' => $lines,
+        ];
     }
 
     /**

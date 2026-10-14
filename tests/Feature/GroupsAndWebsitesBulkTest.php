@@ -7,6 +7,7 @@ use App\Livewire\Groups\Show as GroupShow;
 use App\Livewire\Websites\Files;
 use App\Livewire\Websites\Show as WebsiteShow;
 use App\Models\Group;
+use App\Models\PanelTask;
 use App\Models\TrashItem;
 use App\Models\User;
 use App\Models\Website;
@@ -44,16 +45,17 @@ class GroupsAndWebsitesBulkTest extends TestCase
      *
      * @return \ArrayObject<int, list<string>>
      */
-    private function recordHostActions(): \ArrayObject
+    private function recordHostActions(string $failingSlug = ''): \ArrayObject
     {
         $calls = new \ArrayObject;
         config(['laravelify.host_commands' => '1']);
-        $this->mock(CommandRunner::class, function (MockInterface $mock) use ($calls) {
+        $this->mock(CommandRunner::class, function (MockInterface $mock) use ($calls, $failingSlug) {
             $mock->shouldReceive('supportsHostCommands')->andReturnTrue();
-            $mock->shouldReceive('run')->andReturnUsing(function (array $command) use ($calls) {
+            $mock->shouldReceive('run')->andReturnUsing(function (array $command) use ($calls, $failingSlug) {
                 $calls[] = array_slice($command, -3);
+                $failed = $failingSlug !== '' && in_array($failingSlug, $command, true);
 
-                return new CommandResult(true, false, $command, 'ok', 0);
+                return new CommandResult(! $failed, false, $command, $failed ? 'nginx: test failed' : 'ok', $failed ? 1 : 0);
             });
         });
 
@@ -110,6 +112,26 @@ class GroupsAndWebsitesBulkTest extends TestCase
 
         $this->assertTrue($group->fresh()->enabled);
         $this->assertSame([true, true], $sites->map(fn ($site) => $site->fresh()->enabled)->all());
+    }
+
+    public function test_switching_runs_as_a_task_that_lists_every_website(): void
+    {
+        $this->recordHostActions('broken');
+        $group = Group::factory()->create();
+        Website::factory()->create(['group_id' => $group->id, 'name' => 'Alpha', 'slug' => 'alpha']);
+        Website::factory()->create(['group_id' => $group->id, 'name' => 'Broken', 'slug' => 'broken']);
+
+        Livewire::test(GroupShow::class, ['group' => $group])
+            ->call('setGroupEnabled', false)
+            ->assertDispatched('toast', type: 'error')
+            ->assertSee('1 of 2 websites could not be switched.')
+            ->assertSee('nginx: test failed');
+
+        $task = PanelTask::query()->sole();
+        $this->assertSame(PanelTask::FAILED, $task->status);
+        $this->assertSame(['Alpha' => true, 'Broken' => false], collect($task->result['lines'])->pluck('ok', 'label')->all());
+        $this->assertFalse(Website::query()->where('slug', 'alpha')->value('enabled'));
+        $this->assertTrue(Website::query()->where('slug', 'broken')->value('enabled'), 'A website that failed keeps its state.');
     }
 
     public function test_websites_are_switched_and_deleted_in_bulk(): void

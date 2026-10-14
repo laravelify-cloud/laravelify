@@ -2,30 +2,25 @@
 
 namespace App\Livewire\Groups;
 
+use App\Livewire\Concerns\SwitchesWebsites;
 use App\Livewire\PanelComponent;
 use App\Models\Group;
-use App\Services\WebsiteSwitch;
 
 class Index extends PanelComponent
 {
+    use SwitchesWebsites;
+
     /**
-     * Turn the chosen groups, with all their websites, on or off.
+     * Turn the chosen groups, with all their websites, on or off in the background.
      *
      * @param  list<int>  $ids
      */
-    public function setEnabled(WebsiteSwitch $switch, array $ids, bool $enabled): void
+    public function setEnabled(array $ids, bool $enabled): void
     {
-        $errors = [];
-        $groups = Group::query()->whereKey($ids)->get();
+        $groups = Group::query()->whereKey($ids)->orderBy('name')->get();
+        $names = $groups->count() === 1 ? $groups->first()->name : $groups->count().' groups';
 
-        foreach ($groups as $group) {
-            $errors = [...$errors, ...$switch->setGroup($group, $enabled)];
-        }
-
-        $this->dispatch('bulk-done');
-        $this->toast($errors === []
-            ? ($enabled ? 'Turned on ' : 'Turned off ').$groups->count().' '.($groups->count() === 1 ? 'group' : 'groups').' and their websites.'
-            : 'Some websites could not be switched: '.implode(' · ', $errors), $errors === [] ? 'success' : 'error');
+        $this->startSwitch($enabled, $groups->modelKeys(), [], ($enabled ? 'Turning on ' : 'Turning off ').$names);
     }
 
     /**
@@ -58,7 +53,12 @@ class Index extends PanelComponent
 
     public function render()
     {
+        $tasks = $this->switchTasks();
+
         return view('livewire.groups.index', [
+            'tasks' => $tasks,
+            'tasksActive' => $tasks->contains(fn ($task) => $task->isActive()),
+            'switching' => $this->switchingGroupIds($tasks),
             'groups' => Group::query()->withCount([
                 'websites',
                 'websites as disabled_count' => fn ($query) => $query->where('enabled', false),

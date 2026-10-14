@@ -21,6 +21,9 @@ class Index extends PanelComponent
 
     public const TASK_SCOPE = 'backups';
 
+    /** How many backups and restores the list shows, grouped by database (or file schedule). */
+    public const RUNS_SHOWN = 100;
+
     public string $kind = BackupSchedule::KIND_DATABASE;
 
     /** Show only the backups of one database (or one file schedule). */
@@ -549,7 +552,7 @@ class Index extends PanelComponent
             ->when($this->filter !== '', fn ($query) => $isDatabase
                 ? $query->where('target', $this->filter)
                 : $query->where('backup_schedule_id', (int) $this->filter))
-            ->latest('id')->limit(30)->get();
+            ->latest('id')->limit(self::RUNS_SHOWN)->get();
 
         $restorable = BackupRun::query()->with(['storage', 'schedule'])->where('kind', $this->kind)->where('type', BackupRun::TYPE_BACKUP)
             ->where('status', BackupRun::SUCCESS)->whereNotNull('object_key')->latest('id')->get()
@@ -567,6 +570,7 @@ class Index extends PanelComponent
             'lastRuns' => $lastRuns,
             'running' => $schedules->mapWithKeys(fn (BackupSchedule $schedule) => [$schedule->id => $backups->isRunning($schedule)]),
             'runs' => $runs,
+            'runGroups' => $runs->groupBy(fn (BackupRun $run) => $isDatabase ? 'database:'.$run->target : 'schedule:'.$run->backup_schedule_id),
             'filters' => $this->filterOptions($restorable, $schedules),
             'hasStorage' => BackupStorage::query()->exists(),
             'tasks' => $tasks,

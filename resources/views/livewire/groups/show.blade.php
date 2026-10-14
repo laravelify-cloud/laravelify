@@ -5,9 +5,9 @@
         </x-slot:crumbs>
         <x-slot:actions>
             @if ($group->enabled)
-                <button class="btn" type="button" wire:click="setGroupEnabled(false)" wire:confirm="Turn off {{ $group->name }}? Every website in it shows a turned-off page and its processes stop until you turn the group on again." wire:loading.attr="disabled" wire:target="setGroupEnabled"><x-menu-icon name="pause" /> Turn off group</button>
+                <button class="btn" type="button" wire:click="setGroupEnabled(false)" wire:confirm="Turn off {{ $group->name }}? Every website in it shows a turned-off page and its processes stop until you turn the group on again." @disabled($tasksActive)><x-menu-icon name="pause" /> Turn off group</button>
             @else
-                <button class="btn" type="button" wire:click="setGroupEnabled(true)" wire:loading.attr="disabled" wire:target="setGroupEnabled"><x-menu-icon name="play" /> Turn on group</button>
+                <button class="btn" type="button" wire:click="setGroupEnabled(true)" @disabled($tasksActive)><x-menu-icon name="play" /> Turn on group</button>
             @endif
             <a class="btn" href="{{ route('groups.edit', $group) }}" wire:navigate><x-menu-icon name="pencil" /> Edit</a>
             <x-confirm-delete
@@ -20,6 +20,8 @@
         </x-slot:actions>
     </x-page-header>
     @error('group') <p class="error">{{ $message }}</p> @enderror
+
+    <x-task-tray :tasks="$tasks" :active="$tasksActive" />
 
     @unless ($group->enabled)
         <x-callout type="warning" title="This group is turned off">
@@ -67,7 +69,9 @@
                                 </a>
                             </td>
                             <td>
-                                @if ($website->enabled)
+                                @if (in_array($website->id, $switching, true))
+                                    <span class="status-badge is-switching"><span class="task-spinner"></span> Switching…</span>
+                                @elseif ($website->enabled)
                                     <span class="status-badge" style="--status-color: var(--color-success)">On</span>
                                 @else
                                     <span class="status-badge" style="--status-color: var(--color-muted)">Turned off</span>

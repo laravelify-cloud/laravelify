@@ -18,6 +18,7 @@ class PanelTaskRunner
         private FileOperations $files,
         private SitePaths $paths,
         private BackupInspector $backups,
+        private WebsiteSwitch $switch,
     ) {}
 
     /**
@@ -47,7 +48,7 @@ class PanelTaskRunner
         try {
             $result = $this->handle($task, $progress);
             $task->forceFill([
-                'status' => PanelTask::SUCCESS,
+                'status' => empty($result['failed']) ? PanelTask::SUCCESS : PanelTask::FAILED,
                 'progress' => 100,
                 'result' => $result,
                 'message' => $result['message'] ?? null,
@@ -104,6 +105,7 @@ class PanelTaskRunner
         return match ($task->kind) {
             'backup.inspect' => $this->backups->inspectTask($task, $progress),
             'backup.export' => $this->backups->exportTask($task, $progress),
+            'websites.switch' => $this->switch->switchTask($task),
             default => throw new RuntimeException('Unknown task.'),
         };
     }

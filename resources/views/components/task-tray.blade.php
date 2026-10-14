@@ -38,8 +38,31 @@
                         <p class="task-note">Waiting for the queue worker. If it does not start, check it on the server: <code>sudo supervisorctl status laravelify-queue</code></p>
                     @elseif ($task->status === 'failed' && $task->message)
                         <p class="task-note is-danger">{{ $task->message }}</p>
-                    @elseif ($task->status === 'success' && $task->message)
+                    @elseif ($task->message)
                         <p class="task-note">{{ $task->message }}</p>
+                    @endif
+
+                    @if (! empty($task->result['lines']))
+                        @php
+                            $lines = collect($task->result['lines']);
+                        @endphp
+                        <details class="task-lines" @if ($task->isActive() || $lines->contains('ok', false)) open @endif>
+                            <summary>
+                                {{ $lines->count() }} {{ $lines->count() === 1 ? 'website' : 'websites' }}
+                                @if ($lines->contains('ok', false))
+                                    · <span class="text-danger">{{ $lines->where('ok', false)->count() }} failed</span>
+                                @endif
+                            </summary>
+                            <ul>
+                                @foreach ($lines as $line)
+                                    <li @class(['is-failed' => ! $line['ok']])>
+                                        <x-menu-icon name="{{ $line['ok'] ? 'check' : 'danger' }}" class="size-3.5 shrink-0" />
+                                        <span class="truncate font-medium">{{ $line['label'] }}</span>
+                                        <span class="task-line-note" title="{{ $line['note'] }}">{{ $line['note'] }}</span>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </details>
                     @endif
                 </div>
 

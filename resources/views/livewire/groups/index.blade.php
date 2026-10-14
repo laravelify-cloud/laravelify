@@ -5,6 +5,8 @@
         </x-slot:actions>
     </x-page-header>
 
+    <x-task-tray :tasks="$tasks" :active="$tasksActive" />
+
     <section
         class="layer-card-body is-flush"
         x-data="{ selected: [], all: @js($groups->pluck('id')->all()), bulkDelete: false, typed: '' }"
@@ -42,7 +44,9 @@
                             </a>
                         </td>
                         <td>
-                            @if (! $group->enabled)
+                            @if (in_array($group->id, $switching, true))
+                                <span class="status-badge is-switching"><span class="task-spinner"></span> Switching…</span>
+                            @elseif (! $group->enabled)
                                 <span class="status-badge" style="--status-color: var(--color-muted)">Turned off</span>
                             @elseif ($group->disabled_count > 0)
                                 <span class="status-badge" style="--status-color: var(--color-warning)">{{ $group->disabled_count }} off</span>
