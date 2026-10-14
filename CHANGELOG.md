@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.8] - 2026-10-14
+
+- **Dates in your own time:** everything is still stored in UTC, but by default each person now sees their browser's timezone, and dates and times in their country's format (14.10.2026 13:05 in Azerbaijan, 10/14/2026 1:05 PM in the US). Settings → General can still fix a timezone or a format for everyone; "Automatic" is the new default, and earlier saved defaults (UTC, 2026-10-12, 14:05) switch to Automatic once.
+- Trash: room around the notice, the table lines up with it, and versions hang under their item with a guide line.
+- The global file manager no longer shows its title twice; error notes in the file manager have space around them.
+
 ## [0.3.0-beta.7] - 2026-10-14
 
 - **Trash** in the file manager: deleting moves files and folders to the trash instead of removing them. Restore puts them back where they were (as "name (restored)" if the name is taken). Every delete of the same path is kept as a version you can pick. Delete for good and Empty trash need your authenticator code.

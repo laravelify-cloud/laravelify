@@ -17,14 +17,45 @@ class DisplayTimeTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_dates_use_utc_and_iso_format_until_settings_are_saved(): void
+    public function test_without_settings_dates_follow_the_browser_timezone_and_country(): void
     {
-        $time = app(DisplayTime::class);
         $value = Carbon::parse('2026-10-12 09:05:07', 'UTC');
 
-        $this->assertSame('2026-10-12 09:05', $time->datetime($value));
+        // No browser information yet: UTC, in English.
+        $time = new DisplayTime;
+        $this->assertSame('10/12/2026 9:05 AM', $time->datetime($value));
         $this->assertSame('—', $time->datetime(null));
-        $this->assertSame('2026-10-12 09:05', $time->ago($value));
+        $this->assertTrue($time->followsBrowser());
+
+        // An Azerbaijani browser in Baku (UTC+4).
+        request()->cookies->set(DisplayTime::TIMEZONE_COOKIE, 'Asia/Baku');
+        request()->cookies->set(DisplayTime::LOCALE_COOKIE, 'az-AZ');
+        $time = new DisplayTime;
+        $this->assertSame('12.10.2026 13:05', $time->datetime($value));
+        $this->assertSame(['timeZone' => 'Asia/Baku', 'hour12' => false, 'seconds' => false, 'locale' => 'az-AZ'], $time->forBrowser());
+
+        // An American browser in New York (UTC-4 in October).
+        request()->cookies->set(DisplayTime::TIMEZONE_COOKIE, 'America/New_York');
+        request()->cookies->set(DisplayTime::LOCALE_COOKIE, 'en-US');
+        $time = new DisplayTime;
+        $this->assertSame('10/12/2026 5:05 AM', $time->datetime($value));
+        $this->assertTrue($time->forBrowser()['hour12']);
+
+        // A saved timezone wins over the browser's.
+        Setting::putValue('display_timezone', 'Europe/London');
+        $this->assertSame('10/12/2026 10:05 AM', (new DisplayTime)->datetime($value));
+        $this->assertSame('UTC', $value->getTimezone()->getName(), 'the stored value stays in UTC');
+    }
+
+    public function test_a_broken_browser_cookie_is_ignored(): void
+    {
+        request()->cookies->set(DisplayTime::TIMEZONE_COOKIE, 'Mars/Olympus');
+        request()->cookies->set(DisplayTime::LOCALE_COOKIE, '<script>');
+
+        $settings = (new DisplayTime)->settings();
+
+        $this->assertSame('UTC', $settings['timezone']);
+        $this->assertSame('en', $settings['locale']);
     }
 
     public function test_dates_follow_the_saved_timezone_and_formats(): void
@@ -43,7 +74,7 @@ class DisplayTimeTest extends TestCase
         $this->assertSame('12.10 1:05 PM', $time->label($value));
         $this->assertSame('12.10.2026 1:05:07 PM', $time->datetime($value->getTimestamp()));
         $this->assertSame('12.10.2026 1:05:07 PM', $time->datetime('2026-10-12 09:05:07'));
-        $this->assertSame(['timeZone' => 'Asia/Baku', 'hour12' => true, 'seconds' => true], $time->forBrowser());
+        $this->assertSame(['timeZone' => 'Asia/Baku', 'hour12' => true, 'seconds' => true, 'locale' => 'en'], $time->forBrowser());
         $this->assertSame('UTC', $value->getTimezone()->getName(), 'the original value is not changed');
     }
 
@@ -55,7 +86,7 @@ class DisplayTimeTest extends TestCase
 
         $time = app(DisplayTime::class);
 
-        $this->assertSame(['timezone' => 'UTC', 'date' => 'Y-m-d', 'time' => 'H:i', 'relative' => true], $time->settings());
+        $this->assertSame(['timezone' => 'UTC', 'timezone_auto' => true, 'browser_timezone' => null, 'date' => 'auto', 'time' => 'auto', 'relative' => true, 'locale' => 'en'], $time->settings());
         $this->assertSame('5 minutes ago', $time->ago(now()->subMinutes(5)));
     }
 
@@ -77,9 +108,16 @@ class DisplayTimeTest extends TestCase
             ->assertHasNoErrors()
             ->assertRedirect(route('settings.general'));
 
-        $this->assertSame('Europe/Istanbul', Setting::getValue('display_timezone'));
-        $this->assertSame('j M Y', Setting::getValue('display_date_format'));
-        $this->assertSame('H:i:s', Setting::getValue('display_time_format'));
+        Livewire::test(General::class)
+            ->set('timezone', '')
+            ->set('date_format', 'auto')
+            ->set('time_format', 'auto')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame('', Setting::getValue('display_timezone'));
+        $this->assertSame('auto', Setting::getValue('display_date_format'));
+
         $this->assertSame('1', Setting::getValue('display_relative'));
     }
 
@@ -88,6 +126,7 @@ class DisplayTimeTest extends TestCase
         $this->signIn();
         Setting::putValue('display_timezone', 'Asia/Baku');
         Setting::putValue('display_date_format', 'd/m/Y');
+        Setting::putValue('display_time_format', 'H:i');
         $website = Website::factory()->create();
         $website->deployments()->create(['status' => 'success', 'trigger' => 'manual', 'log' => ''])
             ->forceFill(['created_at' => Carbon::parse('2026-10-12 20:30:00', 'UTC')])->save();

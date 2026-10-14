@@ -48,7 +48,7 @@
         </div>
     </div>
 
-    <x-callout type="info" title="Deleted files wait here" class="mx-4 mb-3">
+    <x-callout type="info" title="Deleted files wait here" class="mx-4 mt-4 mb-4">
         Restore puts a file or folder back where it was. If the same path was deleted more than once, open it to choose which version to bring back. Deleting for good asks for your authenticator code.
     </x-callout>
 
@@ -61,7 +61,7 @@
     @else
         <div class="fm-table" role="table">
             <div class="fm-row fm-row-head trash-row" role="row">
-                <span role="columnheader">Name</span>
+                <span role="columnheader" class="pl-3">Name</span>
                 <span role="columnheader" class="fm-col-size">Size</span>
                 <span role="columnheader" class="fm-col-date">Deleted</span>
                 <span role="columnheader" class="sr-only">Actions</span>

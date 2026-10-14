@@ -39,11 +39,14 @@
 
     {{-- Header --}}
     <div class="fm-header">
+        {{-- The global page already has a title and the root in its header. --}}
         <div class="min-w-0">
-            <h2 class="fm-title">File manager</h2>
-            <p class="fm-subtitle">
-                <code class="truncate">{{ $rootPathLabel }}</code>
-            </p>
+            @if ($website)
+                <h2 class="fm-title">File manager</h2>
+                <p class="fm-subtitle">
+                    <code class="truncate">{{ $rootPathLabel }}</code>
+                </p>
+            @endif
         </div>
         <div class="fm-actions">
             <button @class(['btn', 'is-active' => $showTrash]) type="button" wire:click="{{ $showTrash ? 'closeTrash' : 'openTrash' }}" title="Deleted files and folders">

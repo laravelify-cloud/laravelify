@@ -8,22 +8,24 @@ use App\Services\DisplayTime;
 use Illuminate\Validation\Rule;
 
 /**
- * Panel-wide display settings: the timezone and format of every date and time.
+ * Panel-wide display settings: the timezone and format of every date and time. Left on
+ * Automatic, each person sees their browser's timezone and their country's format.
  */
 class General extends PanelComponent
 {
-    public string $timezone = 'UTC';
+    /** An IANA timezone, or "" to follow the browser. */
+    public string $timezone = '';
 
-    public string $date_format = 'Y-m-d';
+    public string $date_format = DisplayTime::AUTO;
 
-    public string $time_format = 'H:i';
+    public string $time_format = DisplayTime::AUTO;
 
     public bool $relative = false;
 
     public function mount(DisplayTime $time): void
     {
         $settings = $time->settings();
-        $this->timezone = $settings['timezone'];
+        $this->timezone = $settings['timezone_auto'] ? '' : $settings['timezone'];
         $this->date_format = $settings['date'];
         $this->time_format = $settings['time'];
         $this->relative = $settings['relative'];
@@ -32,14 +34,14 @@ class General extends PanelComponent
     public function save(DisplayTime $time): void
     {
         $this->validate([
-            'timezone' => ['required', 'string', Rule::in(\DateTimeZone::listIdentifiers())],
-            'date_format' => ['required', Rule::in(array_keys(DisplayTime::DATE_FORMATS))],
-            'time_format' => ['required', Rule::in(array_keys(DisplayTime::TIME_FORMATS))],
+            'timezone' => ['nullable', 'string', Rule::in(['', ...\DateTimeZone::listIdentifiers()])],
+            'date_format' => ['required', Rule::in([DisplayTime::AUTO, ...array_keys(DisplayTime::DATE_FORMATS)])],
+            'time_format' => ['required', Rule::in([DisplayTime::AUTO, ...array_keys(DisplayTime::TIME_FORMATS)])],
         ], [
             'timezone.in' => 'Pick a timezone from the list.',
         ]);
 
-        Setting::putValue('display_timezone', $this->timezone);
+        Setting::putValue('display_timezone', (string) $this->timezone);
         Setting::putValue('display_date_format', $this->date_format);
         Setting::putValue('display_time_format', $this->time_format);
         Setting::putValue('display_relative', $this->relative ? '1' : '0');
@@ -50,20 +52,24 @@ class General extends PanelComponent
         $this->redirectRoute('settings.general', navigate: false);
     }
 
-    public function render()
+    public function render(DisplayTime $time)
     {
-        $now = now()->setTimezone(DisplayTime::validTimezone($this->timezone) ? $this->timezone : 'UTC');
-        $date = array_key_exists($this->date_format, DisplayTime::DATE_FORMATS) ? $this->date_format : 'Y-m-d';
-        $time = array_key_exists($this->time_format, DisplayTime::TIME_FORMATS) ? $this->time_format : 'H:i';
+        $preview = $time->using($time->resolve((string) $this->timezone, $this->date_format, $this->time_format, $this->relative));
+        $settings = $preview->settings();
+        $now = now();
 
         return view('livewire.settings.general', [
             'timezones' => DisplayTime::timezones(),
+            'browserZone' => $settings['browser_timezone'],
+            'browserLocale' => str_replace('_', '-', $settings['locale']),
+            'autoExample' => $preview->autoExample(),
+            'shownZone' => $settings['timezone'],
             'preview' => [
-                'datetime' => $now->format($date.' '.$time),
-                'date' => $now->format($date),
-                'time' => $now->format($time),
-                'earlier' => $this->relative ? $now->copy()->subMinutes(5)->diffForHumans() : $now->copy()->subMinutes(5)->format($date.' '.$time),
-                'offset' => $now->format('P'),
+                'datetime' => $preview->datetime($now),
+                'date' => $preview->date($now),
+                'time' => $preview->time($now),
+                'earlier' => $preview->ago($now->copy()->subMinutes(5)),
+                'offset' => $now->copy()->setTimezone($settings['timezone'])->format('P'),
             ],
         ])->layout('layouts.app')->title('General settings');
     }

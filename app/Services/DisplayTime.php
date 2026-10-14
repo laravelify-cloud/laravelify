@@ -9,12 +9,24 @@ use Illuminate\Support\Carbon;
 use Throwable;
 
 /**
- * Every date and time the panel shows goes through here, in the timezone and
- * format chosen in Settings → General. Stored times stay in the app timezone (UTC);
- * only the display changes.
+ * Every date and time the panel shows goes through here. Stored times stay in UTC; only
+ * the display changes.
+ *
+ * Out of the box everything follows the browser: its timezone and, for the format, its
+ * language and country (14.10.2026 for Azerbaijani, 10/14/2026 4:44 AM for American English).
+ * The browser sends both in two cookies. Settings → General can fix a timezone or a format
+ * for everyone instead.
  */
 class DisplayTime
 {
+    /** The cookies the layout script writes: the browser's timezone and language. */
+    public const TIMEZONE_COOKIE = 'laravelify-tz';
+
+    public const LOCALE_COOKIE = 'laravelify-locale';
+
+    /** A format that follows the browser's language and country. */
+    public const AUTO = 'auto';
+
     /**
      * Date format => example.
      *
@@ -60,12 +72,12 @@ class DisplayTime
     ];
 
     /**
-     * @var array{timezone: string, date: string, time: string, relative: bool}|null
+     * @var array{timezone: string, timezone_auto: bool, browser_timezone: ?string, date: string, time: string, relative: bool, locale: string}|null
      */
     private ?array $settings = null;
 
     /**
-     * @return array{timezone: string, date: string, time: string, relative: bool}
+     * @return array{timezone: string, timezone_auto: bool, browser_timezone: ?string, date: string, time: string, relative: bool, locale: string}
      */
     public function settings(): array
     {
@@ -85,16 +97,46 @@ class DisplayTime
             // No database yet (first install): fall back to the defaults.
         }
 
-        $timezone = (string) ($values['display_timezone'] ?? '');
-        $date = (string) ($values['display_date_format'] ?? '');
-        $time = (string) ($values['display_time_format'] ?? '');
+        return $this->settings = $this->resolve(
+            (string) ($values['display_timezone'] ?? ''),
+            (string) ($values['display_date_format'] ?? self::AUTO),
+            (string) ($values['display_time_format'] ?? self::AUTO),
+            ($values['display_relative'] ?? '0') === '1',
+        );
+    }
 
-        return $this->settings = [
-            'timezone' => self::validTimezone($timezone) ? $timezone : (string) config('app.timezone', 'UTC'),
-            'date' => array_key_exists($date, self::DATE_FORMATS) ? $date : 'Y-m-d',
-            'time' => array_key_exists($time, self::TIME_FORMATS) ? $time : 'H:i',
-            'relative' => ($values['display_relative'] ?? '0') === '1',
+    /**
+     * Settings as they would be with these choices, for the preview on the settings page.
+     *
+     * @return array{timezone: string, timezone_auto: bool, browser_timezone: ?string, date: string, time: string, relative: bool, locale: string}
+     */
+    public function resolve(string $timezone, string $date, string $time, bool $relative): array
+    {
+        $browser = $this->browserTimezone();
+        $auto = ! self::validTimezone($timezone);
+
+        return [
+            'timezone' => $auto ? ($browser ?? (string) config('app.timezone', 'UTC')) : $timezone,
+            'timezone_auto' => $auto,
+            'browser_timezone' => $browser,
+            'date' => array_key_exists($date, self::DATE_FORMATS) ? $date : self::AUTO,
+            'time' => array_key_exists($time, self::TIME_FORMATS) ? $time : self::AUTO,
+            'relative' => $relative,
+            'locale' => $this->browserLocale(),
         ];
+    }
+
+    /**
+     * Use these settings for the rest of the request (the settings page preview).
+     *
+     * @param  array{timezone: string, timezone_auto: bool, browser_timezone: ?string, date: string, time: string, relative: bool, locale: string}  $settings
+     */
+    public function using(array $settings): static
+    {
+        $copy = clone $this;
+        $copy->settings = $settings;
+
+        return $copy;
     }
 
     public function forget(): void
@@ -105,6 +147,17 @@ class DisplayTime
     public static function validTimezone(string $timezone): bool
     {
         return $timezone !== '' && in_array($timezone, DateTimeZone::listIdentifiers(), true);
+    }
+
+    /**
+     * Whether anything follows the browser, so the page reloads once when the browser's
+     * timezone or language changes.
+     */
+    public function followsBrowser(): bool
+    {
+        $settings = $this->settings();
+
+        return $settings['timezone_auto'] || $settings['date'] === self::AUTO || $settings['time'] === self::AUTO;
     }
 
     /**
@@ -126,24 +179,28 @@ class DisplayTime
             return null;
         }
 
-        return $time->copy()->setTimezone($this->settings()['timezone']);
+        return $time->copy()->setTimezone($this->settings()['timezone'])->locale($this->settings()['locale']);
     }
 
     public function datetime(DateTimeInterface|string|int|null $value): string
     {
-        $settings = $this->settings();
+        $time = $this->at($value);
 
-        return $this->at($value)?->format($settings['date'].' '.$settings['time']) ?? '—';
+        return $time ? $this->formatDate($time).' '.$this->formatTime($time) : '—';
     }
 
     public function date(DateTimeInterface|string|int|null $value): string
     {
-        return $this->at($value)?->format($this->settings()['date']) ?? '—';
+        $time = $this->at($value);
+
+        return $time ? $this->formatDate($time) : '—';
     }
 
     public function time(DateTimeInterface|string|int|null $value): string
     {
-        return $this->at($value)?->format($this->settings()['time']) ?? '—';
+        $time = $this->at($value);
+
+        return $time ? $this->formatTime($time) : '—';
     }
 
     /**
@@ -151,7 +208,9 @@ class DisplayTime
      */
     public function clock(DateTimeInterface|string|int|null $value): string
     {
-        return $this->at($value)?->format(str_replace(':s', '', $this->settings()['time'])) ?? '—';
+        $time = $this->at($value);
+
+        return $time ? $this->formatTime($time, false) : '—';
     }
 
     /**
@@ -165,9 +224,16 @@ class DisplayTime
             return '—';
         }
 
-        $clock = str_replace(':s', '', $this->settings()['time']);
+        $clock = $this->formatTime($time, false);
 
-        return $time->format($withDate ? self::SHORT_DATES[$this->settings()['date']].' '.$clock : $clock);
+        if (! $withDate) {
+            return $clock;
+        }
+
+        $date = $this->settings()['date'];
+        $short = $date === self::AUTO ? $time->isoFormat('D MMM') : $time->format(self::SHORT_DATES[$date]);
+
+        return $short.' '.$clock;
     }
 
     /**
@@ -187,17 +253,29 @@ class DisplayTime
     /**
      * What the browser needs to format live times the same way.
      *
-     * @return array{timeZone: string, hour12: bool, seconds: bool}
+     * @return array{timeZone: string, hour12: bool, seconds: bool, locale: string}
      */
     public function forBrowser(): array
     {
         $settings = $this->settings();
+        $format = $settings['time'];
 
         return [
             'timeZone' => $settings['timezone'],
-            'hour12' => str_contains($settings['time'], 'A'),
-            'seconds' => str_contains($settings['time'], ':s'),
+            'hour12' => $format === self::AUTO ? $this->localeUses12Hours() : str_contains($format, 'A'),
+            'seconds' => str_contains($format, ':s'),
+            'locale' => str_replace('_', '-', $settings['locale']),
         ];
+    }
+
+    /**
+     * An example of the automatic date and time for the browser's language.
+     */
+    public function autoExample(): string
+    {
+        $time = now()->setTimezone($this->settings()['timezone'])->locale($this->settings()['locale']);
+
+        return $time->isoFormat('L').' '.$time->isoFormat('LT');
     }
 
     /**
@@ -211,15 +289,70 @@ class DisplayTime
         $now = new \DateTimeImmutable('now');
 
         foreach (DateTimeZone::listIdentifiers() as $identifier) {
-            $offset = (new DateTimeZone($identifier))->getOffset($now);
-            $sign = $offset < 0 ? '-' : '+';
-            $label = sprintf('(UTC%s%02d:%02d) %s', $sign, intdiv(abs($offset), 3600), intdiv(abs($offset) % 3600, 60), str_replace('_', ' ', $identifier));
-            $region = str_contains($identifier, '/') ? strstr($identifier, '/', true) : 'Other';
-            $groups[$region][$identifier] = $label;
+            $groups[str_contains($identifier, '/') ? strstr($identifier, '/', true) : 'Other'][$identifier] = self::zoneLabel($identifier, $now);
         }
 
         ksort($groups);
 
         return $groups;
+    }
+
+    public static function zoneLabel(string $identifier, ?\DateTimeImmutable $now = null): string
+    {
+        $offset = (new DateTimeZone($identifier))->getOffset($now ?? new \DateTimeImmutable('now'));
+        $sign = $offset < 0 ? '-' : '+';
+
+        return sprintf('(UTC%s%02d:%02d) %s', $sign, intdiv(abs($offset), 3600), intdiv(abs($offset) % 3600, 60), str_replace('_', ' ', $identifier));
+    }
+
+    private function formatDate(Carbon $time): string
+    {
+        $format = $this->settings()['date'];
+
+        return $format === self::AUTO ? $time->isoFormat('L') : $time->format($format);
+    }
+
+    private function formatTime(Carbon $time, bool $seconds = true): string
+    {
+        $format = $this->settings()['time'];
+
+        if ($format === self::AUTO) {
+            return $time->isoFormat('LT');
+        }
+
+        return $time->format($seconds ? $format : str_replace(':s', '', $format));
+    }
+
+    private function localeUses12Hours(): bool
+    {
+        return ! str_contains(Carbon::create(2026, 1, 1, 13, 0)->locale($this->settings()['locale'])->isoFormat('LT'), '13');
+    }
+
+    private function browserTimezone(): ?string
+    {
+        $value = (string) $this->cookie(self::TIMEZONE_COOKIE);
+
+        return self::validTimezone($value) ? $value : null;
+    }
+
+    /**
+     * The browser's language, like "az_AZ" or "en_US"; English when unknown.
+     */
+    private function browserLocale(): string
+    {
+        $value = str_replace('-', '_', (string) $this->cookie(self::LOCALE_COOKIE));
+
+        return preg_match('/^[a-z]{2,3}(_[A-Za-z]{2,4})?$/', $value) ? $value : 'en';
+    }
+
+    private function cookie(string $name): ?string
+    {
+        try {
+            $value = app()->runningInConsole() && ! app()->runningUnitTests() ? null : request()->cookie($name);
+        } catch (Throwable) {
+            return null;
+        }
+
+        return is_string($value) ? $value : null;
     }
 }

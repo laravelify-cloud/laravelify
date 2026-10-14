@@ -6,6 +6,7 @@
         <title>{{ $title ?? config('app.name') }}</title>
         @include('layouts.partials.favicons')
         @include('layouts.partials.theme')
+        @include('layouts.partials.browser-time')
         @fonts
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         @livewireStyles

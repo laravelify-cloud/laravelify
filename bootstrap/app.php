@@ -17,6 +17,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->encryptCookies(except: [
             'laravelify-theme',
+            'laravelify-tz',
+            'laravelify-locale',
         ]);
 
         $middleware->web(append: [

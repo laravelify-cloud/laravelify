@@ -1589,18 +1589,32 @@ html:has(.modal-root:not([x-cloak]):not([style*="display: none"])) {
     .trash-versions {
         display: flex;
         flex-direction: column;
-        gap: 1px;
-        border-bottom: 1px solid var(--color-line);
+        border-top: 1px solid var(--color-line);
         background: var(--color-recessed);
-        padding: 6px 16px 8px 52px;
+        padding: 4px 12px 6px 46px;
     }
 
+    /* Each version hangs off the item above with a guide line, aligned with its name. */
     .trash-version {
+        position: relative;
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 5px 0;
+        min-height: 40px;
+        border-left: 1px solid var(--color-line);
+        padding-left: 14px;
     }
+
+    .trash-version::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        width: 9px;
+        border-top: 1px solid var(--color-line);
+    }
+
+    .trash-version .pill { min-width: 4.75rem; justify-content: center; }
 
     .otp-input {
         height: 48px;
