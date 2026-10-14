@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.4] - 2026-10-14
+
+- Database backups never include phpMyAdmin's own settings database (`phpmyadmin`), like `information_schema`, `mysql`, `performance_schema`, and `sys`.
+- Full backup names every database it starts; each one is its own file.
+
 ## [0.3.0-beta.3] - 2026-10-14
 
 - **Full backup:** one button backs up every database, or every website, now. It uses a "Full backup" schedule that only runs by hand.

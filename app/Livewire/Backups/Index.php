@@ -125,8 +125,8 @@ class Index extends PanelComponent
     {
         try {
             $schedule = $backups->fullBackup($this->kind);
-            $count = $schedule->runs()->where('status', BackupRun::QUEUED)->count();
-            $this->toast('Full backup started: '.$count.' '.($this->kind === BackupSchedule::KIND_DATABASE ? 'database' : 'website').($count === 1 ? '' : 's').'. Progress shows in the list below.');
+            $names = $schedule->runs()->where('status', BackupRun::QUEUED)->orderBy('id')->pluck('target');
+            $this->toast('Full backup started, one file each: '.$names->implode(', ').'. Progress shows in the list below.');
         } catch (Throwable $exception) {
             $this->toast($exception->getMessage(), 'error');
         }

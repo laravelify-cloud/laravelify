@@ -265,4 +265,14 @@ class FullBackupTest extends TestCase
         $this->assertStringContainsString('front/src/app.js', $list);
         $this->assertStringNotContainsString('dist', $list);
     }
+
+    public function test_system_and_phpmyadmin_databases_are_never_backed_up(): void
+    {
+        config(['laravelify.host_commands' => '1']);
+        $this->mock(CommandRunner::class, fn (MockInterface $mock) => $mock->shouldReceive('run')->andReturn(
+            new CommandResult(true, false, ['mysql'], "information_schema\nlaravelify\nlv_shop\nmysql\nperformance_schema\nphpmyadmin\nsys", 0),
+        ));
+
+        $this->assertSame(['laravelify', 'lv_shop'], app(DatabaseDumper::class)->databases());
+    }
 }

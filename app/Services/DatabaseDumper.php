@@ -10,8 +10,11 @@ use RuntimeException;
  */
 class DatabaseDumper
 {
-    /** Databases MySQL owns. They are never listed or backed up. */
-    public const SYSTEM = ['information_schema', 'performance_schema', 'mysql', 'sys'];
+    /**
+     * Databases MySQL owns, and phpMyAdmin's own settings database. They are never listed or
+     * backed up: MySQL and the installer recreate them.
+     */
+    public const SYSTEM = ['information_schema', 'performance_schema', 'mysql', 'sys', 'phpmyadmin'];
 
     public function __construct(private CommandRunner $runner, private DatabaseProvisioner $provisioner) {}
 
