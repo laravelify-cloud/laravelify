@@ -103,20 +103,17 @@ class FileTasksTest extends TestCase
         $this->get(route('tasks.download', $task))->assertOk()->assertDownload('docs.zip');
     }
 
-    public function test_big_deletes_and_copies_go_to_the_queue(): void
+    public function test_big_copies_go_to_the_queue(): void
     {
         $website = $this->site();
         Queue::fake();
         $this->partialMock(FileOperations::class, fn (MockInterface $mock) => $mock->shouldReceive('isSmall')->andReturn(false));
 
         Livewire::test(Files::class, ['website' => $website])
-            ->set('confirmName', 'docs')
-            ->call('deleteEntries', ['docs'])
-            ->assertDispatched('entry-deleted')
-            ->call('transferEntries', ['docs'], '', 'copy');
+            ->call('transferEntries', ['docs'], '', 'copy')
+            ->call('duplicateEntry', 'docs');
 
-        $this->assertDirectoryExists($this->root.'/docs', 'Nothing is deleted until the queue runs it.');
-        $this->assertSame(['files.delete', 'files.copy'], PanelTask::query()->orderBy('id')->pluck('kind')->all());
+        $this->assertSame(['files.copy', 'files.copy'], PanelTask::query()->orderBy('id')->pluck('kind')->all());
         Queue::assertPushed(RunPanelTask::class, 2);
     }
 

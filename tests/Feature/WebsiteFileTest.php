@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Http\Middleware\PanelGate;
 use App\Livewire\Websites\Files;
 use App\Livewire\Websites\Terminal;
+use App\Models\TrashItem;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\TwoFactor;
@@ -186,26 +187,7 @@ class WebsiteFileTest extends TestCase
         $this->assertFileDoesNotExist($this->root.DIRECTORY_SEPARATOR.'evil.php');
     }
 
-    public function test_deleting_requires_the_typed_name(): void
-    {
-        file_put_contents($this->root.DIRECTORY_SEPARATOR.'old.log', 'x');
-        $website = $this->siteForSignedInUser();
-
-        $component = Livewire::test(Files::class, ['website' => $website])
-            ->set('confirmName', 'wrong')
-            ->call('deleteEntry', 'old.log')
-            ->assertHasErrors('confirmName');
-
-        $this->assertFileExists($this->root.DIRECTORY_SEPARATOR.'old.log');
-
-        $component->set('confirmName', 'old.log')
-            ->call('deleteEntry', 'old.log')
-            ->assertDispatched('entry-deleted');
-
-        $this->assertFileDoesNotExist($this->root.DIRECTORY_SEPARATOR.'old.log');
-    }
-
-    public function test_several_entries_are_deleted_after_typing_delete(): void
+    public function test_deleting_moves_entries_to_the_trash(): void
     {
         file_put_contents($this->root.DIRECTORY_SEPARATOR.'a.txt', 'a');
         mkdir($this->root.DIRECTORY_SEPARATOR.'logs');
@@ -213,12 +195,14 @@ class WebsiteFileTest extends TestCase
         $website = $this->siteForSignedInUser();
 
         Livewire::test(Files::class, ['website' => $website])
-            ->set('confirmName', 'delete')
             ->call('deleteEntries', ['a.txt', 'logs'])
-            ->assertDispatched('entry-deleted');
+            ->assertDispatched('entry-deleted')
+            ->assertViewHas('trashCount', 2);
 
         $this->assertFileDoesNotExist($this->root.DIRECTORY_SEPARATOR.'a.txt');
         $this->assertDirectoryDoesNotExist($this->root.DIRECTORY_SEPARATOR.'logs');
+        $this->assertSame(['a.txt', 'logs'], TrashItem::query()->orderBy('original_path')->pluck('original_path')->all());
+        $this->assertFileExists(TrashItem::query()->where('name', 'logs')->sole()->storedPath().DIRECTORY_SEPARATOR.'b.log');
     }
 
     public function test_entries_can_be_duplicated_copied_and_moved(): void

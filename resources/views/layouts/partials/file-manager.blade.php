@@ -310,12 +310,10 @@
                 }
 
                 this.targets = targets;
-                this.typed = '';
-                this.$wire.confirmName = '';
                 this.dialog = 'delete';
                 this.$nextTick(() => {
-                    var input = this.ref('deleteInput');
-                    input && input.focus();
+                    var button = this.ref('deleteConfirm');
+                    button && button.focus();
                 });
             },
 
@@ -324,10 +322,6 @@
             },
 
             submitDelete() {
-                if (this.typed !== this.deleteWord()) {
-                    return;
-                }
-
                 this.$wire.deleteEntries(this.targets.map((target) => target.relative));
             },
 

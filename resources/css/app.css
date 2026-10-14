@@ -1582,7 +1582,38 @@ html:has(.modal-root:not([x-cloak]):not([style*="display: none"])) {
 
 /* Background tasks (task tray), compact row actions, and the backup dialogs. */
 @layer components {
-    .fm-tasks { margin: 0 14px 10px; }
+    .fm-tasks { margin: 12px 16px 12px; }
+
+    .trash-row { grid-template-columns: minmax(0, 1fr) 6rem 10rem auto !important; }
+
+    .trash-versions {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        border-bottom: 1px solid var(--color-line);
+        background: var(--color-recessed);
+        padding: 6px 16px 8px 52px;
+    }
+
+    .trash-version {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 5px 0;
+    }
+
+    .otp-input {
+        height: 48px;
+        font-family: var(--font-mono, ui-monospace, monospace);
+        font-size: 22px;
+        letter-spacing: 0.5em;
+        text-align: center;
+    }
+
+    .btn.is-active {
+        border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-line));
+        color: var(--color-ink);
+    }
 
     .btn-sm {
         height: 28px;

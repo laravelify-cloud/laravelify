@@ -46,7 +46,13 @@
             </p>
         </div>
         <div class="fm-actions">
-            <button class="btn" type="button" @click="openDialog('folder')" @disabled($listingError !== '')>
+            <button @class(['btn', 'is-active' => $showTrash]) type="button" wire:click="{{ $showTrash ? 'closeTrash' : 'openTrash' }}" title="Deleted files and folders">
+                <x-menu-icon name="trash" /> Trash
+                @if ($trashCount > 0)
+                    <span class="pill" style="height: 18px; padding: 0 6px; font-size: 11px">{{ $trashCount }}</span>
+                @endif
+            </button>
+            <button class="btn" type="button" @click="openDialog('folder')" @disabled($listingError !== '' || $showTrash)>
                 <x-menu-icon name="folder-plus" /> New folder
             </button>
             <button class="btn" type="button" @click="openDialog('file')" @disabled($listingError !== '')>
@@ -58,6 +64,9 @@
         </div>
     </div>
 
+    @if ($showTrash)
+        @include('livewire.websites.partials.trash')
+    @else
     {{-- Toolbar --}}
     <div class="fm-toolbar">
         <div class="fm-nav">
@@ -292,6 +301,8 @@
         @endif
     </div>
 
+    @endif
+
     {{-- Action menu --}}
     <template x-teleport="body">
         <div
@@ -525,24 +536,24 @@
         </x-modal-frame>
     </template>
 
-    {{-- Delete --}}
+    {{-- Delete (to the trash) --}}
     <template x-teleport="body">
         <x-modal-frame class="modal-root-top" open="dialog === 'delete'" close="dialog = null">
             <form class="flex flex-col gap-4" @submit.prevent="submitDelete()">
                 <div class="modal-head">
                     <h2 class="flex min-w-0 items-center gap-2">
                         <span class="grid size-8 shrink-0 place-items-center rounded-full" style="background: color-mix(in srgb, var(--color-danger) 14%, transparent); color: var(--color-danger)"><x-menu-icon name="trash" class="size-4" /></span>
-                        <span class="truncate" x-text="'Delete ' + targetLabel() + '?'"></span>
+                        <span class="truncate" x-text="'Move ' + targetLabel() + ' to the trash?'"></span>
                     </h2>
                     <button class="icon-btn" type="button" @click="dialog = null" aria-label="Close"><x-menu-icon name="close" /></button>
                 </div>
 
-                <x-callout type="danger" title="This cannot be undone">
-                    Deleted files do not go to a trash. Make a backup or a zip first if you might need them.
+                <x-callout type="info" title="You can restore it">
+                    Deleted files and folders go to the Trash. Restore them from there, or delete them for good with your authenticator code.
                 </x-callout>
 
                 <div>
-                    <p class="mb-2 text-[12.5px] font-medium">What will be deleted</p>
+                    <p class="mb-2 text-[12.5px] font-medium">What goes to the trash</p>
                     <ul class="delete-list">
                         <template x-for="item in targets" :key="item.relative">
                             <li><span><span class="font-mono" x-text="item.name + (item.directory ? '/' : '')"></span><span x-show="item.directory"> and everything inside it</span></span></li>
@@ -550,21 +561,10 @@
                     </ul>
                 </div>
 
-                <div class="field">
-                    <span>Confirm</span>
-                    <small class="text-muted">Type the text below to confirm. Use the copy button to paste it.</small>
-                    <div class="copy-field">
-                        <input class="input font-mono" :value="deleteWord()" readonly tabindex="-1" aria-label="Text to type">
-                        <x-copy-button text="deleteWord()" />
-                    </div>
-                    <input class="input" x-ref="deleteInput" wire:model="confirmName" @input="typed = $event.target.value" autocomplete="off" spellcheck="false" placeholder="Type it here" aria-label="Confirm by typing the text above">
-                    @error('confirmName') <small class="error">{{ $message }}</small> @enderror
-                </div>
-
                 <div class="modal-foot">
                     <button class="btn" type="button" @click="dialog = null">Cancel</button>
-                    <button class="btn btn-danger-solid" type="submit" :disabled="typed !== deleteWord()">
-                        <x-menu-icon name="trash" class="size-4" /> <span x-text="targets.length === 1 ? 'Delete' : 'Delete ' + targets.length + ' items'"></span>
+                    <button class="btn btn-danger-solid" type="submit" x-ref="deleteConfirm">
+                        <x-menu-icon name="trash" class="size-4" /> <span x-text="targets.length === 1 ? 'Move to trash' : 'Move ' + targets.length + ' items to trash'"></span>
                     </button>
                 </div>
             </form>

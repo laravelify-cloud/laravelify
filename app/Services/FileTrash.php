@@ -1,0 +1,189 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\TrashItem;
+use App\Models\User;
+use FilesystemIterator;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\RateLimiter;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use RuntimeException;
+
+/**
+ * The file manager's trash: deleting moves files and folders here (one item per delete, so
+ * the same path deleted five times is five versions), restoring moves them back, and only
+ * an authenticator code removes them for good.
+ */
+class FileTrash
+{
+    /** Folders bigger than this many entries are not measured; their size shows as unknown. */
+    private const SIZE_SCAN_LIMIT = 20000;
+
+    public function __construct(private SitePaths $paths, private FileOperations $operations, private TwoFactor $twoFactor) {}
+
+    /**
+     * Move entries of a root folder to the trash. Returns how many were moved.
+     *
+     * @param  list<string>  $relatives
+     */
+    public function move(string $scope, string $root, array $relatives, ?int $userId = null): int
+    {
+        $moved = 0;
+
+        foreach (array_unique(array_map('strval', $relatives)) as $relative) {
+            $full = $this->paths->locateIn($root, $relative);
+
+            if ($full === $root) {
+                throw new RuntimeException('The root folder cannot be deleted.');
+            }
+
+            $isDir = ! is_link($full) && is_dir($full);
+            $item = TrashItem::query()->create([
+                'scope' => $scope,
+                'original_path' => $this->paths->relative($root, $full),
+                'name' => basename($full),
+                'is_dir' => $isDir,
+                'size_bytes' => $this->size($full),
+                'user_id' => $userId,
+            ]);
+
+            File::ensureDirectoryExists($item->folder());
+
+            try {
+                $this->transfer($full, $item->storedPath());
+            } catch (RuntimeException $exception) {
+                File::deleteDirectory($item->folder());
+                $item->delete();
+
+                throw $exception;
+            }
+
+            $moved++;
+        }
+
+        return $moved;
+    }
+
+    /**
+     * Put an item back where it was. When that name is taken again, it comes back as
+     * "name (restored)". Returns the path it was restored to, relative to the root.
+     */
+    public function restore(TrashItem $item, string $root): string
+    {
+        if (! file_exists($item->storedPath()) && ! is_link($item->storedPath())) {
+            $item->delete();
+
+            throw new RuntimeException('That item is no longer in the trash folder.');
+        }
+
+        $parent = $item->parentPath();
+        $parentFull = rtrim($root, '/\\').($parent === '' ? '' : DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $parent));
+
+        if (! is_dir($parentFull) && ! mkdir($parentFull, 0755, true)) {
+            throw new RuntimeException('Could not create the folder '.$parent.' again.');
+        }
+
+        // The parent must still be inside the root (it may have been replaced by a link).
+        $this->paths->resolveIn($root, $parent);
+
+        $target = $parentFull.DIRECTORY_SEPARATOR.$item->name;
+
+        if (file_exists($target) || is_link($target)) {
+            $target = $this->operations->uniquePath($parentFull, $this->restoredName($item), ! $item->is_dir);
+        }
+
+        $this->transfer($item->storedPath(), $target);
+        File::deleteDirectory($item->folder());
+        $item->delete();
+
+        return $this->paths->relative($root, $target);
+    }
+
+    /**
+     * Delete an item for good.
+     */
+    public function purge(TrashItem $item): void
+    {
+        File::deleteDirectory($item->folder());
+        $item->delete();
+    }
+
+    /**
+     * Check an authenticator code before anything is deleted for good. Five wrong codes a
+     * minute at most.
+     */
+    public function confirmCode(User $user, string $code): void
+    {
+        $key = 'trash-purge:'.$user->id;
+
+        if (RateLimiter::tooManyAttempts($key, 5)) {
+            throw new RuntimeException('Too many wrong codes. Try again in '.RateLimiter::availableIn($key).' seconds.');
+        }
+
+        if (! $this->twoFactor->verify($user, trim($code))) {
+            RateLimiter::hit($key, 60);
+
+            throw new RuntimeException('That code is not right. Enter the current 6-digit code from your authenticator app.');
+        }
+
+        RateLimiter::clear($key);
+    }
+
+    /**
+     * Rename when it can; copy and delete when the trash is on another disk.
+     */
+    private function transfer(string $from, string $to): void
+    {
+        if (@rename($from, $to)) {
+            return;
+        }
+
+        if (is_dir($from) && ! is_link($from)) {
+            if (! File::copyDirectory($from, $to)) {
+                throw new RuntimeException('Could not move '.basename($from).'.');
+            }
+
+            File::deleteDirectory($from);
+
+            return;
+        }
+
+        if (! @copy($from, $to) || ! @unlink($from)) {
+            throw new RuntimeException('Could not move '.basename($from).'.');
+        }
+    }
+
+    private function size(string $full): ?int
+    {
+        if (is_link($full)) {
+            return 0;
+        }
+
+        if (is_file($full)) {
+            return (int) @filesize($full);
+        }
+
+        $bytes = 0;
+        $count = 0;
+
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($full, FilesystemIterator::SKIP_DOTS)) as $file) {
+            if (++$count > self::SIZE_SCAN_LIMIT) {
+                return null;
+            }
+
+            $bytes += $file->isFile() && ! $file->isLink() ? (int) $file->getSize() : 0;
+        }
+
+        return $bytes;
+    }
+
+    private function restoredName(TrashItem $item): string
+    {
+        $extension = $item->is_dir ? '' : pathinfo($item->name, PATHINFO_EXTENSION);
+        $base = $extension === '' ? $item->name : substr($item->name, 0, -strlen($extension) - 1);
+
+        return $base.' (restored)'.($extension === '' ? '' : '.'.$extension);
+    }
+}

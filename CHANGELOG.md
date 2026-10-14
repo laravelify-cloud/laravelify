@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.7] - 2026-10-14
+
+- **Trash** in the file manager: deleting moves files and folders to the trash instead of removing them. Restore puts them back where they were (as "name (restored)" if the name is taken). Every delete of the same path is kept as a version you can pick. Delete for good and Empty trash need your authenticator code.
+- **Toasts** are easier to read: a title, the message, a copy button, and a countdown line that stops while you hover; errors stay longer.
+- The background task list has room above and below it.
+
 ## [0.3.0-beta.6] - 2026-10-14
 
 - **Telegram:** backup messages were never sent when Telegram events had been saved before backups existed. Events added in a later version are now on by default for everyone, and stay as you set them once you save.

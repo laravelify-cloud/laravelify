@@ -4,11 +4,14 @@ namespace App\Livewire\Websites;
 
 use App\Livewire\PanelComponent;
 use App\Models\PanelTask;
+use App\Models\TrashItem;
 use App\Models\Website;
 use App\Services\DisplayTime;
 use App\Services\FileOperations;
+use App\Services\FileTrash;
 use App\Services\PanelTaskRunner;
 use App\Services\SitePaths;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Renderless;
 use Livewire\Attributes\Url;
@@ -46,6 +49,9 @@ class Files extends PanelComponent
     public string $sortBy = 'name';
 
     public bool $sortDescending = false;
+
+    /** The trash is shown instead of the folder. */
+    public bool $showTrash = false;
 
     /** @var list<int> Background tasks whose end was already shown. */
     public array $announced = [];
@@ -459,28 +465,23 @@ class Files extends PanelComponent
         }
     }
 
-    public function deleteEntry(string $relative, SitePaths $paths): void
+    public function deleteEntry(string $relative): void
     {
-        $this->deleteEntries([$relative], $paths);
+        $this->deleteEntries([$relative]);
     }
 
     /**
-     * Delete entries of the current folder. One entry is confirmed by its name,
-     * several by typing "delete".
+     * Move entries of the current folder to the trash. They can be restored from there.
      *
      * @param  list<string>  $relatives
      */
-    public function deleteEntries(array $relatives, SitePaths $paths): void
+    public function deleteEntries(array $relatives): void
     {
         $selected = $this->selectedEntries($relatives);
 
         if ($selected === []) {
             $this->toast('Those files are no longer there.', 'error');
 
-            return;
-        }
-
-        if (! $this->confirmed(count($selected) === 1 ? $selected[0]['name'] : 'delete')) {
             return;
         }
 
@@ -491,20 +492,92 @@ class Files extends PanelComponent
                 $this->closeFile();
             }
 
-            if (! $this->operations()->isSmall($this->rootPath(), $relatives)) {
-                $this->startTask('files.delete', 'Deleting '.$this->describe($selected), ['relatives' => $relatives]);
-                $this->dispatch('entry-deleted');
-
-                return;
-            }
-
-            $this->operations()->delete($this->rootPath(), $relatives);
+            $moved = app(FileTrash::class)->move($this->taskScope(), $this->rootPath(), $relatives, auth()->id());
             $this->refreshList();
             $this->dispatch('entry-deleted');
-            $this->toast(count($selected) === 1 ? $selected[0]['name'].' deleted.' : count($selected).' items deleted.');
+            $this->toast(($moved === 1 ? $selected[0]['name'] : $moved.' items').' moved to the trash. You can restore '.($moved === 1 ? 'it' : 'them').' from Trash.');
         } catch (Throwable $e) {
             $this->refreshList();
             $this->toast($e->getMessage(), 'error');
+        }
+    }
+
+    public function openTrash(): void
+    {
+        $this->showTrash = true;
+        $this->closeFile();
+    }
+
+    public function closeTrash(): void
+    {
+        $this->showTrash = false;
+        $this->refreshList();
+    }
+
+    public function restoreTrash(int $id): void
+    {
+        try {
+            $item = TrashItem::query()->where('scope', $this->taskScope())->findOrFail($id);
+            $restored = app(FileTrash::class)->restore($item, $this->rootPath());
+            $this->refreshList();
+            $this->toast('Restored to /'.$restored.'.');
+        } catch (Throwable $e) {
+            $this->toast($e->getMessage(), 'error');
+        }
+    }
+
+    /**
+     * Delete one trashed item for good, after the authenticator code.
+     */
+    public function purgeTrash(int $id, string $code): bool
+    {
+        return $this->withCode($code, function () use ($id): string {
+            $item = TrashItem::query()->where('scope', $this->taskScope())->findOrFail($id);
+            app(FileTrash::class)->purge($item);
+
+            return $item->name.' was deleted for good.';
+        });
+    }
+
+    /**
+     * Delete everything in the trash for good, after the authenticator code.
+     */
+    public function emptyTrash(string $code): bool
+    {
+        return $this->withCode($code, function (): string {
+            $items = TrashItem::query()->where('scope', $this->taskScope())->get();
+
+            foreach ($items as $item) {
+                app(FileTrash::class)->purge($item);
+            }
+
+            return 'The trash is empty. '.$items->count().' '.($items->count() === 1 ? 'item was' : 'items were').' deleted for good.';
+        });
+    }
+
+    /**
+     * Run $action only with a valid authenticator code. Errors go to the "code" field.
+     */
+    private function withCode(string $code, callable $action): bool
+    {
+        $this->resetErrorBag('code');
+
+        try {
+            app(FileTrash::class)->confirmCode(auth()->user(), $code);
+        } catch (Throwable $e) {
+            $this->addError('code', $e->getMessage());
+
+            return false;
+        }
+
+        try {
+            $this->toast($action());
+
+            return true;
+        } catch (Throwable $e) {
+            $this->toast($e->getMessage(), 'error');
+
+            return false;
         }
     }
 
@@ -850,6 +923,8 @@ class Files extends PanelComponent
             'canZip' => FileOperations::canZip(),
             'tasks' => $tasks = PanelTask::query()->where('scope', $this->taskScope())->where('updated_at', '>', now()->subHours(6))->latest('id')->limit(5)->get(),
             'tasksActive' => $tasks->contains(fn (PanelTask $task) => $task->isActive()),
+            'trashCount' => TrashItem::query()->where('scope', $this->taskScope())->count(),
+            'trashGroups' => $this->showTrash ? $this->trashGroups() : collect(),
             'downloadBase' => $this->website
                 ? route('websites.files.download', $this->website, false)
                 : route('files.download', [], false),
@@ -870,6 +945,25 @@ class Files extends PanelComponent
         $cached = dirname($savedFile).DIRECTORY_SEPARATOR.'bootstrap'.DIRECTORY_SEPARATOR.'cache'.DIRECTORY_SEPARATOR.'config.php';
 
         return is_file($cached) && ! is_link($cached) && @unlink($cached);
+    }
+
+    /**
+     * Trashed items grouped by the path they were deleted from, newest first; every delete of
+     * the same path is one version.
+     *
+     * @return Collection<int, array{path: string, name: string, dir: bool, versions: Collection<int, TrashItem>}>
+     */
+    private function trashGroups(): Collection
+    {
+        return TrashItem::query()->where('scope', $this->taskScope())->latest('id')->get()
+            ->groupBy('original_path')
+            ->map(fn ($versions, string $path) => [
+                'path' => $path,
+                'name' => $versions->first()->name,
+                'dir' => $versions->first()->is_dir,
+                'versions' => $versions->values(),
+            ])
+            ->values();
     }
 
     /**
