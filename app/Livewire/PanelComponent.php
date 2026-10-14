@@ -24,6 +24,7 @@ abstract class PanelComponent extends Component
         }
 
         $this->confirmName = '';
+        $this->resetErrorBag('confirmName');
 
         return true;
     }

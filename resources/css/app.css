@@ -1584,14 +1584,16 @@ html:has(.modal-root:not([x-cloak]):not([style*="display: none"])) {
 @layer components {
     .fm-tasks { margin: 12px 16px 12px; }
 
-    .trash-row { grid-template-columns: minmax(0, 1fr) 6rem 10rem auto !important; }
+    .table tr.is-selected > td { background: color-mix(in srgb, var(--color-accent) 7%, transparent); }
+
+    .trash-row { grid-template-columns: 2.25rem minmax(0, 1fr) 6rem 10rem auto !important; }
 
     .trash-versions {
         display: flex;
         flex-direction: column;
         border-top: 1px solid var(--color-line);
         background: var(--color-recessed);
-        padding: 4px 12px 6px 46px;
+        padding: 4px 12px 6px 82px;
     }
 
     /* Each version hangs off the item above with a guide line, aligned with its name. */

@@ -28,6 +28,17 @@ class HostWriter
         return $this->apply(['site-nginx', $website->slug]);
     }
 
+    /**
+     * Turn a site off: nginx answers with a "turned off" page and its processes stop.
+     */
+    public function disableWebsite(Website $website, string $nginxConfig): string
+    {
+        $this->renderSite($website);
+        File::put(storage_path('app/rendered/sites/'.$website->slug.'/nginx.conf'), $nginxConfig);
+
+        return $this->apply(['site-disable', $website->slug]);
+    }
+
     private function renderSite(Website $website): void
     {
         $directory = storage_path('app/rendered/sites/'.$website->slug);

@@ -85,6 +85,7 @@ pm2_adopt_stray() {
   local eco
   for eco in /var/www/*/ecosystem.config.cjs; do
     [[ -f "${eco}" ]] && node_site_ready "$(dirname "${eco}")" || continue
+    [[ -f "$(dirname "${eco}")/.laravelify-disabled" ]] && continue
     pm2 startOrReload "${eco}" --update-env >/dev/null 2>&1 || echo "warning: could not start ${eco} in PM2" >&2
   done
 }
@@ -180,6 +181,7 @@ case "${ACTION}" in
         "/var/www/${TARGET}/storage/logs/reverb.log"
     fi
     chown -R www-data:www-data "/var/www/${TARGET}" || true
+    rm -f "/var/www/${TARGET}/.laravelify-disabled"
     install_site_nginx "${TARGET}" "${SRC}"
     if [[ -f "${SRC}/.env" ]]; then
       write_file 640 "${SRC}/.env" "/var/www/${TARGET}/.env"
@@ -417,6 +419,7 @@ PHP
     pm2_adopt_stray
     for eco in /var/www/*/ecosystem.config.cjs; do
       [[ -f "${eco}" ]] && node_site_ready "$(dirname "${eco}")" || continue
+      [[ -f "$(dirname "${eco}")/.laravelify-disabled" ]] && continue
       name="$(basename "$(dirname "${eco}")")"
       if ! pm2 describe "${name}" >/dev/null 2>&1; then
         echo "Starting ${name} in PM2"
@@ -433,6 +436,27 @@ PHP
   nginx-test)
     # Read-only: validate every nginx config.
     exec nginx -t
+    ;;
+  site-disable)
+    # Turned off: nginx answers with a "turned off" page and the site's processes stop.
+    # Files, database, and settings stay; "site" turns everything on again.
+    slug_ok "${TARGET}" || die "invalid slug"
+    SRC="${RENDERED}/sites/${TARGET}"
+    [[ -f "${SRC}/nginx.conf" ]] || die "missing rendered nginx config"
+    install_site_nginx "${TARGET}" "${SRC}"
+    # pm2-boot and later updates leave a turned-off site alone.
+    [[ -d "/var/www/${TARGET}" ]] && touch "/var/www/${TARGET}/.laravelify-disabled"
+    if [[ -f "/etc/supervisor/conf.d/laravelify-${TARGET}.conf" ]]; then
+      rm -f "/etc/supervisor/conf.d/laravelify-${TARGET}.conf"
+      supervisorctl reread || true
+      supervisorctl update || true
+    fi
+    if command -v pm2 >/dev/null 2>&1 && pm2 describe "${TARGET}" >/dev/null 2>&1; then
+      pm2 delete "${TARGET}" || true
+      pm2_persist
+    fi
+    nginx -t
+    systemctl reload nginx
     ;;
   remove-site)
     slug_ok "${TARGET}" || die "invalid slug"

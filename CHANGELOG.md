@@ -2,6 +2,13 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.9] - 2026-10-14
+
+- **Turn websites and groups off and on.** A turned-off site answers with a short "This site is turned off" page (503) on its own address, its workers and Node process stop (and stay stopped after a reboot), and deploys, GitHub pushes, and down alerts pause. Files, database, environment, and settings stay; Turn on brings it all back. Turning a group off turns off every website in it.
+- **Select several** on the Groups list and a group's websites: Turn on, Turn off, and Delete for every selected row. Only empty groups are deleted; deleted websites keep their folders in /var/www.
+- Trash: tick several items to restore them or delete them for good (with your authenticator code) at once.
+- Groups and websites show their status: On, Turned off, or how many websites of a group are off.
+
 ## [0.3.0-beta.8] - 2026-10-14
 
 - **Dates in your own time:** everything is still stored in UTC, but by default each person now sees their browser's timezone, and dates and times in their country's format (14.10.2026 13:05 in Azerbaijan, 10/14/2026 1:05 PM in the US). Settings → General can still fix a timezone or a format for everyone; "Automatic" is the new default, and earlier saved defaults (UTC, 2026-10-12, 14:05) switch to Automatic once.

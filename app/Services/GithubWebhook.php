@@ -56,6 +56,13 @@ class GithubWebhook
             return ['ok' => true, 'ignored' => true, 'reason' => 'other branch'];
         }
 
+        if (! $website->enabled) {
+            $website->recordWebhook('Push received. The website is turned off, so it was not deployed.');
+            $this->notifier->webhookIgnored($website, 'push received, but the website is turned off.');
+
+            return ['ok' => true, 'ignored' => true, 'reason' => 'website is turned off'];
+        }
+
         if (! $website->auto_deploy) {
             $website->recordWebhook('Push received. Auto deploy is off.');
             $this->notifier->webhookIgnored($website, 'push received, but auto deploy is off.');

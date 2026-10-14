@@ -32,6 +32,9 @@
             <div class="mt-1 flex min-w-0 flex-wrap items-center gap-2.5">
                 <h2 class="page-title truncate">{{ $website->name }}</h2>
                 <span class="pill">{{ $website->typeLabel() }}</span>
+                @unless ($website->enabled)
+                    <span class="status-badge" style="--status-color: var(--color-muted)">Turned off</span>
+                @endunless
                 @if ($latestDeployment)
                     <x-status-badge :status="$latestDeployment->status" />
                 @endif
@@ -645,7 +648,24 @@
             </section>
 
             {{-- Danger zone --}}
-            <x-layer-card title="Danger zone" helper="Actions here cannot be undone." x-show="tab === 'danger'" x-cloak>
+            <x-layer-card title="Danger zone" helper="Turning off can be undone; deleting cannot." x-show="tab === 'danger'" x-cloak>
+                <div class="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4 mb-4">
+                    <div class="min-w-0">
+                        <p class="font-medium">{{ $website->enabled ? 'Turn off this website' : 'Turn on this website' }}</p>
+                        <p class="text-[13px] text-muted">
+                            @if ($website->enabled)
+                                Its address shows a turned-off page, its workers stop, and deploys and pushes wait. Files, database, and settings stay as they are.
+                            @else
+                                It is turned off. Turning it on serves it again and starts its workers, with the code it had.
+                            @endif
+                        </p>
+                    </div>
+                    @if ($website->enabled)
+                        <button class="btn" type="button" wire:click="setEnabled(false)" wire:confirm="Turn off {{ $website->name }}?" wire:loading.attr="disabled" wire:target="setEnabled"><x-menu-icon name="pause" /> Turn off</button>
+                    @else
+                        <button class="btn btn-primary" type="button" wire:click="setEnabled(true)" wire:loading.attr="disabled" wire:target="setEnabled"><x-menu-icon name="play" /> Turn on</button>
+                    @endif
+                </div>
                 <div class="flex flex-wrap items-center justify-between gap-4">
                     <div class="min-w-0">
                         <p class="font-medium">Delete this website</p>

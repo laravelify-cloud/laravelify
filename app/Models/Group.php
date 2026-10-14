@@ -16,7 +16,18 @@ class Group extends Model
         'name',
         'slug',
         'description',
+        'enabled',
     ];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'enabled' => 'boolean',
+        ];
+    }
 
     public function getRouteKeyName(): string
     {

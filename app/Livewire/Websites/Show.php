@@ -12,6 +12,7 @@ use App\Services\DatabaseProvisioner;
 use App\Services\HostWriter;
 use App\Services\ServerProcesses;
 use App\Services\SiteSecurity;
+use App\Services\WebsiteSwitch;
 use App\Support\BuildOutput;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\On;
@@ -421,6 +422,12 @@ class Show extends PanelComponent
 
     public function deploy(): void
     {
+        if (! $this->website->enabled) {
+            $this->toast('This website is turned off. Turn it on in the Danger zone to deploy.', 'error');
+
+            return;
+        }
+
         $deployment = $this->website->queueDeployment('manual');
 
         if (! $deployment) {
@@ -477,6 +484,17 @@ class Show extends PanelComponent
 
         if ($this->deploymentId && ! $this->website->deployments()->whereKey($this->deploymentId)->exists()) {
             $this->deploymentId = $this->website->deployments()->value('id');
+        }
+    }
+
+    public function setEnabled(WebsiteSwitch $switch, bool $enabled): void
+    {
+        try {
+            $enabled ? $switch->enable($this->website) : $switch->disable($this->website);
+            $this->website->refresh();
+            $this->toast($enabled ? $this->website->name.' is on again.' : $this->website->name.' is turned off.');
+        } catch (Throwable $exception) {
+            $this->toast($exception->getMessage(), 'error');
         }
     }
 

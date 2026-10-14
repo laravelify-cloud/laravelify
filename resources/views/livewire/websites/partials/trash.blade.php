@@ -8,6 +8,8 @@
     x-data="{
         otp: { open: false, action: 'empty', id: null, name: '', code: '', busy: false },
         expanded: [],
+        selected: [],
+        all: @js($trashGroups->pluck('path')->all()),
         ask(action, id = null, name = '') {
             this.otp = { open: true, action: action, id: id, name: name, code: '', busy: false };
             $wire.resetErrorBag('code');
@@ -19,7 +21,9 @@
             }
 
             this.otp.busy = true;
-            const call = this.otp.action === 'empty' ? $wire.emptyTrash(this.otp.code) : $wire.purgeTrash(this.otp.id, this.otp.code);
+            const call = this.otp.action === 'empty'
+                ? $wire.emptyTrash(this.otp.code)
+                : (this.otp.action === 'paths' ? $wire.purgeTrashPaths(this.selected, this.otp.code) : $wire.purgeTrash(this.otp.id, this.otp.code));
 
             call.then((done) => {
                 this.otp.busy = false;
@@ -36,6 +40,7 @@
             this.expanded = this.expanded.includes(path) ? this.expanded.filter((item) => item !== path) : this.expanded.concat([path]);
         },
     }"
+    @bulk-done.window="selected = []"
 >
     <div class="fm-toolbar">
         <div class="fm-nav">
@@ -52,6 +57,17 @@
         Restore puts a file or folder back where it was. If the same path was deleted more than once, open it to choose which version to bring back. Deleting for good asks for your authenticator code.
     </x-callout>
 
+    <div class="fm-selection" x-cloak x-show="selected.length > 0">
+        <div class="flex items-center gap-2">
+            <button class="icon-btn" type="button" @click="selected = []" aria-label="Clear selection"><x-menu-icon name="close" class="size-4" /></button>
+            <span class="font-medium"><span x-text="selected.length"></span> selected</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5">
+            <button class="btn btn-sm btn-primary" type="button" @click="$wire.restoreTrashPaths(selected)" wire:loading.attr="disabled" wire:target="restoreTrashPaths"><x-menu-icon name="restore" /> Restore</button>
+            <button class="btn btn-sm btn-danger" type="button" @click="ask('paths', null, selected.length + (selected.length === 1 ? ' item' : ' items'))"><x-menu-icon name="trash" /> Delete for good</button>
+        </div>
+    </div>
+
     @if ($trashGroups->isEmpty())
         <section class="fm-state">
             <span class="fm-state-badge"><x-menu-icon name="trash" /></span>
@@ -61,7 +77,8 @@
     @else
         <div class="fm-table" role="table">
             <div class="fm-row fm-row-head trash-row" role="row">
-                <span role="columnheader" class="pl-3">Name</span>
+                <span class="fm-check" role="columnheader"><input type="checkbox" aria-label="Select all" :checked="all.length > 0 && selected.length === all.length" @change="selected = $event.target.checked ? [...all] : []"></span>
+                <span role="columnheader" class="pl-1">Name</span>
                 <span role="columnheader" class="fm-col-size">Size</span>
                 <span role="columnheader" class="fm-col-date">Deleted</span>
                 <span role="columnheader" class="sr-only">Actions</span>
@@ -72,7 +89,8 @@
                     $latest = $group['versions']->first();
                     $count = $group['versions']->count();
                 @endphp
-                <div class="fm-row trash-row" role="row" wire:key="trash-{{ md5($group['path']) }}">
+                <div class="fm-row trash-row" role="row" wire:key="trash-{{ md5($group['path']) }}" :class="selected.includes(@js($group['path'])) && 'is-selected'">
+                    <span class="fm-check" role="cell"><input type="checkbox" aria-label="Select {{ $group['name'] }}" :checked="selected.includes(@js($group['path']))" @change="selected = $event.target.checked ? [...selected, @js($group['path'])] : selected.filter((path) => path !== @js($group['path']))"></span>
                     <span class="fm-name-cell" role="cell">
                         @include('livewire.websites.partials.file-icon', ['kind' => $group['dir'] ? 'folder' : 'file'])
                         <span class="min-w-0">
@@ -123,7 +141,7 @@
                 </div>
 
                 <x-callout type="danger" title="This cannot be undone">
-                    <span x-text="otp.action === 'empty' ? 'Everything in the trash is deleted from the disk.' : 'This version is deleted from the disk.'"></span>
+                    <span x-text="otp.action === 'empty' ? 'Everything in the trash is deleted from the disk.' : (otp.action === 'paths' ? 'Every version of the selected items is deleted from the disk.' : 'This version is deleted from the disk.')"></span>
                     To confirm it is you, enter the code from your authenticator app.
                 </x-callout>
 

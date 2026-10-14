@@ -20,6 +20,7 @@ class Website extends Model
         'cloudflare_tunnel_id',
         'github_app_id',
         'name',
+        'enabled',
         'slug',
         'type',
         'domain',
@@ -75,6 +76,7 @@ class Website extends Model
     protected function casts(): array
     {
         return [
+            'enabled' => 'boolean',
             'enable_reverb' => 'boolean',
             'provision_database' => 'boolean',
             'db_password' => 'encrypted',
@@ -257,7 +259,8 @@ class Website extends Model
      */
     public function queueDeployment(string $trigger, ?string $commitSha = null, array $commit = []): ?Deployment
     {
-        if ($this->hasActiveDeployment()) {
+        // A turned-off site keeps its code as it is until it is turned on again.
+        if (! $this->enabled || $this->hasActiveDeployment()) {
             return null;
         }
 

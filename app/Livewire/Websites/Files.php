@@ -527,6 +527,57 @@ class Files extends PanelComponent
     }
 
     /**
+     * Restore the newest version of each chosen path.
+     *
+     * @param  list<string>  $paths
+     */
+    public function restoreTrashPaths(array $paths): void
+    {
+        $restored = [];
+        $errors = [];
+
+        foreach (array_unique(array_map('strval', $paths)) as $path) {
+            $item = TrashItem::query()->where('scope', $this->taskScope())->where('original_path', $path)->latest('id')->first();
+
+            if (! $item) {
+                continue;
+            }
+
+            try {
+                $restored[] = app(FileTrash::class)->restore($item, $this->rootPath());
+            } catch (Throwable $e) {
+                $errors[] = $item->name.': '.$e->getMessage();
+            }
+        }
+
+        $this->refreshList();
+        $this->dispatch('bulk-done');
+        $this->toast($errors === []
+            ? 'Restored '.count($restored).' '.(count($restored) === 1 ? 'item' : 'items').': /'.implode(', /', $restored).'.'
+            : 'Some items could not be restored: '.implode(' · ', $errors), $errors === [] ? 'success' : 'error');
+    }
+
+    /**
+     * Delete every version of the chosen paths for good, after the authenticator code.
+     *
+     * @param  list<string>  $paths
+     */
+    public function purgeTrashPaths(array $paths, string $code): bool
+    {
+        return $this->withCode($code, function () use ($paths): string {
+            $items = TrashItem::query()->where('scope', $this->taskScope())->whereIn('original_path', array_map('strval', $paths))->get();
+
+            foreach ($items as $item) {
+                app(FileTrash::class)->purge($item);
+            }
+
+            $this->dispatch('bulk-done');
+
+            return $items->count().' '.($items->count() === 1 ? 'item was' : 'items were').' deleted for good.';
+        });
+    }
+
+    /**
      * Delete one trashed item for good, after the authenticator code.
      */
     public function purgeTrash(int $id, string $code): bool

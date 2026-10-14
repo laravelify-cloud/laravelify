@@ -227,6 +227,7 @@ class ServerMonitor
     private function monitoredWebsites()
     {
         return Website::query()
+            ->where('enabled', true)
             ->whereHas('deployments', fn ($query) => $query->where('status', 'success'))
             ->orderBy('name')
             ->get()
