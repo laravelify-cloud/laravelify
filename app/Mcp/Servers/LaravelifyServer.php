@@ -7,6 +7,7 @@ use App\Mcp\Tools\CreateGroup;
 use App\Mcp\Tools\CreateWebsite;
 use App\Mcp\Tools\DeployWebsite;
 use App\Mcp\Tools\GetDeployment;
+use App\Mcp\Tools\GetNginx;
 use App\Mcp\Tools\GetWebsite;
 use App\Mcp\Tools\ListGroups;
 use App\Mcp\Tools\ListPorts;
@@ -15,6 +16,7 @@ use App\Mcp\Tools\ListSources;
 use App\Mcp\Tools\ListWebsites;
 use App\Mcp\Tools\SetWebsiteEnabled;
 use App\Mcp\Tools\UpdateEnvironment;
+use App\Mcp\Tools\UpdateNginx;
 use App\Mcp\Tools\UploadFile;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
@@ -36,6 +38,10 @@ use Laravel\Mcp\Server\Attributes\Version;
       a folder): upload-file, after the site's first deploy has finished. Deploys keep these files.
     - Ports are picked by themselves: every new site gets a port nothing else uses, including apps still running from an old
       server. Ports in an old server's nginx files do not matter, only the domains. list-ports shows what holds which port.
+    - Special nginx rules from an old server (like OAuth, webhook, or payment callback paths sent to the Laravel API):
+      get-nginx, then update-nginx with location blocks added. A rejected file is rolled back.
+    - A site with create_database keeps the database login the panel made; DB_* values from an old .env are left out.
+      There is no database import through MCP: tell the user to import their dump into the new database.
     - Laravel, PHP, Express, NestJS, Node.js, React, Vue, Angular, Svelte, Astro, static HTML, Next.js, Nuxt, and SvelteKit (list-site-types).
 
     To deploy a repository:
@@ -68,6 +74,8 @@ class LaravelifyServer extends Server
         GetDeployment::class,
         UpdateEnvironment::class,
         UploadFile::class,
+        GetNginx::class,
+        UpdateNginx::class,
         SetWebsiteEnabled::class,
         ListPorts::class,
     ];

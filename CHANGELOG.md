@@ -2,6 +2,14 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.18] - 2026-10-15
+
+- **Fixed: the first deploy of a Laravel or PHP site with a database failed with "Access denied".** The deploy ran the migrations before it created the database and its user. The database now comes first.
+- **A panel-made database keeps its own login.** When an `.env` from an old server is pasted in, a deploy puts the panel's `DB_*` values back (and says so in the log), and MCP's create-website leaves those keys out.
+- **Fixed: a quoted APP_KEY was replaced on every deploy.** Deploys now keep any existing key, quoted or not, and the `.env` editor writes keys unquoted like Laravel does.
+- **New domains no longer cut the panel off.** Adding a domain restarts the Cloudflare tunnel three seconds later, so the page or MCP call that added it gets its answer first, and the tunnel is not restarted when its routes did not change.
+- **MCP: get-nginx and update-nginx**, to add rules like OAuth or payment callback paths sent to a Laravel API. nginx checks the file first, and a rejected file is put back.
+
 ## [0.3.0-beta.17] - 2026-10-15
 
 - **MCP: upload-file.** The assistant can put files the repository does not carry into a site, like a Firebase key in `storage/app/private`, or unpack a `.zip`, `.tar.gz`, or `.tgz` into a folder (up to 20 MB). Paths stay inside the site folder, links in archives are skipped, and deploys keep the files.

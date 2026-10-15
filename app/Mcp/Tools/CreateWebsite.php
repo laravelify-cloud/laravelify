@@ -28,6 +28,13 @@ class CreateWebsite extends Tool
     {
         // Checked first, so a wrong variable never leaves a half-made website behind.
         $env = $this->envValues((array) $request->get('env', []));
+        $ignoredDatabaseKeys = [];
+
+        // A database made by the panel keeps its own login; DB_* from an old server would lock it out.
+        if ($request->get('create_database', false)) {
+            $ignoredDatabaseKeys = array_values(array_intersect(array_keys($env), ['DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD']));
+            $env = array_diff_key($env, array_flip($ignoredDatabaseKeys));
+        }
         $group = $this->group((string) $request->get('group', ''));
         $repository = $this->repositoryUrl((string) $request->get('repository', ''));
         $appId = (string) $request->get('github_app_id', '');
@@ -58,6 +65,10 @@ class CreateWebsite extends Tool
 
         $website = $result['website'];
         $notes = [];
+
+        if ($ignoredDatabaseKeys !== []) {
+            $notes[] = 'Left out '.implode(', ', $ignoredDatabaseKeys).' from env: the site uses the MySQL database the panel made for it. Import the old data into that database.';
+        }
 
         if ($result['error'] !== null) {
             $notes[] = 'The website was saved, but applying nginx or the process manager failed: '.$result['error'];

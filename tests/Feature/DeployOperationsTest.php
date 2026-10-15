@@ -274,6 +274,63 @@ class DeployOperationsTest extends TestCase
         $this->assertStringNotContainsString('ghp_freshToken123', (string) $deployment->fresh()->log);
     }
 
+    public function test_a_new_laravel_site_gets_its_database_before_migrations_and_keeps_its_app_key(): void
+    {
+        $site = $this->root.DIRECTORY_SEPARATOR.'api';
+        mkdir($site.'/.git', 0777, true);
+        $key = 'base64:'.base64_encode(str_repeat('k', 32));
+        $website = Website::factory()->create([
+            'type' => 'laravel',
+            'deploy_path' => $site,
+            'provision_database' => true,
+            'db_name' => 'lv_api',
+            'db_username' => 'lv_api_u',
+            'db_password' => 'panel-made-password',
+            // Pasted from an old server's backup: its key (quoted) and its own database login.
+            'env_content' => "APP_KEY='{$key}'\nDB_DATABASE=old_db\nDB_USERNAME=old_user\nDB_PASSWORD=old-password\n",
+        ]);
+        $deployment = $website->deployments()->create(['status' => 'queued', 'trigger' => 'manual', 'log' => '']);
+
+        $runner = new class extends CommandRunner
+        {
+            /** @var list<string> */
+            public array $commands = [];
+
+            public function supportsHostCommands(): bool
+            {
+                return true;
+            }
+
+            public function run(array $command, ?string $cwd = null, array $env = [], ?callable $onOutput = null): CommandResult
+            {
+                $this->commands[] = implode(' ', $command);
+
+                return new CommandResult(true, false, $command, '', 0);
+            }
+        };
+        $this->app->instance(CommandRunner::class, $runner);
+
+        try {
+            app(Deployer::class)->run($deployment);
+
+            $this->assertSame('success', $deployment->fresh()->status, (string) $deployment->fresh()->log);
+            $commands = collect($runner->commands)->values();
+            $createdAt = $commands->search(fn (string $line): bool => str_starts_with($line, 'mysql ') && str_contains($line, 'CREATE USER'));
+            $migratedAt = $commands->search(fn (string $line): bool => str_contains($line, 'artisan migrate'));
+            $this->assertIsInt($createdAt);
+            $this->assertIsInt($migratedAt);
+            $this->assertLessThan($migratedAt, $createdAt, 'The database exists before migrations run.');
+
+            $env = (string) file_get_contents($site.'/.env');
+            $this->assertStringContainsString('DB_USERNAME=lv_api_u', $env);
+            $this->assertStringContainsString('DB_PASSWORD=panel-made-password', $env);
+            $this->assertStringContainsString("APP_KEY='{$key}'", $env, 'A quoted key is kept, not replaced.');
+            $this->assertStringNotContainsString('Generated APP_KEY', (string) $deployment->fresh()->log);
+        } finally {
+            File::deleteDirectory($site);
+        }
+    }
+
     public function test_nextjs_deploys_use_the_lockfiles_package_manager_and_complete_the_standalone_bundle(): void
     {
         $site = $this->root.DIRECTORY_SEPARATOR.'next';

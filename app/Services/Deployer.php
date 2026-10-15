@@ -6,6 +6,7 @@ use App\Models\Deployment;
 use App\Models\Setting;
 use App\Models\Website;
 use App\Support\BuildOutput;
+use App\Support\EnvFile;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Throwable;
@@ -72,14 +73,17 @@ class Deployer
             }
 
             $this->checkout($website, $log);
+
+            // The database comes before the install, which runs the migrations against it.
+            if ($website->isPhp() && $website->provision_database) {
+                $this->keepDatabaseCredentials($website, $log);
+                $log->line($this->databases->create($website));
+            }
+
             $this->writeEnv($website, $log);
             $this->install($website, $log);
             $this->syncEnvBack($website, $log);
             $log->line($this->hostWriter->writeWebsite($website));
-
-            if ($website->isPhp() && $website->provision_database) {
-                $log->line($this->databases->create($website));
-            }
 
             $sha = trim($this->must($this->runner->run(['git', '-C', $website->deploy_path, 'rev-parse', 'HEAD']), $log)->output);
             $commit = $this->runner->run(['git', '-C', $website->deploy_path, 'log', '-1', '--format=%an%n%B']);
@@ -151,6 +155,29 @@ class Deployer
         File::deleteDirectory($staging);
     }
 
+    /**
+     * A site with a database made by the panel always uses that database's login, even when
+     * an .env from somewhere else (an old server's backup) was pasted over it.
+     */
+    private function keepDatabaseCredentials(Website $website, DeploymentLogger $log): void
+    {
+        $values = [
+            'DB_CONNECTION' => 'mysql',
+            'DB_HOST' => '127.0.0.1',
+            'DB_PORT' => '3306',
+            'DB_DATABASE' => (string) $website->db_name,
+            'DB_USERNAME' => (string) $website->db_username,
+            'DB_PASSWORD' => (string) $website->db_password,
+        ];
+        $content = (string) $website->env_content;
+        $fixed = EnvFile::set($content, $values);
+
+        if (EnvFile::values($content, array_keys($values)) !== EnvFile::values($fixed, array_keys($values))) {
+            $website->update(['env_content' => $fixed]);
+            $log->line('Set DB_* in .env to the database the panel made for this site.');
+        }
+    }
+
     private function writeEnv(Website $website, DeploymentLogger $log): void
     {
         File::ensureDirectoryExists($website->deploy_path);
@@ -175,7 +202,8 @@ class Deployer
         $php = '/usr/bin/php'.($website->php_version ?: '8.4');
         $this->composerInstall($path, $log);
 
-        if (! str_contains((string) file_get_contents($path.'/.env'), 'APP_KEY=base64:')) {
+        // A key may be quoted ('base64:…' or "base64:…"); only a missing or empty one is replaced.
+        if (preg_match('/^\s*APP_KEY\s*=\s*["\']?base64:[A-Za-z0-9+\/=]{20,}/m', (string) file_get_contents($path.'/.env')) !== 1) {
             $this->writeAppKey($path);
             $log->line('Generated APP_KEY.');
         }

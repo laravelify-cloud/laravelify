@@ -7,20 +7,25 @@ use App\Mcp\Servers\LaravelifyServer;
 use App\Mcp\Tools\CreateWebsite;
 use App\Mcp\Tools\DeployWebsite;
 use App\Mcp\Tools\GetDeployment;
+use App\Mcp\Tools\GetNginx;
 use App\Mcp\Tools\GetWebsite;
 use App\Mcp\Tools\ListWebsites;
 use App\Mcp\Tools\UpdateEnvironment;
+use App\Mcp\Tools\UpdateNginx;
 use App\Models\Deployment;
 use App\Models\Group;
 use App\Models\McpToken;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\AccessGate;
+use App\Services\HostWriter;
 use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Livewire\Livewire;
+use Mockery\MockInterface;
+use RuntimeException;
 use Tests\TestCase;
 
 class McpServerTest extends TestCase
@@ -97,6 +102,44 @@ class McpServerTest extends TestCase
         $this->assertStringContainsString('MAIL_HOST=smtp.example.com', (string) $website->env_content);
         $this->assertStringContainsString("APP_NAME='Acme Shop'", (string) $website->env_content);
         $this->assertSame('mcp', Deployment::query()->sole()->trigger);
+    }
+
+    public function test_a_site_with_a_panel_database_ignores_db_values_from_an_old_env(): void
+    {
+        LaravelifyServer::actingAs($this->admin)->tool(CreateWebsite::class, [
+            'group' => 'Acme', 'name' => 'Api', 'type' => 'laravel', 'repository' => 'acme/api', 'create_database' => true,
+            'env' => ['DB_USERNAME=old_user', 'DB_PASSWORD=old-password', 'MAIL_HOST=smtp.example.com'],
+        ])->assertOk()->assertSee('Left out DB_USERNAME, DB_PASSWORD');
+
+        $website = Website::query()->sole();
+        $this->assertStringNotContainsString('old_user', (string) $website->env_content);
+        $this->assertStringContainsString('DB_USERNAME='.$website->db_username, (string) $website->env_content);
+        $this->assertStringContainsString('MAIL_HOST=smtp.example.com', (string) $website->env_content);
+    }
+
+    public function test_nginx_is_changed_and_a_rejected_change_is_rolled_back(): void
+    {
+        $website = Website::factory()->create(['slug' => 'web', 'nginx_config' => "server {\n    listen 80;\n    server_name web.example.com;\n}\n"]);
+        $server = LaravelifyServer::actingAs($this->admin);
+
+        $server->tool(GetNginx::class, ['website' => 'web'])->assertOk()->assertSee('server_name web.example.com;');
+
+        $changed = "server {\n    listen 80;\n    server_name web.example.com;\n    location /google/callback { proxy_pass http://127.0.0.1; }\n}\n";
+        $server->tool(UpdateNginx::class, ['website' => 'web', 'nginx_config' => $changed])->assertOk();
+        $applied = (string) $website->fresh()->nginx_config;
+        $this->assertStringContainsString('location /google/callback { proxy_pass http://127.0.0.1; }', $applied);
+
+        $server->tool(UpdateNginx::class, ['website' => 'web', 'nginx_config' => 'location / {}'])->assertHasErrors(['Keep the listen and server_name lines']);
+
+        $this->mock(HostWriter::class, function (MockInterface $mock) {
+            $mock->shouldReceive('writeWebsite')->once()->andThrow(new RuntimeException('nginx: [emerg] unknown directive "proxy_pas"'));
+            $mock->shouldReceive('writeWebsite')->once()->andReturn('ok');
+        });
+        $broken = str_replace('proxy_pass', 'proxy_pas', $changed);
+
+        LaravelifyServer::actingAs($this->admin)->tool(UpdateNginx::class, ['website' => 'web', 'nginx_config' => $broken])
+            ->assertHasErrors(['nginx rejected it, so the previous file was put back']);
+        $this->assertSame($applied, $website->fresh()->nginx_config);
     }
 
     public function test_create_website_explains_what_is_wrong(): void

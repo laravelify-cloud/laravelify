@@ -55,6 +55,33 @@ class EnvFile
         return array_values(array_unique($matches[1]));
     }
 
+    /**
+     * The values of some keys, unquoted, as the app reads them. Missing keys are null.
+     *
+     * @param  list<string>  $keys
+     * @return array<string, ?string>
+     */
+    public static function values(string $content, array $keys): array
+    {
+        $values = array_fill_keys($keys, null);
+
+        foreach (preg_split('/\r\n|\n|\r/', $content) ?: [] as $line) {
+            if (preg_match('/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/', $line, $match) !== 1 || ! array_key_exists($match[1], $values)) {
+                continue;
+            }
+
+            $value = trim($match[2]);
+
+            if (strlen($value) >= 2 && ($value[0] === '"' || $value[0] === "'") && str_ends_with($value, $value[0])) {
+                $value = substr($value, 1, -1);
+            }
+
+            $values[$match[1]] = $value;
+        }
+
+        return $values;
+    }
+
     public static function validKey(string $key): bool
     {
         return preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $key) === 1;
@@ -68,7 +95,8 @@ class EnvFile
             throw new InvalidArgumentException('A .env value cannot span several lines.');
         }
 
-        if ($value === '' || preg_match('/^[A-Za-z0-9_.,:\/@+-]*$/', $value) === 1) {
+        // Plain values stay unquoted, like Laravel writes them (APP_KEY=base64:…=).
+        if ($value === '' || preg_match('/^[A-Za-z0-9_.,:\/@+=-]*$/', $value) === 1) {
             return $value;
         }
 

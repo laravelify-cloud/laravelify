@@ -235,11 +235,30 @@ case "${ACTION}" in
     SRC="${RENDERED}/tunnels/${TARGET}"
     [[ -f "${SRC}/config.yml" && -f "${SRC}/tunnel.service" ]] || die "missing rendered tunnel files"
     ensure_dirs /etc/cloudflared
+    UNIT="laravelify-tunnel-${TARGET}.service"
+    CHANGED=0
+    cmp -s "${SRC}/config.yml" "/etc/cloudflared/laravelify-${TARGET}.yml" || CHANGED=1
+    cmp -s "${SRC}/tunnel.service" "/etc/systemd/system/${UNIT}" || CHANGED=1
     write_file 644 "${SRC}/config.yml" "/etc/cloudflared/laravelify-${TARGET}.yml"
-    write_file 600 "${SRC}/tunnel.service" "/etc/systemd/system/laravelify-tunnel-${TARGET}.service"
+    write_file 600 "${SRC}/tunnel.service" "/etc/systemd/system/${UNIT}"
     systemctl daemon-reload
-    systemctl enable --now "laravelify-tunnel-${TARGET}.service"
-    systemctl restart "laravelify-tunnel-${TARGET}.service"
+    if ! systemctl is-active --quiet "${UNIT}"; then
+      systemctl enable --now "${UNIT}"
+    elif [[ "${CHANGED}" == 1 ]]; then
+      systemctl enable "${UNIT}" >/dev/null 2>&1 || true
+      # The panel is often served through this tunnel. Restart it a few seconds later, so the
+      # request that changed it (a page or an MCP call) gets its answer first.
+      if command -v systemd-run >/dev/null 2>&1; then
+        systemd-run --quiet --on-active=3 --unit="laravelify-tunnel-restart-${TARGET}-$(date +%s)" \
+          /bin/systemctl restart "${UNIT}" \
+          || setsid bash -c "sleep 3; systemctl restart '${UNIT}'" >/dev/null 2>&1 < /dev/null &
+      else
+        setsid bash -c "sleep 3; systemctl restart '${UNIT}'" >/dev/null 2>&1 < /dev/null &
+      fi
+      echo "Tunnel ${TARGET} restarts in 3 seconds with the new routes."
+    else
+      echo "Tunnel ${TARGET} routes are unchanged."
+    fi
     ;;
   remove-tunnel)
     slug_ok "${TARGET}" || die "invalid slug"
