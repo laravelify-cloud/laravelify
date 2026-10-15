@@ -10,6 +10,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\CloudflareApi;
+use App\Services\CloudflareRoutes;
 use App\Services\SiteSecurity;
 use App\Services\TwoFactor;
 use App\Services\WebsiteDomains;
@@ -221,5 +222,35 @@ class WebsiteRedirectsTest extends TestCase
         $this->assertTrue(WebsiteDomains::isApex('www.example.az'));
         $this->assertFalse(WebsiteDomains::isApex('supercell.apply.coupons'));
         $this->assertFalse(WebsiteDomains::isApex('api.example.com'));
+    }
+
+    public function test_a_cname_to_another_redirect_domain_on_the_server_ip_is_left_alone(): void
+    {
+        Setting::putValue(CloudflareApi::SETTING, 'cf_token_123');
+        $posted = 0;
+
+        Http::fake(function (Request $request) use (&$posted) {
+            $url = $request->url();
+            $ok = fn (mixed $result) => Http::response(['success' => true, 'errors' => [], 'result' => $result]);
+
+            return match (true) {
+                str_contains($url, 'api.ipify.org') => Http::response('203.0.113.9'),
+                str_contains($url, '/zones?name=apply.coupons') => $ok([['id' => 'zone1', 'name' => 'apply.coupons']]),
+                str_contains($url, 'name=www.apply.coupons') => $ok([['id' => 'c1', 'type' => 'CNAME', 'name' => 'www.apply.coupons', 'content' => 'apply.coupons']]),
+                str_contains($url, '/dns_records') && $request->method() === 'GET' => $ok([['id' => 'a1', 'type' => 'A', 'name' => 'apply.coupons', 'content' => '203.0.113.9']]),
+                str_contains($url, '/dns_records') && $request->method() === 'POST' => tap($ok(['id' => 'new']), function () use (&$posted): void {
+                    $posted++;
+                }),
+                default => Http::response(['success' => false, 'errors' => [['message' => 'unexpected '.$url]]], 404),
+            };
+        });
+
+        $report = app(WebsiteRedirects::class)->apply($this->site(), [
+            ['from' => 'apply.coupons', 'to' => '', 'via' => 'ip'],
+            ['from' => 'www.apply.coupons', 'to' => '', 'via' => 'ip'],
+        ]);
+
+        $this->assertSame([], CloudflareRoutes::problems($report));
+        $this->assertSame(0, $posted);
     }
 }

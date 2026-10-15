@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.27] - 2026-10-15
+
+- **Server IP redirects accept a `www` CNAME to the bare domain.** `www.example.com CNAME example.com` already reaches the server when the bare domain is pointed at it, so it is no longer reported as a conflict.
+
 ## [0.3.0-beta.26] - 2026-10-15
 
 - **An A record can sit next to mail records.** Redirects on the **Server IP** way no longer stop at an existing MX, TXT, or CAA record of the domain (a CNAME cannot sit next to them, an A record can); only an existing A, AAAA, or CNAME record is reported. This makes it the way to redirect a bare domain that receives mail.

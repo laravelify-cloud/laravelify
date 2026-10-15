@@ -59,7 +59,7 @@ class CloudflareRoutes
         $lines = [];
 
         foreach ($hosts as $host) {
-            $lines[] = $this->line($host, 'server IP, port 80', $ip === null ? 'error: the public IP of this server could not be found' : $this->ensureA($host, $ip), null);
+            $lines[] = $this->line($host, 'server IP, port 80', $ip === null ? 'error: the public IP of this server could not be found' : $this->ensureA($host, $ip, $hosts), null);
         }
 
         foreach ($removed as $host) {
@@ -69,7 +69,10 @@ class CloudflareRoutes
         return ['configured' => true, 'lines' => $lines, 'note' => null];
     }
 
-    private function ensureA(string $host, string $ip): string
+    /**
+     * @param  list<string>  $siblings  The other domains that are pointed at this server, in this save.
+     */
+    private function ensureA(string $host, string $ip, array $siblings = []): string
     {
         try {
             $zone = $this->api->zoneFor($host);
@@ -92,6 +95,11 @@ class CloudflareRoutes
 
             foreach ($records as $record) {
                 if (($record['type'] ?? '') === 'A' && ($record['content'] ?? '') === $ip) {
+                    return 'ok';
+                }
+
+                // www CNAME apply.coupons, where apply.coupons is pointed at this server too: already reaches it.
+                if (($record['type'] ?? '') === 'CNAME' && in_array(strtolower(rtrim((string) ($record['content'] ?? ''), '.')), $siblings, true)) {
                     return 'ok';
                 }
             }
