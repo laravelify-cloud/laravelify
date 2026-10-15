@@ -78,7 +78,11 @@ class CloudflareRoutes
                 return 'error: this domain is not on the Cloudflare account of the token';
             }
 
-            $records = $this->api->dnsRecords($zone['id'], $host);
+            // Mail (MX), TXT, CAA and similar records can sit next to an A record; only A, AAAA and CNAME get in its way.
+            $records = array_values(array_filter(
+                $this->api->dnsRecords($zone['id'], $host),
+                fn (array $record): bool => in_array($record['type'] ?? '', ['A', 'AAAA', 'CNAME'], true),
+            ));
 
             if ($records === []) {
                 $this->api->createA($zone['id'], $host, $ip);

@@ -191,7 +191,7 @@ class WebsiteRedirectsTest extends TestCase
             return match (true) {
                 str_contains($url, 'api.ipify.org') => Http::response('203.0.113.9'),
                 str_contains($url, '/zones?name=apply.coupons') => $ok([['id' => 'zone1', 'name' => 'apply.coupons']]),
-                str_contains($url, '/dns_records') && $request->method() === 'GET' => $ok([]),
+                str_contains($url, '/dns_records') && $request->method() === 'GET' => $ok([['id' => 'mx1', 'type' => 'MX', 'name' => 'apply.coupons', 'content' => 'mail.example.com']]),
                 str_contains($url, '/dns_records') && $request->method() === 'POST' => tap($ok(['id' => 'new']), function () use ($request, &$created): void {
                     $created[] = $request->data();
                 }),

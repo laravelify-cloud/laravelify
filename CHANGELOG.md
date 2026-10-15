@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.26] - 2026-10-15
+
+- **An A record can sit next to mail records.** Redirects on the **Server IP** way no longer stop at an existing MX, TXT, or CAA record of the domain (a CNAME cannot sit next to them, an A record can); only an existing A, AAAA, or CNAME record is reported. This makes it the way to redirect a bare domain that receives mail.
+- The type, match, and "how it reaches the server" lists on the Redirects tab use the browser's own list, which opens and selects reliably in these rows.
+
 ## [0.3.0-beta.25] - 2026-10-15
 
 - **No www for subdomains.** "Also open on www" and "+ Add www" are offered only for a bare domain (`example.com`, `example.co.uk`), never for `shop.example.com`, and `include_www` in MCP is ignored for a subdomain.
