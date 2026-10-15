@@ -24,6 +24,9 @@ trait DescribesWebsites
             ->unless(ctype_digit($reference), fn ($query) => $query->where('slug', $reference)->orWhere('domain', strtolower($reference)))
             ->first();
 
+        // An extra domain (like www.example.com) finds its website too.
+        $website ??= ctype_digit($reference) ? null : Website::query()->whereNotNull('aliases')->get()->first(fn (Website $candidate): bool => in_array(strtolower($reference), $candidate->domains(), true));
+
         return $website ?? throw ValidationException::withMessages(['website' => 'No website "'.$reference.'". list-websites shows the ids, slugs, and domains.']);
     }
 
@@ -42,6 +45,8 @@ trait DescribesWebsites
             'group' => $website->group?->name,
             'url' => $website->publicUrl(),
             'domain' => $website->domain,
+            'extra_domains' => $website->aliases ?? [],
+            'cloudflare_tunnel_id' => $website->cloudflare_tunnel_id,
             'http_port' => $website->http_port,
             'repository' => $website->repository,
             'branch' => $website->branch,

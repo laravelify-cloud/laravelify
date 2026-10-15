@@ -5,6 +5,7 @@ namespace App\Mcp\Tools;
 use App\Mcp\Concerns\DescribesWebsites;
 use App\Models\GithubApp;
 use App\Models\Group;
+use App\Services\CloudflareRoutes;
 use App\Services\GithubAppClient;
 use App\Services\HostWriter;
 use App\Services\WebsiteCreator;
@@ -19,7 +20,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 use Throwable;
 
-#[Description('Create a website from a Git repository and (by default) deploy it right away: nginx, SSL through the Cloudflare tunnel, the PHP or Node runtime, workers, and an optional MySQL database are set up for you. Give a domain (with a cloudflare_tunnel_id for HTTPS) or leave both empty for a free HTTP port. Sites from a connected GitHub App deploy again on every push.')]
+#[Description('Create a website from a Git repository and (by default) deploy it right away: nginx, SSL through the Cloudflare tunnel, the PHP or Node runtime, workers, and an optional MySQL database are set up for you. Give a domain (with a cloudflare_tunnel_id for HTTPS) and optionally include_www and other domains (aliases) for the same site, or leave domain empty for a free HTTP port. Sites from a connected GitHub App deploy again on every push.')]
 class CreateWebsite extends Tool
 {
     use DescribesWebsites;
@@ -47,6 +48,8 @@ class CreateWebsite extends Tool
             'name' => $request->get('name'),
             'type' => $request->get('type', 'laravel'),
             'domain' => $request->get('domain'),
+            'aliases' => (array) $request->get('aliases', []),
+            'include_www' => $request->get('include_www', false),
             'http_port' => $request->get('http_port'),
             'repository' => $repository,
             'branch' => $request->get('branch', 'main'),
@@ -72,6 +75,10 @@ class CreateWebsite extends Tool
 
         if ($result['error'] !== null) {
             $notes[] = 'The website was saved, but applying nginx or the process manager failed: '.$result['error'];
+        }
+
+        foreach (CloudflareRoutes::problems($result['cloudflare']) as $problem) {
+            $notes[] = $problem;
         }
 
         if ($env !== []) {
@@ -100,6 +107,8 @@ class CreateWebsite extends Tool
 
         return Response::json([
             'website' => $this->websiteSummary($website->fresh()),
+            'domains' => $website->fresh()->domains(),
+            'cloudflare' => $result['cloudflare']['lines'],
             'deployment_id' => $deployment?->id,
             'next' => $deployment
                 ? 'The deploy is queued. Call get-deployment with deployment_id '.$deployment->id.' every 10–20 seconds until finished is true.'
@@ -203,7 +212,9 @@ class CreateWebsite extends Tool
             'type' => $schema->string()->description('The kind of app (list-site-types), like laravel, nextjs, react, express.')->required(),
             'repository' => $schema->string()->description('Git URL (https://github.com/owner/repo.git) or owner/repo. A connected GitHub App that can read it is used automatically.'),
             'branch' => $schema->string()->description('The branch to deploy (default main).'),
-            'domain' => $schema->string()->description('Like app.example.com. Leave empty to use a free HTTP port instead.'),
+            'domain' => $schema->string()->description('The main domain, like example.com. Leave empty to use a free HTTP port instead.'),
+            'include_www' => $schema->boolean()->description('Also open on www.<domain> (nginx, and the tunnel route and DNS when a Cloudflare token is saved).'),
+            'aliases' => $schema->array()->items($schema->string())->description('Other domains that open this same website, like ["other.com", "www.other.com"]. No second website needed.'),
             'cloudflare_tunnel_id' => $schema->integer()->description('Serve the domain over HTTPS through this Cloudflare tunnel (list-sources).'),
             'http_port' => $schema->integer()->description('A fixed HTTP port instead of a domain (default: the next free one from 8081).'),
             'github_app_id' => $schema->integer()->description('The GitHub App to clone with (list-sources). Found by itself when left out.'),

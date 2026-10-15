@@ -99,10 +99,33 @@
             <button type="button" :aria-pressed="access === 'port'" x-on:click="access = 'port'; $wire.domain = ''">HTTP port</button>
         </div>
 
-        <div x-show="access === 'domain'">
-            <input class="input" wire:model="domain" placeholder="api.example.com">
+        <div class="flex flex-col gap-2" x-show="access === 'domain'">
+            <input class="input" wire:model="domain" placeholder="example.com">
             <small class="text-muted">Needed for a Cloudflare tunnel.</small>
             @error('domain') <small class="error">{{ $message }}</small> @enderror
+
+            <label class="flex items-start gap-2 rounded-lg border border-line bg-recessed px-3 py-2.5" x-show="($wire.domain || '').trim() !== '' && !($wire.domain || '').trim().toLowerCase().startsWith('www.')" x-cloak>
+                <input class="mt-0.5" type="checkbox" wire:model="include_www">
+                <span>
+                    <span class="block text-[13.5px] font-medium">Also open on <b x-text="'www.' + ($wire.domain || '').trim().toLowerCase()"></b></span>
+                    <span class="block text-[12px] text-muted">nginx answers on both names{{ $cloudflareApi ? ', and the tunnel route and DNS record are added in Cloudflare' : '' }}.</span>
+                </span>
+            </label>
+
+            <div x-data="{ more: @js($extra_domains !== '') }">
+                <button class="text-[12.5px] text-muted hover:text-ink" type="button" @click="more = ! more">
+                    <x-menu-icon name="chevron-right" class="inline size-3.5 transition-transform" ::class="more && 'rotate-90'" /> Other domains for the same website
+                </button>
+                <div class="mt-2" x-show="more" x-cloak>
+                    <textarea class="input min-h-20 font-mono text-[13px]" wire:model="extra_domains" spellcheck="false" placeholder="second-domain.com&#10;www.second-domain.com"></textarea>
+                    <small class="text-muted">One domain per line. They all open this one website; no second website needed.</small>
+                    @error('aliases') <small class="error block">{{ $message }}</small> @enderror
+                </div>
+            </div>
+
+            @if (! $cloudflareApi)
+                <small class="text-muted">With a Cloudflare API token (Settings → Cloudflare), Laravelify also adds each domain's tunnel route and DNS record for you.</small>
+            @endif
         </div>
 
         <div x-show="access === 'port'" x-cloak>

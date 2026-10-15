@@ -17,7 +17,7 @@ use Throwable;
  */
 class WebsiteSwitch
 {
-    public function __construct(private HostWriter $host, private ConfigRenderer $renderer) {}
+    public function __construct(private HostWriter $host, private ConfigRenderer $renderer, private CloudflareRoutes $cloudflare) {}
 
     public function disable(Website $website): void
     {
@@ -106,11 +106,13 @@ class WebsiteSwitch
     public function delete(Website $website): void
     {
         $tunnel = $website->tunnel;
+        $domains = $website->domains();
         $this->host->removeWebsite($website);
         $website->delete();
 
         if ($tunnel) {
             $this->renderer->refreshTunnel($tunnel);
+            $this->cloudflare->forget($tunnel, $domains);
         }
     }
 

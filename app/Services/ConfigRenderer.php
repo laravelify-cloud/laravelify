@@ -68,12 +68,10 @@ class ConfigRenderer
         $lines = ['ingress:'];
 
         foreach ($tunnel->websites()->orderBy('domain')->get() as $website) {
-            if (! $website->domain) {
-                continue;
+            foreach ($website->domains() as $domain) {
+                $lines[] = '  - hostname: '.$domain;
+                $lines[] = '    service: http://127.0.0.1:'.($website->http_port ?: 80);
             }
-
-            $lines[] = '  - hostname: '.$website->domain;
-            $lines[] = '    service: http://127.0.0.1:'.($website->http_port ?: 80);
         }
 
         $lines[] = '  - service: http_status:404';
@@ -518,9 +516,21 @@ ENV;
     private function listenLines(Website $website): string
     {
         $port = $website->http_port ?: 80;
-        $name = $website->domain ?: '_';
+        $name = $website->domains() === [] ? '_' : implode(' ', $website->domains());
 
         return "    listen {$port};\n    listen [::]:{$port};\n    server_name {$name};\n".$this->nginxLogLines($website);
+    }
+
+    /**
+     * The site's nginx file with its server_name line set to all its domains (the first one in the
+     * file is replaced; everything else stays as it is, including hand-made changes).
+     */
+    public function withServerNames(Website $website, string $nginx): string
+    {
+        $names = $website->domains() === [] ? '_' : implode(' ', $website->domains());
+        $updated = preg_replace('/(^[ 	]*|\{\s*)server_name\s+[^;]*;/m', '${1}server_name '.$names.';', $nginx, 1, $count);
+
+        return $count === 1 && is_string($updated) ? $updated : $nginx;
     }
 
     /**

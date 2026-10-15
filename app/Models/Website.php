@@ -25,6 +25,7 @@ class Website extends Model
         'slug',
         'type',
         'domain',
+        'aliases',
         'repository',
         'branch',
         'php_version',
@@ -78,6 +79,7 @@ class Website extends Model
     {
         return [
             'enabled' => 'boolean',
+            'aliases' => 'array',
             'enable_reverb' => 'boolean',
             'provision_database' => 'boolean',
             'db_password' => 'encrypted',
@@ -286,6 +288,16 @@ class Website extends Model
             'last_webhook_at' => now(),
             'last_webhook_result' => mb_substr($result, 0, 190),
         ])->save();
+    }
+
+    /**
+     * Every domain that opens this website: the main one first, then the extra ones.
+     *
+     * @return list<string>
+     */
+    public function domains(): array
+    {
+        return array_values(array_unique(array_filter([$this->domain, ...(array) ($this->aliases ?? [])])));
     }
 
     public function publicUrl(): ?string

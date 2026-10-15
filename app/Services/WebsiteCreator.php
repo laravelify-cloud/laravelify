@@ -25,14 +25,17 @@ class WebsiteCreator
         private DatabaseProvisioner $databases,
         private HostWriter $host,
         private PortAllocator $ports,
+        private WebsiteDomains $domains,
+        private CloudflareRoutes $cloudflare,
     ) {}
 
     /**
-     * @param  array<string, mixed>  $input  name, type, domain, http_port, repository, branch, use_example,
+     * @param  array<string, mixed>  $input  name, type, domain, aliases (extra domains), include_www, http_port, repository, branch, use_example,
      *                                       php_version, node_version, install_command, build_command, start_command,
      *                                       public_dir, enable_reverb, provision_database, cloudflare_tunnel_id, github_app_id
-     * @return array{website: Website, error: ?string} The error is set when the website was saved but
-     *                                                 nginx or the process manager could not be applied.
+     * @return array{website: Website, error: ?string, cloudflare: array{configured: bool, lines: list<array{host: string, route: string, dns: string, ok: bool}>, note: ?string}}
+     *                                                                                                                                                                             The error is set when the website was saved but nginx or
+     *                                                                                                                                                                             the process manager could not be applied.
      *
      * @throws ValidationException
      */
@@ -72,6 +75,8 @@ class WebsiteCreator
         ])->validate();
 
         $domain = $input['domain'] !== '' ? strtolower((string) $input['domain']) : null;
+        $aliases = $this->aliasesFor($domain, $input);
+        $this->domains->validate(null, $domain, $aliases);
 
         if ($input['cloudflare_tunnel_id'] !== '' && $domain === null) {
             throw ValidationException::withMessages(['domain' => 'A Cloudflare tunnel needs a domain.']);
@@ -102,6 +107,7 @@ class WebsiteCreator
             'slug' => $slug,
             'type' => $validated['type'],
             'domain' => $domain,
+            'aliases' => $aliases === [] ? null : $aliases,
             'http_port' => $httpPort,
             'repository' => $useExample ? Examples::prepare($validated['type'], $slug) : ($input['repository'] !== '' ? $input['repository'] : null),
             'branch' => $useExample ? 'main' : $input['branch'],
@@ -136,7 +142,26 @@ class WebsiteCreator
             $error = $exception->getMessage();
         }
 
-        return ['website' => $website, 'error' => $error];
+        $cloudflare = $error === null ? $this->cloudflare->sync($website) : ['configured' => false, 'lines' => [], 'note' => null];
+
+        return ['website' => $website, 'error' => $error, 'cloudflare' => $cloudflare];
+    }
+
+    /**
+     * The extra domains from the input (a list, or text with one per line), plus www.<domain> when asked.
+     *
+     * @param  array<string, mixed>  $input
+     * @return list<string>
+     */
+    private function aliasesFor(?string $domain, array $input): array
+    {
+        $aliases = WebsiteDomains::normalize($input['aliases'] ?? []);
+
+        if ($domain !== null && $input['include_www']) {
+            $aliases[] = WebsiteDomains::wwwOf($domain);
+        }
+
+        return array_values(array_diff(array_unique($aliases), [$domain]));
     }
 
     /**
@@ -154,7 +179,7 @@ class WebsiteCreator
             $input[$key] = $value === null ? $default : trim((string) $value);
         }
 
-        foreach (['use_example', 'enable_reverb', 'provision_database'] as $key) {
+        foreach (['use_example', 'enable_reverb', 'provision_database', 'include_www'] as $key) {
             $input[$key] = (bool) ($input[$key] ?? false);
         }
 

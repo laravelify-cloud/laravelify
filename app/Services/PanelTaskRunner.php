@@ -19,6 +19,7 @@ class PanelTaskRunner
         private SitePaths $paths,
         private BackupInspector $backups,
         private WebsiteSwitch $switch,
+        private DatabaseImporter $importer,
     ) {}
 
     /**
@@ -87,6 +88,17 @@ class PanelTaskRunner
     private function handle(PanelTask $task, callable $progress): array
     {
         $payload = $task->payload ?? [];
+
+        if ($task->kind === 'database.import') {
+            $website = Website::query()->find((int) ($payload['website_id'] ?? 0)) ?? throw new RuntimeException('That website no longer exists.');
+
+            return ['message' => $this->importer->import(
+                $website,
+                (string) ($payload['path'] ?? ''),
+                (bool) ($payload['reset'] ?? false),
+                fn (int $percent, string $message) => $task->report($percent, $message, true),
+            )];
+        }
 
         if (str_starts_with($task->kind, 'files.')) {
             $root = $this->rootFor($task->scope);

@@ -7,11 +7,13 @@ use App\Models\CloudflareTunnel;
 use App\Models\Deployment;
 use App\Models\GithubApp;
 use App\Models\Website;
+use App\Services\CloudflareRoutes;
 use App\Services\ConfigRenderer;
 use App\Services\DatabaseProvisioner;
 use App\Services\HostWriter;
 use App\Services\ServerProcesses;
 use App\Services\SiteSecurity;
+use App\Services\WebsiteDomains;
 use App\Services\WebsiteSwitch;
 use App\Support\BuildOutput;
 use Illuminate\Validation\Rule;
@@ -26,6 +28,9 @@ class Show extends PanelComponent
     public string $name = '';
 
     public string $domain = '';
+
+    /** Other domains that open this website, one per line. */
+    public string $aliases_text = '';
 
     public string $http_port = '';
 
@@ -86,13 +91,10 @@ class Show extends PanelComponent
         $this->deploymentId = $website->deployments()->value('id');
     }
 
-    public function saveGeneral(ConfigRenderer $renderer): void
+    public function saveGeneral(ConfigRenderer $renderer, WebsiteDomains $domains, CloudflareRoutes $cloudflare): void
     {
         $this->validate([
             'name' => ['required', 'string', 'max:80'],
-            'domain' => $this->domain === ''
-                ? ['nullable']
-                : ['string', 'max:190', 'regex:/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i', Rule::unique('websites', 'domain')->ignore($this->website->id)],
             'http_port' => $this->http_port === ''
                 ? ['nullable']
                 : ['integer', 'between:80,65535', Rule::unique('websites', 'http_port')->ignore($this->website->id), Rule::notIn([8000, 3306, 6379])],
@@ -106,7 +108,8 @@ class Show extends PanelComponent
                 : ['integer', 'exists:github_apps,id'],
         ]);
 
-        $domain = $this->domain !== '' ? strtolower($this->domain) : null;
+        $domain = trim($this->domain) !== '' ? WebsiteDomains::normalize($this->domain)[0] ?? null : null;
+        $aliases = WebsiteDomains::normalize($this->aliases_text);
 
         if ($this->cloudflare_tunnel_id !== '' && $domain === null) {
             $this->addError('domain', 'A Cloudflare tunnel needs a domain.');
@@ -114,17 +117,19 @@ class Show extends PanelComponent
             return;
         }
 
+        $domains->validate($this->website, $domain, array_values(array_diff($aliases, [$domain])));
+
         $httpPort = $this->http_port !== '' ? (int) $this->http_port : null;
 
         if ($domain === null && $httpPort === null) {
             $httpPort = Website::nextPort('http_port', (int) config('laravelify.http_port_start'));
         }
 
-        $previousTunnel = $this->website->cloudflare_tunnel_id;
+        $previousTunnel = $this->website->tunnel;
+        $previousDomains = $this->website->domains();
 
         $this->website->update([
             'name' => $this->name,
-            'domain' => $domain,
             'http_port' => $httpPort,
             'repository' => $this->repository !== '' ? $this->repository : null,
             'branch' => $this->branch,
@@ -133,10 +138,22 @@ class Show extends PanelComponent
         ]);
 
         $this->website->refresh();
-        $renderer->refreshTunnel(CloudflareTunnel::query()->find($previousTunnel));
-        $renderer->refreshTunnel($this->website->tunnel);
 
-        $this->toast('General settings saved.');
+        // A site that moved to another tunnel (or none) leaves its routes on the old one.
+        $left = ['configured' => false, 'lines' => [], 'note' => null];
+
+        if ($previousTunnel && $previousTunnel->id !== $this->website->cloudflare_tunnel_id) {
+            $renderer->refreshTunnel($previousTunnel);
+            $left = $cloudflare->forget($previousTunnel, $previousDomains);
+        }
+
+        $report = $domains->apply($this->website, $domain, array_values(array_diff($aliases, [$domain])));
+        $problems = [...CloudflareRoutes::problems($left), ...CloudflareRoutes::problems($report)];
+        $this->fillFromWebsite();
+
+        $problems === []
+            ? $this->toast($report['lines'] !== [] ? 'General settings saved. Domains are set in nginx, the tunnel, and Cloudflare DNS.' : 'General settings saved.')
+            : $this->toast('General settings saved, but Cloudflare needs attention: '.implode(' ', $problems), 'warning');
         $this->saved();
     }
 
@@ -498,13 +515,14 @@ class Show extends PanelComponent
         }
     }
 
-    public function destroy(HostWriter $hostWriter, ConfigRenderer $renderer): void
+    public function destroy(HostWriter $hostWriter, ConfigRenderer $renderer, CloudflareRoutes $cloudflare): void
     {
         if (! $this->confirmed($this->website->name)) {
             return;
         }
 
         $tunnel = $this->website->tunnel;
+        $domains = $this->website->domains();
         $group = $this->website->group;
 
         try {
@@ -520,6 +538,11 @@ class Show extends PanelComponent
 
         try {
             $renderer->refreshTunnel($tunnel);
+
+            if ($tunnel) {
+                $cloudflare->forget($tunnel, $domains);
+            }
+
             $this->toastAfterRedirect('Website deleted.');
         } catch (Throwable $exception) {
             $this->toastAfterRedirect('Website deleted. The Cloudflare tunnel file was not updated: '.$exception->getMessage(), 'error');
@@ -554,6 +577,8 @@ class Show extends PanelComponent
     {
         $this->name = $this->website->name;
         $this->domain = $this->website->domain ?? '';
+        $this->aliases_text = implode('
+', (array) ($this->website->aliases ?? []));
         $this->http_port = $this->website->http_port ? (string) $this->website->http_port : '';
         $this->repository = $this->website->repository ?? '';
         $this->branch = $this->website->branch;

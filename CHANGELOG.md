@@ -2,6 +2,13 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.21] - 2026-10-15
+
+- **www and several domains for one website.** The Add website form offers **Also open on www.example.com** as soon as you type a domain, and **Other domains for the same website** takes a second domain (a line each), so one app never needs a second website. On the General tab the same list is editable, with an **Add www** button. nginx's `server_name`, the Cloudflare tunnel's ingress, and the website's URL list all follow. A domain can belong to only one website.
+- **Fixed: changing the domain on the General tab did not update nginx.** It does now (only the `server_name` line; hand-made nginx changes stay), and a file nginx rejects is rolled back.
+- **Cloudflare: tunnel route and DNS by themselves.** Save a Cloudflare API token in **Settings → Cloudflare** (Account → Cloudflare Tunnel → Edit, Zone → DNS → Edit, Zone → Zone → Read) and every domain of a website on a tunnel gets its public hostname and a proxied CNAME to `<tunnel>.cfargotunnel.com`, when you create the site or save its domains. Other routes and DNS records are never touched, an existing record for something else is reported instead of replaced, and a domain's route and CNAME are removed again when you take it off or delete the site. Without a token everything works as before.
+- **MCP grew from 15 to 36 tools.** New: `update-website`, `set-domains`, `sync-cloudflare`, `delete-website`, `update-group`, `delete-group`, `get-environment` (secrets hidden unless asked), `list-deployments`, `cancel-deployment`, `get-logs`, `check-website`, `restart-website`, `run-command`, `list-files`, `read-file`, `delete-file` (to the Trash), `import-database` and `get-task` (a dump from the site's folder, in the background, as the site's own database user), `list-backups`, `run-backup`, and `server-status`. `create-website` takes `include_www` and `aliases`, and a website is found by any of its domains.
+
 ## [0.3.0-beta.20] - 2026-10-15
 
 - **phpMyAdmin imports big dumps, and the file manager takes big files.** Ubuntu's PHP accepted only 2 MB uploads, so phpMyAdmin dropped larger .sql files without a clear error. phpMyAdmin and the panel now accept uploads up to 256 MB (nginx and PHP), with 10 minutes for long imports. Updates add this to existing servers (`php artisan laravelify:upload-limits`, which puts a file back when nginx rejects it); new installs have it from the start.

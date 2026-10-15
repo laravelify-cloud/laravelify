@@ -6,6 +6,8 @@ use App\Livewire\PanelComponent;
 use App\Models\CloudflareTunnel;
 use App\Models\GithubApp;
 use App\Models\Group;
+use App\Services\CloudflareApi;
+use App\Services\CloudflareRoutes;
 use App\Services\GithubAppClient;
 use App\Services\WebsiteCreator;
 use App\Support\Examples;
@@ -23,6 +25,12 @@ class Form extends PanelComponent
     public string $stack = '';
 
     public string $domain = '';
+
+    /** Also answer on www.<domain>. */
+    public bool $include_www = false;
+
+    /** Other domains that open the same website, one per line. */
+    public string $extra_domains = '';
 
     public string $http_port = '';
 
@@ -124,15 +132,20 @@ class Form extends PanelComponent
     {
         $this->resetErrorBag();
 
-        $result = $creator->create($this->group, $this->only([
-            'name', 'type', 'domain', 'http_port', 'repository', 'branch', 'use_example', 'php_version', 'node_version',
+        $result = $creator->create($this->group, ['aliases' => $this->extra_domains] + $this->only([
+            'name', 'type', 'domain', 'include_www', 'http_port', 'repository', 'branch', 'use_example', 'php_version', 'node_version',
             'install_command', 'build_command', 'start_command', 'public_dir', 'enable_reverb', 'provision_database',
             'cloudflare_tunnel_id', 'github_app_id',
         ]));
 
-        $result['error'] === null
-            ? $this->toastAfterRedirect('Website created. Review nginx and the process file, then deploy.')
-            : $this->toastAfterRedirect('Website saved. Applying nginx or the process manager failed: '.$result['error'], 'error');
+        $problems = CloudflareRoutes::problems($result['cloudflare']);
+
+        match (true) {
+            $result['error'] !== null => $this->toastAfterRedirect('Website saved. Applying nginx or the process manager failed: '.$result['error'], 'error'),
+            $problems !== [] => $this->toastAfterRedirect('Website created, but Cloudflare needs attention: '.implode(' ', $problems), 'warning'),
+            $result['cloudflare']['lines'] !== [] => $this->toastAfterRedirect('Website created. Its domains were added to the Cloudflare tunnel and DNS. Review nginx and the process file, then deploy.'),
+            default => $this->toastAfterRedirect('Website created. Review nginx and the process file, then deploy.'),
+        };
 
         $this->redirect(route('websites.show', $result['website']));
     }
@@ -147,6 +160,7 @@ class Form extends PanelComponent
             'phpVersions' => config('laravelify.php_versions'),
             'nodeVersions' => config('laravelify.node_versions'),
             'tunnels' => CloudflareTunnel::query()->orderBy('name')->get(),
+            'cloudflareApi' => app(CloudflareApi::class)->configured(),
             'sources' => GithubApp::query()->with('privateKey')->orderBy('name')->get()->filter->isConnected()->values(),
         ])->layout('layouts.app')->title('Add website');
     }

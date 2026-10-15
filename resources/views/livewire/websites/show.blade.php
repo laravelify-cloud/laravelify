@@ -176,6 +176,20 @@
                         @error('domain') <small class="error">{{ $message }}</small> @enderror
                     </label>
                     <div class="field">
+                        <span>Other domains</span>
+                        <textarea class="input min-h-20 font-mono text-[13px]" wire:model="aliases_text" spellcheck="false" placeholder="www.example.com&#10;second-domain.com"></textarea>
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <small class="text-muted">One per line. Every domain opens this same website, and nginx{{ $website->tunnel ? ', the tunnel' : '' }} answers on all of them.</small>
+                            <button class="text-[12.5px] text-accent hover:underline" type="button"
+                                x-data
+                                x-show="($wire.domain || '').trim() !== '' && !($wire.aliases_text || '').split(/\s+/).includes('www.' + ($wire.domain || '').trim().toLowerCase().replace(/^www\./, ''))"
+                                @click="$wire.aliases_text = (($wire.aliases_text || '').trim() + '\nwww.' + ($wire.domain || '').trim().toLowerCase().replace(/^www\./, '')).trim()">
+                                + Add www.{{ preg_replace('/^www\./', '', (string) $website->domain) ?: 'your-domain' }}
+                            </button>
+                        </div>
+                        @error('aliases') <small class="error">{{ $message }}</small> @enderror
+                    </div>
+                    <div class="field">
                         <label class="label" for="website-http-port">HTTP port</label>
                         <div class="flex gap-2">
                             <input class="input min-w-0 flex-1" id="website-http-port" wire:model="http_port" inputmode="numeric" placeholder="8081">
