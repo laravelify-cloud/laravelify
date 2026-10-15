@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.28] - 2026-10-15
+
+- **Fixed: blocking an IP failed with "could not build variables_hash" on websites with a long name.** nginx keeps variable names in a small table, and the Security tab's variables (`$laravelify_blocked_<site>`) overflowed it for slugs like `apply-coupons-main-nextjs`. A long site name now becomes a short name (its first letters plus a hash), so `nginx -t` passes. Short names are unchanged.
+
 ## [0.3.0-beta.27] - 2026-10-15
 
 - **Server IP redirects accept a `www` CNAME to the bare domain.** `www.example.com CNAME example.com` already reaches the server when the bare domain is pointed at it, so it is no longer reported as a conflict.

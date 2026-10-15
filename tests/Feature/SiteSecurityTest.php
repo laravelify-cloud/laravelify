@@ -131,4 +131,18 @@ class SiteSecurityTest extends TestCase
         $this->assertSame(2, substr_count($website->nginx_config, 'include /etc/nginx/laravelify-security/two-blocks.conf;'));
         $this->assertFalse(app(SiteSecurity::class)->ensureInclude($website), 'It is added once.');
     }
+
+    public function test_variable_names_stay_short_for_a_long_slug(): void
+    {
+        $website = Website::factory()->create(['slug' => 'apply-coupons-main-nextjs', 'blocked_ips' => '203.0.113.5', 'block_crawlers' => true, 'basic_auth_enabled' => true, 'basic_auth_user' => 'a', 'basic_auth_hash' => 'h']);
+        $security = app(SiteSecurity::class);
+
+        preg_match_all('/\$laravelify_(?:blocked|crawler|auth)_\w+/', $security->httpConfig($website).$security->serverConfig($website), $names);
+
+        $this->assertNotEmpty($names[0]);
+
+        foreach ($names[0] as $name) {
+            $this->assertLessThanOrEqual(32, strlen($name));
+        }
+    }
 }

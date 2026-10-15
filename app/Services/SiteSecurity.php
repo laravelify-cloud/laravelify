@@ -273,8 +273,15 @@ class SiteSecurity
         return ctype_digit($prefix) && (int) $prefix >= 8 && (int) $prefix <= $max;
     }
 
+    /**
+     * Part of the nginx variable names of this site. nginx keeps variable names in a small hash table
+     * (variables_hash_bucket_size 64), and a long slug makes `nginx -t` fail with "could not build
+     * variables_hash". Names stay short: a long slug becomes its first letters plus a hash of it.
+     */
     private function suffix(Website $website): string
     {
-        return str_replace('-', '_', $website->slug);
+        $name = str_replace('-', '_', $website->slug);
+
+        return strlen($name) <= 12 ? $name : substr($name, 0, 4).'_'.substr(md5($website->slug), 0, 7);
     }
 }
