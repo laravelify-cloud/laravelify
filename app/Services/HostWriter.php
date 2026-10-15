@@ -192,6 +192,14 @@ UNIT;
         return $this->apply(['nginx-test', 'all']);
     }
 
+    /**
+     * The last lines of nginx's own error log (/var/log/nginx/error.log, root-only).
+     */
+    public function nginxErrorLog(int $lines): string
+    {
+        return $this->apply(['nginx-global-log', 'error', (string) max(1, min($lines, 2000))]);
+    }
+
     private function apply(array $arguments): string
     {
         $runner = app(CommandRunner::class);

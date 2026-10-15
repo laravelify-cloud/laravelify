@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.29] - 2026-10-15
+
+- **New Server → Nginx page.** A **Test nginx** button (`nginx -t`, with nginx's own message when it fails), every server block with its domains, ports, target (proxy, PHP, files, redirect), owner website and file, a warning when two blocks answer for the same domain and port, the ports nginx listens on, nginx's error log (`/var/log/nginx/error.log`), and every config file, read-only.
+
 ## [0.3.0-beta.28] - 2026-10-15
 
 - **Fixed: blocking an IP failed with "could not build variables_hash" on websites with a long name.** nginx keeps variable names in a small table, and the Security tab's variables (`$laravelify_blocked_<site>`) overflowed it for slugs like `apply-coupons-main-nextjs`. A long site name now becomes a short name (its first letters plus a hash), so `nginx -t` passes. Short names are unchanged.

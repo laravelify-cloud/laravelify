@@ -8,7 +8,7 @@ set -euo pipefail
 # script from the normal system namespace, where /etc is writable.
 # `run` does not write under /etc. systemd-run from this process already
 # starts the command outside PHP-FPM's mount namespace.
-if [[ "${LARAVELIFY_HOST_APPLY_REEXEC:-}" != 1 && "${1:-}" != "run" && "${1:-}" != "run-global" && "${1:-}" != "nginx-log" && "${1:-}" != "nginx-test" && "${1:-}" != "supervisor" && "${1:-}" != "pm2" && "${1:-}" != "ports" ]]; then
+if [[ "${LARAVELIFY_HOST_APPLY_REEXEC:-}" != 1 && "${1:-}" != "run" && "${1:-}" != "run-global" && "${1:-}" != "nginx-log" && "${1:-}" != "nginx-test" && "${1:-}" != "nginx-global-log" && "${1:-}" != "supervisor" && "${1:-}" != "pm2" && "${1:-}" != "ports" ]]; then
   etc_opts="$(findmnt -n -o OPTIONS /etc 2>/dev/null || true)"
   if [[ ",${etc_opts}," == *",ro,"* ]]; then
     exec systemd-run --quiet --pipe --wait --collect \
@@ -451,6 +451,16 @@ PHP
   ports)
     # Read-only: listening TCP ports with the processes behind them (names need root).
     exec ss -H -lntp
+    ;;
+  nginx-global-log)
+    # Read-only: the last lines of nginx's own error log (root-only), for the Nginx page.
+    [[ "${2:-}" == "error" ]] || die "unknown log"
+    [[ "${3:-}" =~ ^[0-9]{1,4}$ ]] || die "invalid line count"
+    if [[ ! -f /var/log/nginx/error.log ]]; then
+      echo "No error log yet at /var/log/nginx/error.log."
+      exit 0
+    fi
+    exec tail -n "$3" -- /var/log/nginx/error.log
     ;;
   nginx-test)
     # Read-only: validate every nginx config.

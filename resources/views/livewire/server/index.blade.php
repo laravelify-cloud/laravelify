@@ -1,6 +1,7 @@
 <div class="flex flex-col gap-6">
     <x-page-header title="Server" summary="MySQL 8.4 LTS, Redis, phpMyAdmin, and PHP-FPM 8.0 through 8.5. Edit a service to change its config and apply it.">
         <x-slot:actions>
+            <a class="btn" href="{{ route('server.nginx') }}" wire:navigate>Nginx</a>
             <a class="btn" href="{{ route('server.ports') }}" wire:navigate>Reserved ports</a>
             <a class="btn" href="{{ route('server.processes') }}" wire:navigate>PM2 and Supervisor</a>
         </x-slot:actions>

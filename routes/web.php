@@ -23,6 +23,7 @@ use App\Livewire\Security\Access as SecurityAccess;
 use App\Livewire\Security\PrivateKeys;
 use App\Livewire\Server\Edit as ServerEdit;
 use App\Livewire\Server\Index as ServerIndex;
+use App\Livewire\Server\Nginx as ServerNginx;
 use App\Livewire\Server\Ports as ServerPorts;
 use App\Livewire\Server\Processes as ServerProcesses;
 use App\Livewire\Settings\Cloudflare as SettingsCloudflare;
@@ -92,6 +93,7 @@ Route::get('/tunnels/create', TunnelForm::class)->name('tunnels.create');
 Route::get('/tunnels/{tunnel}', TunnelShow::class)->name('tunnels.show');
 
 Route::get('/server', ServerIndex::class)->name('server.index');
+Route::get('/server/nginx', ServerNginx::class)->name('server.nginx');
 Route::get('/server/ports', ServerPorts::class)->name('server.ports');
 Route::get('/server/processes', ServerProcesses::class)->name('server.processes');
 Route::get('/server/{service}', ServerEdit::class)->name('server.edit');
