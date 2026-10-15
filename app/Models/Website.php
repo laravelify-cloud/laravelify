@@ -307,23 +307,34 @@ class Website extends Model
      *
      * @return list<string>
      */
-    public function redirectHosts(): array
+    public function redirectHosts(?string $via = null): array
     {
         return array_values(array_unique(array_filter(array_map(
-            fn ($rule): ?string => is_array($rule) && isset($rule['from']) && ! str_starts_with((string) $rule['from'], '/') ? (string) $rule['from'] : null,
+            fn ($rule): ?string => is_array($rule) && isset($rule['from']) && ! str_starts_with((string) $rule['from'], '/') && ($via === null || ($rule['via'] ?? 'tunnel') === $via) ? (string) $rule['from'] : null,
             (array) ($this->redirects ?? []),
         ))));
     }
 
     /**
-     * Every hostname this website's nginx answers for: its domains and the domains that redirect.
-     * These are the hostnames that need a Cloudflare tunnel route and a DNS record.
+     * Every hostname that belongs to this website, whichever way it reaches the server: no other website may take one.
+     *
+     * @return list<string>
+     */
+    public function claimedHostnames(): array
+    {
+        return array_values(array_unique([...$this->domains(), ...$this->redirectHosts()]));
+    }
+
+    /**
+     * Every hostname that arrives through the Cloudflare tunnel: its domains and the domains that redirect
+     * through the tunnel. These need a tunnel route and a DNS record. (Redirects served on the server's
+     * own IP, port 80, are not here.)
      *
      * @return list<string>
      */
     public function hostnames(): array
     {
-        return array_values(array_unique([...$this->domains(), ...$this->redirectHosts()]));
+        return array_values(array_unique([...$this->domains(), ...$this->redirectHosts('tunnel')]));
     }
 
     public function publicUrl(): ?string

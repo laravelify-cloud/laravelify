@@ -6,6 +6,7 @@ use App\Models\CloudflareTunnel;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
+use Throwable;
 
 /**
  * Talks to the Cloudflare API with the token saved in Settings → Cloudflare: the tunnel's
@@ -132,6 +133,32 @@ class CloudflareApi
             'ttl' => 1,
             'comment' => 'Laravelify tunnel',
         ]);
+    }
+
+    public function createA(string $zone, string $name, string $ip): void
+    {
+        $this->request('POST', "/zones/{$zone}/dns_records", [
+            'type' => 'A',
+            'name' => $name,
+            'content' => $ip,
+            'proxied' => true,
+            'ttl' => 1,
+            'comment' => 'Laravelify redirect',
+        ]);
+    }
+
+    /**
+     * This server's public IPv4 address, as the internet sees it.
+     */
+    public function serverIp(): ?string
+    {
+        try {
+            $ip = trim(Http::timeout(6)->get('https://api.ipify.org')->body());
+        } catch (Throwable) {
+            return null;
+        }
+
+        return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false ? $ip : null;
     }
 
     public function deleteRecord(string $zone, string $id): void

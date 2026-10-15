@@ -405,6 +405,11 @@
                                             <option value="prefix">This folder and everything under it</option>
                                         </select>
                                     @else
+                                        <select class="input w-auto" wire:model="redirect_rows.{{ $index }}.via" aria-label="How the domain reaches this server">
+                                            @foreach (\App\Support\Redirects::VIA as $via => $label)
+                                                <option value="{{ $via }}">{{ $label }}</option>
+                                            @endforeach
+                                        </select>
                                         <label class="flex items-center gap-1.5"><input type="checkbox" wire:model="redirect_rows.{{ $index }}.keep_path"> Keep the path and query (example.com/a → target/a)</label>
                                     @endif
                                     <button class="btn btn-ghost ml-auto" type="button" wire:click="removeRedirect({{ $index }})"><x-menu-icon name="trash" class="size-4" /> Remove</button>

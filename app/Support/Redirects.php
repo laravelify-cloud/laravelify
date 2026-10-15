@@ -15,13 +15,16 @@ use App\Services\WebsiteDomains;
  *  - a path redirect: from "/old-page" (exact) or "/blog/" (everything under it) to a URL or a path
  *    on this website. nginx gets a location inside the website's server block.
  *
- * @phpstan-type Rule array{from: string, to: string, code: int, keep_path: bool, match: string}
+ * @phpstan-type Rule array{from: string, to: string, code: int, keep_path: bool, match: string, via: string}
  */
 class Redirects
 {
     public const CODES = [301 => '301 Permanent', 302 => '302 Temporary', 307 => '307 Temporary (keeps the method)', 308 => '308 Permanent (keeps the method)'];
 
     public const MAX = 50;
+
+    /** How a redirecting domain reaches nginx: through the Cloudflare tunnel, or straight to the server's IP on port 80. */
+    public const VIA = ['tunnel' => 'Cloudflare tunnel', 'ip' => 'Server IP (A record, port 80)'];
 
     public const SERVERS_START = '# laravelify-redirects:start (Redirects tab in the panel)';
 
@@ -44,7 +47,7 @@ class Redirects
      * Clean rows from a form or a tool: trimmed, hosts lower case without http://, empty rows dropped.
      *
      * @param  array<int, mixed>  $rows
-     * @return list<array{from: string, to: string, code: int, keep_path: bool, match: string}>
+     * @return list<array{from: string, to: string, code: int, keep_path: bool, match: string, via: string}>
      */
     public static function normalize(array $rows): array
     {
@@ -71,6 +74,7 @@ class Redirects
                 'code' => array_key_exists($code, self::CODES) ? $code : 301,
                 'keep_path' => ! array_key_exists('keep_path', $row) || filter_var($row['keep_path'], FILTER_VALIDATE_BOOLEAN),
                 'match' => ($row['match'] ?? 'exact') === 'prefix' ? 'prefix' : 'exact',
+                'via' => ($row['via'] ?? 'tunnel') === 'ip' ? 'ip' : 'tunnel',
             ];
         }
 
@@ -80,7 +84,7 @@ class Redirects
     /**
      * What is wrong with each rule, by row number (1 is the first). Empty when all is well.
      *
-     * @param  list<array{from: string, to: string, code: int, keep_path: bool, match: string}>  $rules
+     * @param  list<array{from: string, to: string, code: int, keep_path: bool, match: string, via: string}>  $rules
      * @param  list<string>  $ownHosts  The website's own domains: they are served, never redirected.
      * @param  list<string>  $otherHosts  Hostnames other websites answer for.
      * @return array<int, string>
@@ -119,7 +123,7 @@ class Redirects
     }
 
     /**
-     * @param  array{from: string, to: string, code: int, keep_path: bool, match: string}  $rule
+     * @param  array{from: string, to: string, code: int, keep_path: bool, match: string, via: string}  $rule
      */
     private static function pathError(array $rule): ?string
     {
@@ -139,7 +143,7 @@ class Redirects
     }
 
     /**
-     * @param  array{from: string, to: string, code: int, keep_path: bool, match: string}  $rule
+     * @param  array{from: string, to: string, code: int, keep_path: bool, match: string, via: string}  $rule
      * @param  list<string>  $ownHosts
      * @param  list<string>  $otherHosts
      * @param  list<string>  $sources
@@ -198,7 +202,6 @@ class Redirects
     public static function nginx(Website $website): array
     {
         $rules = self::normalize((array) ($website->redirects ?? []));
-        $port = $website->http_port ?: 80;
         $paths = [];
         $groups = [];
 
@@ -211,13 +214,14 @@ class Redirects
             }
 
             $target = self::target($website, $rule);
-            $groups[$target."\n".$rule['code']."\n".(int) $rule['keep_path']][] = $rule['from'];
+            $groups[$target."\n".$rule['code']."\n".(int) $rule['keep_path']."\n".$rule['via']][] = $rule['from'];
         }
 
         $servers = [];
 
         foreach ($groups as $key => $hosts) {
-            [$target, $code, $keep] = explode("\n", $key);
+            [$target, $code, $keep, $via] = explode("\n", $key);
+            $port = $via === 'ip' ? 80 : ($website->http_port ?: 80);
             $servers[] = "server {\n    listen {$port};\n    listen [::]:{$port};\n    server_name ".implode(' ', $hosts).";\n    return {$code} ".$target.($keep === '1' ? '$request_uri' : '').";\n}";
         }
 

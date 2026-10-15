@@ -265,7 +265,7 @@ class Show extends PanelComponent
 
     public function addRedirect(string $kind = 'domain'): void
     {
-        $this->redirect_rows[] = ['from' => $kind === 'path' ? '/' : '', 'to' => '', 'code' => 301, 'keep_path' => true, 'match' => 'exact'];
+        $this->redirect_rows[] = ['from' => $kind === 'path' ? '/' : '', 'to' => '', 'code' => 301, 'keep_path' => true, 'match' => 'exact', 'via' => 'tunnel'];
     }
 
     public function removeRedirect(int $index): void

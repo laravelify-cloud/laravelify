@@ -6,14 +6,18 @@ use App\Livewire\Websites\Show as WebsiteShow;
 use App\Mcp\Servers\LaravelifyServer;
 use App\Mcp\Tools\SetRedirects;
 use App\Models\CloudflareTunnel;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\CloudflareApi;
 use App\Services\SiteSecurity;
 use App\Services\TwoFactor;
 use App\Services\WebsiteDomains;
 use App\Services\WebsiteRedirects;
 use App\Support\Redirects;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -173,5 +177,40 @@ class WebsiteRedirectsTest extends TestCase
         LaravelifyServer::actingAs($user)
             ->tool(SetRedirects::class, ['website' => 'supercell.apply.coupons', 'redirects' => [['from' => 'nope', 'to' => '']]])
             ->assertHasErrors(['is not a domain']);
+    }
+
+    public function test_a_redirect_served_on_the_server_ip_listens_on_port_80_and_gets_an_a_record_not_a_tunnel_route(): void
+    {
+        Setting::putValue(CloudflareApi::SETTING, 'cf_token_123');
+        $created = [];
+
+        Http::fake(function (Request $request) use (&$created) {
+            $url = $request->url();
+            $ok = fn (mixed $result) => Http::response(['success' => true, 'errors' => [], 'result' => $result]);
+
+            return match (true) {
+                str_contains($url, 'api.ipify.org') => Http::response('203.0.113.9'),
+                str_contains($url, '/zones?name=apply.coupons') => $ok([['id' => 'zone1', 'name' => 'apply.coupons']]),
+                str_contains($url, '/dns_records') && $request->method() === 'GET' => $ok([]),
+                str_contains($url, '/dns_records') && $request->method() === 'POST' => tap($ok(['id' => 'new']), function () use ($request, &$created): void {
+                    $created[] = $request->data();
+                }),
+                default => Http::response(['success' => false, 'errors' => [['message' => 'unexpected '.$url]]], 404),
+            };
+        });
+
+        $tunnel = CloudflareTunnel::factory()->create();
+        $website = $this->site(['cloudflare_tunnel_id' => $tunnel->id]);
+
+        app(WebsiteRedirects::class)->apply($website, [['from' => 'apply.coupons', 'to' => '', 'via' => 'ip']]);
+
+        $nginx = (string) $website->fresh()->nginx_config;
+        $this->assertStringContainsString('listen 80;
+    listen [::]:80;
+    server_name apply.coupons;', $nginx);
+        $this->assertStringNotContainsString('hostname: apply.coupons', (string) $tunnel->fresh()->ingress);
+        $this->assertSame('A', $created[0]['type']);
+        $this->assertSame('203.0.113.9', $created[0]['content']);
+        $this->assertContains('apply.coupons', $website->fresh()->claimedHostnames());
     }
 }

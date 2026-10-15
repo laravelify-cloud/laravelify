@@ -23,13 +23,13 @@ class WebsiteRedirects
      * Rows as they would be saved, and what is wrong with them (by row number).
      *
      * @param  array<int, mixed>  $rows
-     * @return array{rules: list<array{from: string, to: string, code: int, keep_path: bool, match: string}>, errors: array<int, string>}
+     * @return array{rules: list<array{from: string, to: string, code: int, keep_path: bool, match: string, via: string}>, errors: array<int, string>}
      */
     public function check(Website $website, array $rows): array
     {
         $rules = Redirects::normalize($rows);
         $others = Website::query()->whereKeyNot($website->id)->get(['id', 'domain', 'aliases', 'redirects'])
-            ->flatMap(fn (Website $other): array => $other->hostnames())->all();
+            ->flatMap(fn (Website $other): array => $other->claimedHostnames())->all();
 
         return ['rules' => $rules, 'errors' => Redirects::errors($rules, $website->domains(), $others, $website->domain)];
     }
@@ -49,6 +49,7 @@ class WebsiteRedirects
         }
 
         $old = $website->hostnames();
+        $oldDirect = $website->redirectHosts('ip');
         $previous = ['redirects' => $website->redirects, 'nginx_config' => $website->nginx_config];
 
         $website->redirects = $rules === [] ? null : $rules;
@@ -71,6 +72,15 @@ class WebsiteRedirects
 
         $this->renderer->refreshTunnel($website->tunnel);
 
-        return $this->cloudflare->sync($website, array_values(array_diff($old, $website->hostnames())));
+        $direct = $website->redirectHosts('ip');
+        $first = $this->cloudflare->syncAddresses([], array_values(array_diff($oldDirect, $direct)));
+        $report = $this->cloudflare->sync($website, array_values(array_diff($old, $website->hostnames())));
+        $second = $this->cloudflare->syncAddresses($direct);
+
+        return [
+            'configured' => $report['configured'],
+            'lines' => [...$first['lines'], ...$report['lines'], ...$second['lines']],
+            'note' => $report['note'] ?? $second['note'] ?? $first['note'],
+        ];
     }
 }

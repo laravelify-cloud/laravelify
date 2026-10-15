@@ -38,6 +38,90 @@ class CloudflareRoutes
     }
 
     /**
+     * Point domains straight at this server (a proxied A record to its public IP, for redirects served
+     * on port 80) and remove the A records of domains that no longer are.
+     *
+     * @param  list<string>  $hosts
+     * @param  list<string>  $removed
+     * @return array{configured: bool, lines: list<array{host: string, route: string, dns: string, ok: bool}>, note: ?string}
+     */
+    public function syncAddresses(array $hosts, array $removed = []): array
+    {
+        if ($hosts === [] && $removed === []) {
+            return ['configured' => $this->api->configured(), 'lines' => [], 'note' => null];
+        }
+
+        if (! $this->api->configured()) {
+            return ['configured' => false, 'lines' => [], 'note' => $hosts === [] ? null : 'No Cloudflare API token is saved, so add an A record for '.implode(', ', $hosts).' in Cloudflare yourself (DNS, proxied, pointing at the IP of this server). Save a token in Settings → Cloudflare and Laravelify does this for you.'];
+        }
+
+        $ip = $this->api->serverIp();
+        $lines = [];
+
+        foreach ($hosts as $host) {
+            $lines[] = $this->line($host, 'server IP, port 80', $ip === null ? 'error: the public IP of this server could not be found' : $this->ensureA($host, $ip), null);
+        }
+
+        foreach ($removed as $host) {
+            $lines[] = $this->line($host, 'removed', $this->removeA($host), null);
+        }
+
+        return ['configured' => true, 'lines' => $lines, 'note' => null];
+    }
+
+    private function ensureA(string $host, string $ip): string
+    {
+        try {
+            $zone = $this->api->zoneFor($host);
+
+            if ($zone === null) {
+                return 'error: this domain is not on the Cloudflare account of the token';
+            }
+
+            $records = $this->api->dnsRecords($zone['id'], $host);
+
+            if ($records === []) {
+                $this->api->createA($zone['id'], $host, $ip);
+
+                return 'created';
+            }
+
+            foreach ($records as $record) {
+                if (($record['type'] ?? '') === 'A' && ($record['content'] ?? '') === $ip) {
+                    return 'ok';
+                }
+            }
+
+            return 'error: a '.(string) ($records[0]['type'] ?? 'record').' record for '.$host.' already exists. Delete it in Cloudflare (DNS), then save again';
+        } catch (Throwable $exception) {
+            return 'error: '.$exception->getMessage();
+        }
+    }
+
+    private function removeA(string $host): string
+    {
+        try {
+            $zone = $this->api->zoneFor($host);
+
+            if ($zone === null) {
+                return 'none';
+            }
+
+            foreach ($this->api->dnsRecords($zone['id'], $host) as $record) {
+                if (($record['type'] ?? '') === 'A' && ($record['comment'] ?? '') === 'Laravelify redirect') {
+                    $this->api->deleteRecord($zone['id'], (string) $record['id']);
+
+                    return 'removed';
+                }
+            }
+
+            return 'none';
+        } catch (Throwable $exception) {
+            return 'error: '.$exception->getMessage();
+        }
+    }
+
+    /**
      * Take domains off a tunnel and delete the CNAMEs that point to it (a website was deleted or moved).
      *
      * @param  list<string>  $hosts

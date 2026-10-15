@@ -118,7 +118,7 @@ class WebsiteDomains
         return Website::query()
             ->when($current?->exists, fn ($query) => $query->whereKeyNot($current->id))
             ->get(['id', 'name', 'domain', 'aliases', 'redirects'])
-            ->first(fn (Website $website): bool => in_array($host, $website->hostnames(), true));
+            ->first(fn (Website $website): bool => in_array($host, $website->claimedHostnames(), true));
     }
 
     /**

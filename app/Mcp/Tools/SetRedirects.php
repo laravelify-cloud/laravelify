@@ -46,6 +46,7 @@ class SetRedirects extends Tool
                 'code' => $schema->integer()->description('301 (default), 302, 307, or 308.'),
                 'keep_path' => $schema->boolean()->description('Domain rules: keep the requested path and query (default true).'),
                 'match' => $schema->string()->description('Path rules: "exact" (default) or "prefix".'),
+                'via' => $schema->string()->description('Domain rules: "tunnel" (default; the domain goes through the Cloudflare tunnel) or "ip" (nginx answers on port 80 and Cloudflare gets a proxied A record to the server IP; needs port 80 open and no tunnel route).'),
             ]))->description('The complete list of redirect rules.')->required(),
         ];
     }
