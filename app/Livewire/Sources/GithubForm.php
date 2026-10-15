@@ -20,10 +20,6 @@ class GithubForm extends PanelComponent
 
     public string $git_port = '22';
 
-    public bool $pull_request_previews = false;
-
-    public bool $github_runners = false;
-
     public function mount(): void
     {
         if ($this->name === '') {
@@ -37,15 +33,11 @@ class GithubForm extends PanelComponent
 
         $this->validate([
             'name' => ['required', 'string', 'max:80'],
-            'organization' => [$this->github_runners ? 'required' : 'nullable', 'string', 'max:120', 'regex:/^[^\s\/?#]+$/'],
+            'organization' => ['nullable', 'string', 'max:120', 'regex:/^[^\s\/?#]+$/'],
             'html_url' => ['required', 'url', 'max:190'],
             'api_url' => ['required', 'url', 'max:190'],
             'git_user' => ['required', 'string', 'max:40'],
             'git_port' => ['required', 'integer', 'between:1,65535'],
-            'pull_request_previews' => ['boolean'],
-            'github_runners' => ['boolean'],
-        ], [
-            'organization.required' => 'GitHub Actions runners need an organization.',
         ]);
 
         $app = GithubApp::query()->create([
@@ -59,11 +51,7 @@ class GithubForm extends PanelComponent
         ]);
 
         $this->toastAfterRedirect('GitHub App saved.');
-        $this->redirect(route('sources.github.show', [
-            'githubApp' => $app,
-            'previews' => $this->pull_request_previews ? 1 : 0,
-            'runners' => $this->github_runners ? 1 : 0,
-        ]));
+        $this->redirect(route('sources.github.show', $app));
     }
 
     public function render()

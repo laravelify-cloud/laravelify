@@ -38,10 +38,6 @@ class GithubShow extends PanelComponent
 
     public bool $manual = false;
 
-    public bool $preview_deployment_permissions = true;
-
-    public bool $github_runners = false;
-
     public string $webhook_endpoint = '';
 
     public string $notice = '';
@@ -64,10 +60,6 @@ class GithubShow extends PanelComponent
         $this->webhook_secret = (string) $githubApp->webhook_secret;
         $this->private_key_id = (string) $githubApp->private_key_id;
         $this->manual = request()->boolean('manual');
-        $this->preview_deployment_permissions = request()->has('previews')
-            ? request()->boolean('previews')
-            : true;
-        $this->github_runners = request()->boolean('runners');
         $this->webhook_endpoint = rtrim(request()->getSchemeAndHttpHost(), '/');
     }
 

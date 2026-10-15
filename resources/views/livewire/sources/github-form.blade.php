@@ -14,18 +14,7 @@
         </label>
     </div>
 
-    <div>
-        <p class="font-medium">Use this App for</p>
-        <p class="text-muted">Automatic deploys on every push are always included: sites using this App need no repository webhook. These choices add permissions sent to GitHub.</p>
-        <label class="mt-2 flex items-center gap-2">
-            <input type="checkbox" wire:model="pull_request_previews">
-            <span>Pull request previews <span class="text-[12px] text-muted">(not used yet, leave off unless you plan to)</span></span>
-        </label>
-        <label class="mt-1 flex items-center gap-2">
-            <input type="checkbox" wire:model.live="github_runners">
-            <span>GitHub Actions runners</span>
-        </label>
-    </div>
+    <p class="text-muted">The App reads your repositories and sends every push to the panel, so sites using it deploy automatically with no repository webhook.</p>
 
     <div class="overflow-hidden rounded-lg border border-line" x-data="{ open: false }">
         <button class="flex w-full items-center justify-between px-3 py-2 text-left" type="button" @click="open = !open">

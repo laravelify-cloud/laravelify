@@ -26,17 +26,9 @@
                     <small class="error" x-data x-show="$wire.webhook_endpoint.includes('127.0.0.1') || $wire.webhook_endpoint.includes('localhost')">This address is only on your computer. Add a Cloudflare published hostname first, then paste that https URL here.</small>
                 </label>
                 <div class="rounded-lg border border-line p-3 text-[12px]">
-                    <p class="font-medium">Mandatory permissions</p>
-                    <p class="text-muted">Contents: read · Metadata: read · Email: read</p>
+                    <p class="font-medium">Permissions the App asks for</p>
+                    <p class="text-muted">Contents: read · Metadata: read · Email: read, and push events, so every push deploys the sites that use this App.</p>
                 </div>
-                <label class="flex items-center gap-2">
-                    <input type="checkbox" wire:model="preview_deployment_permissions">
-                    <span>Read and update pull requests</span>
-                </label>
-                <label class="flex items-center gap-2">
-                    <input type="checkbox" wire:model="github_runners" @disabled(blank($githubApp->organization))>
-                    <span>Run workflow jobs on this server</span>
-                </label>
                 <button class="btn btn-primary mt-auto w-full" type="button" x-data x-on:click="registerGithubApp($wire)">Register with GitHub</button>
             </section>
 
@@ -61,24 +53,11 @@
                 const htmlUrl = @js($githubApp->html_url);
                 const name = @js($githubApp->name);
                 const slug = @js($githubApp->slug);
-                const previews = wire.get('preview_deployment_permissions');
-                const runners = wire.get('github_runners');
                 const path = organization
                     ? 'organizations/' + encodeURIComponent(organization) + '/settings/apps/new'
                     : 'settings/apps/new';
                 const permissions = { contents: 'read', metadata: 'read', emails: 'read' };
                 const events = ['push'];
-
-                if (previews) {
-                    permissions.pull_requests = 'write';
-                    events.push('pull_request');
-                }
-
-                if (runners && organization) {
-                    permissions.organization_self_hosted_runners = 'write';
-                    permissions.actions = 'read';
-                    events.push('workflow_job');
-                }
 
                 const form = document.createElement('form');
                 form.method = 'post';

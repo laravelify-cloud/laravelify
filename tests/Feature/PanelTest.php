@@ -154,7 +154,6 @@ class PanelTest extends TestCase
         Livewire::test(GithubForm::class)
             ->set('name', 'FFKRISTAL')
             ->set('organization', 'FFKRISTAL-AZ')
-            ->set('pull_request_previews', true)
             ->call('save')
             ->assertRedirect();
 

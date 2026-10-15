@@ -81,6 +81,24 @@ class GithubAppDeployTest extends TestCase
         $this->assertSame(0, Deployment::query()->count());
     }
 
+    public function test_a_new_app_asks_github_only_for_what_deploys_use(): void
+    {
+        $this->actingAs(User::factory()->create([
+            'two_factor_secret' => app(TwoFactor::class)->generateSecret(),
+            'two_factor_confirmed_at' => now(),
+        ]));
+        $unregistered = GithubApp::query()->create([
+            'name' => 'calm-lynx', 'slug' => 'calm-lynx', 'html_url' => 'https://github.com',
+            'api_url' => 'https://api.github.com', 'git_user' => 'git', 'git_port' => 22,
+        ]);
+
+        $this->get(route('sources.github.create'))->assertOk()->assertDontSee('Pull request previews')->assertDontSee('GitHub Actions runners');
+        $this->get(route('sources.github.show', $unregistered))->assertOk()
+            ->assertSee("const events = ['push'];", false)
+            ->assertDontSee('pull_requests')
+            ->assertDontSee('self_hosted_runners');
+    }
+
     public function test_the_website_page_says_deploys_are_automatic_through_the_app(): void
     {
         $this->actingAs(User::factory()->create([
