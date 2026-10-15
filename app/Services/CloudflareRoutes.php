@@ -247,7 +247,12 @@ class CloudflareRoutes
                 return 'error: this domain is not on the Cloudflare account of the token';
             }
 
-            $records = $this->api->dnsRecords($zone['id'], $host);
+            // Cloudflare flattens a CNAME at the bare domain, so mail (MX), TXT, CAA and similar records can stay.
+            // Only an existing A, AAAA or CNAME is in its way.
+            $records = array_values(array_filter(
+                $this->api->dnsRecords($zone['id'], $host),
+                fn (array $record): bool => in_array($record['type'] ?? '', ['A', 'AAAA', 'CNAME'], true),
+            ));
 
             if ($records === []) {
                 $this->api->createCname($zone['id'], $host, $target);

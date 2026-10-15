@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.32] - 2026-10-15
+
+- **Tunnel redirects work for a bare domain that receives mail.** The tunnel's CNAME is no longer refused because the domain has MX, TXT, or CAA records (Cloudflare flattens a CNAME at the bare domain and keeps them); only an existing A, AAAA, or CNAME is reported. Switching a redirect between **Cloudflare tunnel** and **Server IP** removes the record the panel made for the other way first.
+
 ## [0.3.0-beta.31] - 2026-10-15
 
 - **Fixed: Regenerate (and MCP `update-website` with `regenerate_files`) dropped the Redirects tab's nginx blocks.** The redirects stay in the file now.

@@ -264,4 +264,36 @@ class WebsiteRedirectsTest extends TestCase
 
         $this->assertStringContainsString('server_name apply.coupons;', (string) $website->fresh()->nginx_config);
     }
+
+    public function test_a_tunnel_cname_is_created_next_to_mail_records(): void
+    {
+        Setting::putValue(CloudflareApi::SETTING, 'cf_token_123');
+        $created = [];
+
+        Http::fake(function (Request $request) use (&$created) {
+            $url = $request->url();
+            $ok = fn (mixed $result) => Http::response(['success' => true, 'errors' => [], 'result' => $result]);
+
+            return match (true) {
+                str_contains($url, '/cfd_tunnel/tun456/configurations') && $request->method() === 'GET' => $ok(['config' => ['ingress' => [['service' => 'http_status:404']]]]),
+                str_contains($url, '/cfd_tunnel/tun456/configurations') => $ok(['config' => []]),
+                str_contains($url, '/zones?name=supercell') => $ok([]),
+                str_contains($url, '/zones?name=apply.coupons') => $ok([['id' => 'zone1', 'name' => 'apply.coupons']]),
+                str_contains($url, '/dns_records') && $request->method() === 'GET' => $ok([['id' => 'mx1', 'type' => 'MX', 'name' => 'apply.coupons', 'content' => 'mx1.hostinger.com']]),
+                str_contains($url, '/dns_records') && $request->method() === 'POST' => tap($ok(['id' => 'new']), function () use ($request, &$created): void {
+                    $created[] = $request->data();
+                }),
+                default => Http::response(['success' => false, 'errors' => [['message' => 'unexpected '.$url]]], 404),
+            };
+        });
+
+        $tunnel = CloudflareTunnel::factory()->create(['token' => base64_encode((string) json_encode(['a' => 'acc123', 't' => 'tun456', 's' => 'secret']))]);
+        $website = $this->site(['cloudflare_tunnel_id' => $tunnel->id]);
+
+        $report = app(WebsiteRedirects::class)->apply($website, [['from' => 'apply.coupons', 'to' => '']]);
+
+        $this->assertSame([], CloudflareRoutes::problems($report));
+        $this->assertSame('CNAME', $created[0]['type']);
+        $this->assertSame('tun456.cfargotunnel.com', $created[0]['content']);
+    }
 }
