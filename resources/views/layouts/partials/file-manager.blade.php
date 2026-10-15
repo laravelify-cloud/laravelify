@@ -513,7 +513,7 @@
                     },
                     () => {
                         done();
-                        window.toast('Upload failed. Each file must be 32 MB or smaller.', 'error');
+                        window.toast('Upload failed. Each file must be 256 MB or smaller.', 'error');
                     },
                     (event) => {
                         this.progress = event.detail.progress;

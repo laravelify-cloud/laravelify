@@ -11,6 +11,7 @@ use App\Services\FileOperations;
 use App\Services\FileTrash;
 use App\Services\PanelTaskRunner;
 use App\Services\SitePaths;
+use App\Services\UploadLimits;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Renderless;
@@ -426,7 +427,7 @@ class Files extends PanelComponent
     {
         $this->validate([
             'uploads' => ['required', 'array', 'min:1'],
-            'uploads.*' => ['file', 'max:32768'],
+            'uploads.*' => ['file', 'max:'.(UploadLimits::MEGABYTES * 1024)],
         ]);
 
         try {

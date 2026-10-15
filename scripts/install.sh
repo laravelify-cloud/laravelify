@@ -473,7 +473,8 @@ server {
 
     root /usr/share/phpmyadmin;
     index index.php;
-    client_max_body_size 64M;
+    # Big imports (database dumps): nginx and PHP accept up to 256 MB and run up to 10 minutes.
+    client_max_body_size 256M;
 
     location / {
         try_files \$uri \$uri/ /index.php?\$query_string;
@@ -482,7 +483,11 @@ server {
     location ~ \\.php\$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/run/php/php${PANEL_PHP}-fpm.sock;
-        fastcgi_read_timeout 120;
+        fastcgi_read_timeout 600;
+        fastcgi_param PHP_VALUE "upload_max_filesize=256M
+post_max_size=256M
+memory_limit=512M
+max_execution_time=600";
     }
 
     location ~ /\\.(?!well-known).* {
@@ -616,7 +621,8 @@ server {
 
     root ${APP_ROOT}/public;
     index index.php;
-    client_max_body_size 64M;
+    # Big uploads in the file manager: nginx and PHP accept up to 256 MB.
+    client_max_body_size 256M;
 
     location / {
         try_files \$uri \$uri/ /index.php?\$query_string;
@@ -625,6 +631,11 @@ server {
     location ~ \\.php\$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/run/php/php${PANEL_PHP}-fpm.sock;
+        fastcgi_read_timeout 600;
+        fastcgi_param PHP_VALUE "upload_max_filesize=256M
+post_max_size=256M
+memory_limit=512M
+max_execution_time=600";
     }
 
     location ~ /\\.(?!well-known).* {

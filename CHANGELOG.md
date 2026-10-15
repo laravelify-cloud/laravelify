@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.20] - 2026-10-15
+
+- **phpMyAdmin imports big dumps, and the file manager takes big files.** Ubuntu's PHP accepted only 2 MB uploads, so phpMyAdmin dropped larger .sql files without a clear error. phpMyAdmin and the panel now accept uploads up to 256 MB (nginx and PHP), with 10 minutes for long imports. Updates add this to existing servers (`php artisan laravelify:upload-limits`, which puts a file back when nginx rejects it); new installs have it from the start.
+
 ## [0.3.0-beta.19] - 2026-10-15
 
 - **Fixed: migrations with triggers failed with MySQL error 1419** ("You do not have the SUPER privilege and binary logging is enabled"). MySQL 8 keeps a binary log, and then site users cannot create triggers, functions, or procedures. Updates now turn on `log_bin_trust_function_creators` with `SET PERSIST` (no restart), new installs have it in MySQL's config, and `php artisan laravelify:mysql-defaults` applies it by hand.

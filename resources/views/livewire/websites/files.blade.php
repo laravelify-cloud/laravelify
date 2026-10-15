@@ -296,7 +296,7 @@
             {{ $folderCount }} {{ \Illuminate\Support\Str::plural('folder', $folderCount) }},
             {{ $fileCount }} {{ \Illuminate\Support\Str::plural('file', $fileCount) }}
         </span>
-        <span class="hidden md:inline">Right-click an item for more actions · Drag files in to upload · Max 32 MB per file</span>
+        <span class="hidden md:inline">Right-click an item for more actions · Drag files in to upload · Max 256 MB per file</span>
         @if ($canZip && $listingError === '' && ($website || $directory !== ''))
             <button class="fm-link" type="button" wire:click="prepareDownload(@js($directory))">
                 <x-menu-icon name="archive" class="size-4" /> Download folder (.zip)

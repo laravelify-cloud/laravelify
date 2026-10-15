@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Services\DisplayTime;
 use App\Services\PortAllocator;
 use App\Services\ServerProcesses;
+use App\Services\UploadLimits;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -33,7 +34,7 @@ class AppServiceProvider extends ServiceProvider
         }
 
         config([
-            'livewire.temporary_file_upload.rules' => ['required', 'file', 'max:32768'],
+            'livewire.temporary_file_upload.rules' => ['required', 'file', 'max:'.(UploadLimits::MEGABYTES * 1024)],
         ]);
 
         // Dates in the timezone and format from Settings → General: @datetime($at), @date, @time, @ago.
