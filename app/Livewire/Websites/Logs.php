@@ -7,6 +7,7 @@ use App\Models\Website;
 use App\Services\ConfigRenderer;
 use App\Services\HostWriter;
 use App\Services\SiteLogs;
+use App\Support\EnvFile;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Throwable;
@@ -107,6 +108,36 @@ class Logs extends PanelComponent
         }
     }
 
+    /**
+     * The timezone the selected log's timestamps are written in, so the viewer can show them in the
+     * reader's own timezone: the app's APP_TIMEZONE (UTC unless the .env says otherwise) for application
+     * logs, the server's own timezone for nginx's error log and PM2. nginx access lines carry their offset.
+     */
+    public function logZone(): string
+    {
+        if ($this->source === 'nginx-error' || $this->source === 'pm2') {
+            return self::serverZone();
+        }
+
+        $zone = trim((string) (EnvFile::values((string) $this->website->env_content, ['APP_TIMEZONE'])['APP_TIMEZONE'] ?? ''));
+
+        return in_array($zone, timezone_identifiers_list(), true) ? $zone : 'UTC';
+    }
+
+    /**
+     * The server's own timezone, from /etc/timezone or the /etc/localtime link.
+     */
+    public static function serverZone(): string
+    {
+        $zone = is_readable('/etc/timezone') ? trim((string) file_get_contents('/etc/timezone')) : '';
+
+        if ($zone === '' && is_link('/etc/localtime')) {
+            $zone = (string) preg_replace('#^.*/zoneinfo/#', '', (string) readlink('/etc/localtime'));
+        }
+
+        return in_array($zone, timezone_identifiers_list(), true) ? $zone : 'UTC';
+    }
+
     public function render(SiteLogs $logs, ConfigRenderer $renderer)
     {
         $sources = $logs->sources($this->website);
@@ -118,6 +149,7 @@ class Logs extends PanelComponent
             'nginxReady' => $renderer->hasNginxLogs($this->website),
             'canClear' => $current !== null && ! str_starts_with($this->source, 'nginx') && $this->source !== 'pm2',
             'logLines' => $this->content === '' ? [] : (preg_split('/\R/', $this->content) ?: []),
+            'logZone' => $this->logZone(),
         ]);
     }
 }

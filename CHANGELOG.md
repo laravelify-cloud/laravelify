@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.22] - 2026-10-15
+
+- **Log times follow your timezone.** The Logs tab showed times as the app wrote them (UTC unless its `.env` sets `APP_TIMEZONE`). The viewer now shows the timestamp at the start of each line in your timezone (Settings → General, or your browser's), for Laravel and worker logs, nginx's error log, and nginx's access log (its `+0000` becomes your offset). The clock button above the log switches back to the original times, search and copy follow what you see, and a timestamp inside a message is never changed.
+- **Fixed: the Monitoring tab failed with "incomplete object UptimeCheck".** The uptime summary kept an Eloquent model in the cache, and Laravel does not unserialize classes from the cache. The last check is now read from the database instead.
+
 ## [0.3.0-beta.21] - 2026-10-15
 
 - **www and several domains for one website.** The Add website form offers **Also open on www.example.com** as soon as you type a domain, and **Other domains for the same website** takes a second domain (a line each), so one app never needs a second website. On the General tab the same list is editable, with an **Add www** button. nginx's `server_name`, the Cloudflare tunnel's ingress, and the website's URL list all follow. A domain can belong to only one website.

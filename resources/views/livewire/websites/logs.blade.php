@@ -47,7 +47,7 @@
         {{-- Viewer --}}
         <section
             class="logs-viewer"
-            x-data="deployLogs({ live: true, name: @js(\Illuminate\Support\Str::slug($website->name.'-'.str_replace(':', '-', $source))) })"
+            x-data="deployLogs({ live: true, zone: @js($logZone), name: @js(\Illuminate\Support\Str::slug($website->name.'-'.str_replace(':', '-', $source))) })"
             :class="{ 'is-fullscreen': fullscreen, 'no-wrap': !wrap }"
             @keydown.escape.window="fullscreen = false"
             @log-cleared.window="query = ''"
@@ -57,6 +57,7 @@
                     <div class="logs-viewer-actions">
                         <button class="logs-viewer-btn" type="button" :class="follow && 'is-active'" @click="toggleFollow()" title="Follow the end of the log"><x-menu-icon name="arrow-down" /></button>
                         <button class="logs-viewer-btn" type="button" :class="wrap && 'is-active'" @click="toggleWrap()" title="Wrap long lines"><x-menu-icon name="wrap" /></button>
+                        <button class="logs-viewer-btn" type="button" :class="local && 'is-active'" @click="toggleLocal()" :title="local ? 'Times are shown in your timezone (' + targetZone() + '). Click to show them as written (' + sourceZone + ').' : 'Times are shown as written (' + sourceZone + '). Click to show them in your timezone (' + targetZone() + ').'"><x-menu-icon name="clock" /></button>
                         <button class="logs-viewer-btn" type="button" @click="fullscreen = !fullscreen" :title="fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'">
                             <x-menu-icon name="expand" x-show="!fullscreen" />
                             <x-menu-icon name="shrink" x-show="fullscreen" x-cloak />

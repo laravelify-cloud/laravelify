@@ -21,11 +21,13 @@ use App\Services\MonitorAlerts;
 use App\Services\RequestCollector;
 use App\Services\ServerMonitor;
 use App\Services\ServerStats;
+use App\Services\SiteMetrics;
 use App\Services\SiteSecurity;
 use App\Services\ThreatDetector;
 use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
@@ -265,6 +267,24 @@ class MonitoringTest extends TestCase
 
         $this->assertSame(1, SiteRequest::query()->count());
         $this->assertSame(1, UptimeCheck::query()->count());
+    }
+
+    public function test_the_uptime_summary_survives_a_cache_that_serializes_like_the_real_one(): void
+    {
+        // The real cache serializes, and Laravel refuses to unserialize classes from it:
+        // a model in the cached summary came back as an incomplete object on the monitoring tab.
+        config(['cache.default' => 'array', 'cache.stores.array.serialize' => true]);
+        Cache::forgetDriver('array');
+        $website = Website::factory()->create();
+        UptimeCheck::query()->create(['website_id' => $website->id, 'ok' => true, 'status' => 200, 'checked_at' => now()]);
+
+        $metrics = app(SiteMetrics::class);
+        $metrics->uptime($website, '24h');
+        $summary = $metrics->uptime($website, '24h');
+
+        $this->assertInstanceOf(UptimeCheck::class, $summary['latest']);
+        $this->assertTrue($summary['latest']->ok);
+        $this->assertSame(1, $summary['checks']);
     }
 
     public function test_heartbeats_alert_once_when_missed_and_once_when_they_report_again(): void

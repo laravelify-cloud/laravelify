@@ -193,11 +193,98 @@
         };
     };
 
+    /**
+     * Times in log lines: a log is written in one timezone (the app's, UTC unless its .env says otherwise).
+     * The viewer shows the leading timestamp of each line in the reader's timezone instead, and can show
+     * the original again. Only the timestamp at the start of a line changes, never one inside a message.
+     */
+    window.logTime = (function () {
+        var formatters = {};
+
+        function parts(epoch, zone) {
+            if (!formatters[zone]) {
+                formatters[zone] = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            }
+
+            var out = {};
+            formatters[zone].formatToParts(new Date(epoch)).forEach(function (part) { out[part.type] = part.value; });
+
+            return out;
+        }
+
+        /** Milliseconds the zone is ahead of UTC at that moment. */
+        function offsetMs(epoch, zone) {
+            var p = parts(epoch, zone);
+
+            return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(epoch / 1000) * 1000;
+        }
+
+        /** The moment a clock reading happened in a zone. */
+        function epochOf(y, mo, d, h, mi, s, zone) {
+            var guess = Date.UTC(y, mo - 1, d, h, mi, s);
+            var first = guess - offsetMs(guess, zone);
+
+            return guess - offsetMs(first, zone);
+        }
+
+        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var iso = /^(\s*\[?)(\d{4})([-\/])(\d{2})\3(\d{2})([ T])(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?/;
+        var access = /^(.{0,80}?\[)(\d{2})\/([A-Za-z]{3})\/(\d{4}):(\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})\]/;
+
+        function two(n) { return String(n).padStart(2, '0'); }
+
+        return {
+            /** The line with its leading timestamp moved from `source` to `target` zone. */
+            convert: function (line, source, target) {
+                if (!target || line.length < 19) {
+                    return line;
+                }
+
+                try {
+                    var match = iso.exec(line);
+
+                    if (match) {
+                        var y = +match[2], mo = +match[4], d = +match[5], h = +match[7], mi = +match[8], sec = +match[9];
+                        var zoned = match[11];
+
+                        if (!zoned && source === target) {
+                            return line;
+                        }
+
+                        var epoch = zoned
+                            ? Date.UTC(y, mo - 1, d, h, mi, sec) - (zoned === 'Z' ? 0 : (zoned[0] === '-' ? -1 : 1) * (+zoned.slice(1, 3) * 60 + +zoned.slice(-2)) * 60000)
+                            : epochOf(y, mo, d, h, mi, sec, source);
+                        var p = parts(epoch, target);
+
+                        return match[1] + p.year + match[3] + p.month + match[3] + p.day + match[6] + p.hour + ':' + p.minute + ':' + p.second + (match[10] || '') + line.slice(match[0].length);
+                    }
+
+                    match = access.exec(line);
+
+                    if (match) {
+                        var shift = (match[8] === '-' ? -1 : 1) * (+match[9] * 60 + +match[10]) * 60000;
+                        var moment = Date.UTC(+match[4], months.indexOf(match[3]), +match[2], +match[5], +match[6], +match[7]) - shift;
+                        var q = parts(moment, target);
+                        var offset = Math.round(offsetMs(moment, target) / 60000);
+                        var sign = offset < 0 ? '-' : '+';
+
+                        return match[1] + q.day + '/' + months[+q.month - 1] + '/' + q.year + ':' + q.hour + ':' + q.minute + ':' + q.second + ' ' + sign + two(Math.floor(Math.abs(offset) / 60)) + two(Math.abs(offset) % 60) + ']' + line.slice(match[0].length);
+                    }
+                } catch (e) {}
+
+                return line;
+            },
+        };
+    })();
+
     window.deployLogs = function (options) {
         var wrap = true;
 
+        var local = true;
+
         try {
             wrap = localStorage.getItem('laravelify-log-wrap') !== 'off';
+            local = localStorage.getItem('laravelify-log-local') !== 'off';
         } catch (e) {}
 
         return {
@@ -206,6 +293,8 @@
             follow: options.live,
             atBottom: true,
             wrap: wrap,
+            local: local,
+            sourceZone: options.zone || 'UTC',
             fullscreen: false,
             query: '',
             matches: 0,
@@ -217,9 +306,7 @@
                 this.$watch('fullscreen', () => this.$nextTick(() => this.follow && this.toBottom()));
 
                 this.observer = new MutationObserver(() => {
-                    if (this.query.trim() !== '') {
-                        this.applySearch();
-                    }
+                    this.applySearch();
 
                     if (this.follow) {
                         this.toBottom();
@@ -227,7 +314,33 @@
                 });
 
                 this.observer.observe(this.$refs.lines, { childList: true, subtree: true, characterData: true });
+                this.$watch('local', () => this.applySearch());
+                this.applySearch();
                 this.$nextTick(() => this.toBottom());
+            },
+
+            /** The timezone of the reader: the panel's setting (Settings, General), or the browser's. */
+            targetZone() {
+                var settings = window.laravelifyTime || {};
+
+                try {
+                    return settings.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+                } catch (e) {
+                    return 'UTC';
+                }
+            },
+
+            toggleLocal() {
+                this.local = !this.local;
+
+                try {
+                    localStorage.setItem('laravelify-log-local', this.local ? 'on' : 'off');
+                } catch (e) {}
+            },
+
+            /** What a line shows: its time in the reader's timezone, or as written. */
+            shown(raw) {
+                return this.local ? window.logTime.convert(raw, this.sourceZone, this.targetZone()) : raw;
             },
 
             destroy() {
@@ -311,7 +424,7 @@
 
                 this.lines().forEach((line) => {
                     var textElement = line.querySelector('[data-text]');
-                    var text = textElement ? textElement.dataset.text : '';
+                    var text = textElement ? this.shown(textElement.dataset.text) : '';
                     var found = query === '' || text.toLowerCase().includes(query);
 
                     line.classList.toggle('hidden', !found);
@@ -335,7 +448,7 @@
             visibleText() {
                 return this.lines()
                     .filter((line) => !line.classList.contains('hidden'))
-                    .map((line) => line.querySelector('[data-text]').dataset.text)
+                    .map((line) => this.shown(line.querySelector('[data-text]').dataset.text))
                     .join('\n');
             },
 

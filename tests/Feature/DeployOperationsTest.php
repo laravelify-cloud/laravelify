@@ -212,6 +212,27 @@ class DeployOperationsTest extends TestCase
         $this->assertSame('', file_get_contents($this->root.'/storage/logs/laravel.log'));
     }
 
+    public function test_the_log_viewer_knows_the_timezone_each_log_is_written_in(): void
+    {
+        file_put_contents($this->root.'/storage/logs/laravel.log', "[2026-10-15 06:02:59] production.ERROR: Boom\n");
+        $this->signIn();
+        $website = Website::factory()->create(['deploy_path' => $this->root]);
+
+        Livewire::test(Logs::class, ['website' => $website])
+            ->assertSee('deployLogs({ live: true, zone:', false)
+            ->assertSee('Boom');
+
+        $website->update(['env_content' => "APP_TIMEZONE=Asia/Baku\n"]);
+        $component = Livewire::test(Logs::class, ['website' => $website->fresh()]);
+        $this->assertSame('Asia/Baku', $component->instance()->logZone());
+
+        $website->update(['env_content' => "APP_TIMEZONE=Not/AZone\n"]);
+        $this->assertSame('UTC', Livewire::test(Logs::class, ['website' => $website->fresh()])->instance()->logZone(), 'An unknown zone falls back to UTC.');
+
+        $component->call('show', 'nginx-error');
+        $this->assertSame(Logs::serverZone(), $component->instance()->logZone());
+    }
+
     public function test_health_checks_the_site_and_offers_nginx_logs(): void
     {
         Http::fake(['*' => Http::response('ok', 200)]);

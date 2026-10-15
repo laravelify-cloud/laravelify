@@ -123,11 +123,16 @@ class SiteMetrics
      */
     public function uptime(Website $website, string $range): array
     {
-        return $this->cached('uptime', $website, $range, fn (): array => $this->buildUptime($website, $range));
+        $summary = $this->cached('uptime', $website, $range, fn (): array => $this->buildUptime($website, $range));
+
+        // A model never goes into the cache: Laravel does not unserialize classes from it.
+        $summary['latest'] = UptimeCheck::query()->where('website_id', $website->id)->latest('checked_at')->latest('id')->first();
+
+        return $summary;
     }
 
     /**
-     * @return array{latest: ?UptimeCheck, percent: ?float, checks: int, buckets: list<array{label: string, state: string}>}
+     * @return array{percent: ?float, checks: int, buckets: list<array{label: string, state: string}>}
      */
     private function buildUptime(Website $website, string $range): array
     {
@@ -149,7 +154,6 @@ class SiteMetrics
         }
 
         return [
-            'latest' => UptimeCheck::query()->where('website_id', $website->id)->latest('checked_at')->latest('id')->first(),
             'percent' => $checks->isNotEmpty() ? round($checks->where('ok', true)->count() / $checks->count() * 100, 2) : null,
             'checks' => $checks->count(),
             'buckets' => array_map(fn (int $start, array $state): array => [
