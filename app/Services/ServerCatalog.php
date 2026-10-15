@@ -22,6 +22,8 @@ bind-address = 127.0.0.1
 mysqlx = 0
 character-set-server = utf8mb4
 collation-server = utf8mb4_general_ci
+# Binary logging is on in MySQL 8: without this, site users cannot create triggers (error 1419).
+log_bin_trust_function_creators = 1
 CNF,
             ],
             [

@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.19] - 2026-10-15
+
+- **Fixed: migrations with triggers failed with MySQL error 1419** ("You do not have the SUPER privilege and binary logging is enabled"). MySQL 8 keeps a binary log, and then site users cannot create triggers, functions, or procedures. Updates now turn on `log_bin_trust_function_creators` with `SET PERSIST` (no restart), new installs have it in MySQL's config, and `php artisan laravelify:mysql-defaults` applies it by hand.
+
 ## [0.3.0-beta.18] - 2026-10-15
 
 - **Fixed: the first deploy of a Laravel or PHP site with a database failed with "Access denied".** The deploy ran the migrations before it created the database and its user. The database now comes first.

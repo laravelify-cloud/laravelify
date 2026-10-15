@@ -440,9 +440,11 @@ mysqlx = 0
 port = 3306
 character-set-server = utf8mb4
 collation-server = utf8mb4_general_ci
+# Binary logging is on in MySQL 8: without this, site users cannot create triggers (error 1419).
+log_bin_trust_function_creators = 1
 EOF
 systemctl restart mysql
-mysql --defaults-extra-file=/tmp/laravelify-install/client.cnf --protocol=socket -e "SET PERSIST default_collation_for_utf8mb4 = 'utf8mb4_general_ci'"
+mysql --defaults-extra-file=/tmp/laravelify-install/client.cnf --protocol=socket -e "SET PERSIST default_collation_for_utf8mb4 = 'utf8mb4_general_ci'; SET PERSIST log_bin_trust_function_creators = 1"
 
 install -d /etc/phpmyadmin/conf.d
 cat > /etc/phpmyadmin/conf.d/laravelify-collation.php <<'EOF'
