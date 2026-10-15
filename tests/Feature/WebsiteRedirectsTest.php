@@ -253,4 +253,15 @@ class WebsiteRedirectsTest extends TestCase
         $this->assertSame([], CloudflareRoutes::problems($report));
         $this->assertSame(0, $posted);
     }
+
+    public function test_regenerating_the_nginx_file_keeps_the_redirects(): void
+    {
+        $this->signIn();
+        $website = $this->site();
+        app(WebsiteRedirects::class)->apply($website, [['from' => 'apply.coupons', 'to' => '']]);
+
+        Livewire::test(WebsiteShow::class, ['website' => $website->fresh()])->call('regenerate');
+
+        $this->assertStringContainsString('server_name apply.coupons;', (string) $website->fresh()->nginx_config);
+    }
 }

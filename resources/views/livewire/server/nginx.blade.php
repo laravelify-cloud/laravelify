@@ -10,8 +10,8 @@
     </x-page-header>
 
     @if ($test)
-        <div class="callout">
-            <x-menu-icon name="danger" class="size-4 shrink-0 {{ $test['ok'] ? 'text-muted' : 'text-warning' }}" />
+        <div class="{{ $test['ok'] ? 'flex items-start gap-3 rounded-lg border border-line bg-recessed px-4 py-3' : 'callout' }}">
+            <x-menu-icon name="{{ $test['ok'] ? 'check' : 'danger' }}" class="size-4 shrink-0 {{ $test['ok'] ? '' : 'text-warning' }}" style="{{ $test['ok'] ? 'color: var(--color-success)' : '' }}" />
             <div class="min-w-0 flex-1">
                 <p class="font-medium">{{ $test['ok'] ? 'nginx -t passed' : 'nginx -t failed' }} <span class="font-normal text-muted">· {{ $test['at'] }}</span></p>
                 <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-[12.5px]">{{ $test['output'] }}</pre>

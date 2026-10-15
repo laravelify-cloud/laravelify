@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.31] - 2026-10-15
+
+- **Fixed: Regenerate (and MCP `update-website` with `regenerate_files`) dropped the Redirects tab's nginx blocks.** The redirects stay in the file now.
+- **Server → Nginx:** a passing `nginx -t` shows a green check instead of the yellow warning box.
+
 ## [0.3.0-beta.30] - 2026-10-15
 
 - **nginx variable table raised for many sites.** Writing a website's nginx files now also installs `/etc/nginx/conf.d/laravelify-hash.conf` with `variables_hash_bucket_size 128;` (unless you already set that directive yourself), so a server with many sites and security rules no longer fails `nginx -t` with "could not build variables_hash", even for security files written by older versions.

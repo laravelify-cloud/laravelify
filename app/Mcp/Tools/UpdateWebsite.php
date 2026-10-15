@@ -100,7 +100,7 @@ class UpdateWebsite extends Tool
         $notes = [];
 
         if ($request->get('regenerate_files', false)) {
-            $website->nginx_config = $renderer->withServerNames($website, $renderer->nginx($website));
+            $website->nginx_config = $renderer->withRedirects($website, $renderer->withServerNames($website, $renderer->nginx($website)));
             $website->process_config = $renderer->process($website);
             $website->save();
 

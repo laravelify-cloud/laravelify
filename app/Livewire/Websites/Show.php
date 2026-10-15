@@ -334,7 +334,7 @@ class Show extends PanelComponent
 
     public function regenerate(ConfigRenderer $renderer, HostWriter $hostWriter): void
     {
-        $this->website->nginx_config = $renderer->nginx($this->website);
+        $this->website->nginx_config = $renderer->withRedirects($this->website, $renderer->nginx($this->website));
         $this->website->process_config = $renderer->process($this->website);
         $this->website->save();
         $this->nginx_config = $this->website->nginx_config;
