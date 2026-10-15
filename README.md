@@ -66,6 +66,7 @@ See the [installation guide](https://docs.laravelify.cloud/installation/install)
 | 💬 **Telegram alerts** | Deploys, downtime, crashed workers, error spikes, slow responses, attacks, disk, patches |
 | ☁️ **Cloudflare tunnels** | HTTPS without open ports; one tunnel serves many sites |
 | 🔐 **Secure by default** | One admin, 2FA required, secrets revealed only with your code, least-privilege host access |
+| 🤖 **MCP for AI assistants** | Connect Claude Code, Claude Desktop, or Cursor and say "deploy acme/shop on shop.example.com": it creates the site, deploys it, reads the log, and sets `.env` variables. Token sign-in from Settings → MCP |
 | 🧰 **Tools** | File manager with trash, versions, and background zip/extract/copy; terminal with Artisan/PM2 autocomplete; logs, health checks, phpMyAdmin one-click sign-in |
 | 🌍 **Your time, your format** | Everything is stored in UTC and shown in each viewer's own timezone and date format |
 

@@ -127,6 +127,10 @@
                         <x-menu-icon name="link" />
                         <span>Links</span>
                     </a>
+                    <a class="menu-item {{ request()->routeIs('settings.mcp') ? 'menu-item-active' : '' }}" href="{{ route('settings.mcp') }}" wire:navigate>
+                        <x-menu-icon name="robot" />
+                        <span>MCP</span>
+                    </a>
                     <a class="menu-item {{ request()->routeIs('settings.github') ? 'menu-item-active' : '' }}" href="{{ route('settings.github') }}" wire:navigate>
                         <x-menu-icon name="git" />
                         <span>GitHub token</span>

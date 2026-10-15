@@ -2,6 +2,13 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.16] - 2026-10-15
+
+- **MCP server: deploy with an AI assistant.** Connect Claude Code, Claude Desktop, or Cursor to `https://your-panel/mcp` and ask in plain words: "Deploy acme/shop on shop.example.com with a MySQL database". Tools: list and create groups, list site types, sources (GitHub Apps, repositories, tunnels), list and show websites, create a website (repository or example project, domain or HTTP port, env variables, database) and deploy it, deploy again, follow a deployment's status and log, set or remove `.env` variables, and turn a site off or on. The server tells the assistant what it can do and how to deploy, including a local folder (pushed to a private GitHub repository first), and offers a **deploy-project** prompt.
+- **Settings → MCP:** create tokens (after your authenticator code, shown once, stored as a hash), see when each was last used, revoke them, and copy the ready-made connect command for each AI app.
+- Deploys started from MCP show **Mcp** as their trigger.
+- Adding a website from the form and from MCP now share the same code, so both check and set up a site the same way.
+
 ## [0.3.0-beta.15] - 2026-10-15
 
 - **GitHub App: removed "Pull request previews" and "GitHub Actions runners".** Both came from Coolify's form, but Laravelify has neither feature, so they only asked GitHub for permissions nothing used. A new App now asks for Contents, Metadata, and Email (read) and push events, which is all automatic deploys need.
