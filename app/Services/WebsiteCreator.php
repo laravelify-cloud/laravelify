@@ -24,6 +24,7 @@ class WebsiteCreator
         private ConfigRenderer $renderer,
         private DatabaseProvisioner $databases,
         private HostWriter $host,
+        private PortAllocator $ports,
     ) {}
 
     /**
@@ -77,6 +78,10 @@ class WebsiteCreator
         }
 
         $httpPort = $input['http_port'] !== '' ? (int) $input['http_port'] : null;
+
+        if ($httpPort !== null && ($holder = $this->ports->holder($httpPort)) !== null) {
+            throw ValidationException::withMessages(['http_port' => 'Port '.$httpPort.' is used by '.$holder.'. Leave it empty to get a free port.']);
+        }
 
         if ($domain === null && $httpPort === null) {
             $httpPort = Website::nextPort('http_port', (int) config('laravelify.http_port_start'));

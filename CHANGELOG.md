@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.17] - 2026-10-15
+
+- **MCP: upload-file.** The assistant can put files the repository does not carry into a site, like a Firebase key in `storage/app/private`, or unpack a `.zip`, `.tar.gz`, or `.tgz` into a folder (up to 20 MB). Paths stay inside the site folder, links in archives are skipped, and deploys keep the files.
+- **Ports nothing uses.** New websites skip every port in use: other websites' Node, HTTP, and Reverb ports, Laravelify's services, and anything listening on the server right now (like an app left from an old server). Ports handed out while creating one site never repeat. A port you choose is refused when something holds it, naming what holds it.
+- **MCP: list-ports** shows which port is used by what.
+
 ## [0.3.0-beta.16] - 2026-10-15
 
 - **MCP server: deploy with an AI assistant.** Connect Claude Code, Claude Desktop, or Cursor to `https://your-panel/mcp` and ask in plain words: "Deploy acme/shop on shop.example.com with a MySQL database". Tools: list and create groups, list site types, sources (GitHub Apps, repositories, tunnels), list and show websites, create a website (repository or example project, domain or HTTP port, env variables, database) and deploy it, deploy again, follow a deployment's status and log, set or remove `.env` variables, and turn a site off or on. The server tells the assistant what it can do and how to deploy, including a local folder (pushed to a private GitHub repository first), and offers a **deploy-project** prompt.

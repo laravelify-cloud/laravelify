@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Services\DisplayTime;
+use App\Services\PortAllocator;
+use App\Services\ServerProcesses;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -16,6 +18,9 @@ class AppServiceProvider extends ServiceProvider
     {
         // Fresh per request (and per test), so a saved setting shows on the next page.
         $this->app->scoped(DisplayTime::class);
+        // Per request: the listening ports are read once, and ports already handed out stay taken.
+        $this->app->scoped(ServerProcesses::class);
+        $this->app->scoped(PortAllocator::class);
     }
 
     /**

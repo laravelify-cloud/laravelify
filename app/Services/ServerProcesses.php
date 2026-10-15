@@ -14,7 +14,7 @@ class ServerProcesses
      *
      * @var array<int, array{string, string}>
      */
-    private const SYSTEM_PORTS = [
+    public const SYSTEM_PORTS = [
         22 => ['SSH', 'Remote login'],
         80 => ['nginx', 'Every site with a domain (Cloudflare tunnels connect here)'],
         443 => ['nginx', 'HTTPS'],
@@ -126,10 +126,22 @@ class ServerProcesses
 
     /**
      * Listening TCP sockets. Process names need root, so this goes through host-apply.sh.
+     * Read once per request.
      *
      * @return array<int, array{public: bool, processes: list<string>}>
      */
-    private function listening(): array
+    public function listening(): array
+    {
+        return $this->listeningNow ??= $this->readListening();
+    }
+
+    /** @var array<int, array{public: bool, processes: list<string>}>|null */
+    private ?array $listeningNow = null;
+
+    /**
+     * @return array<int, array{public: bool, processes: list<string>}>
+     */
+    private function readListening(): array
     {
         if (! $this->runner->supportsHostCommands()) {
             return [];

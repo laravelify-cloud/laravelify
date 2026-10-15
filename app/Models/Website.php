@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Jobs\RunDeployment;
+use App\Services\PortAllocator;
 use App\Support\SiteTypes;
 use Database\Factories\WebsiteFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -302,15 +303,12 @@ class Website extends Model
         return null;
     }
 
+    /**
+     * A port for a new website that nothing else uses (other websites, services, or anything
+     * listening on the server). The column is kept for the callers; every port field counts.
+     */
     public static function nextPort(string $column, int $start): int
     {
-        $used = static::query()->whereNotNull($column)->pluck($column)->map(fn ($port) => (int) $port)->all();
-        $port = $start;
-
-        while (in_array($port, $used, true)) {
-            $port++;
-        }
-
-        return $port;
+        return app(PortAllocator::class)->next($start);
     }
 }

@@ -9,11 +9,13 @@ use App\Mcp\Tools\DeployWebsite;
 use App\Mcp\Tools\GetDeployment;
 use App\Mcp\Tools\GetWebsite;
 use App\Mcp\Tools\ListGroups;
+use App\Mcp\Tools\ListPorts;
 use App\Mcp\Tools\ListSiteTypes;
 use App\Mcp\Tools\ListSources;
 use App\Mcp\Tools\ListWebsites;
 use App\Mcp\Tools\SetWebsiteEnabled;
 use App\Mcp\Tools\UpdateEnvironment;
+use App\Mcp\Tools\UploadFile;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -30,6 +32,10 @@ use Laravel\Mcp\Server\Attributes\Version;
     - Follow a deploy and read its log: get-deployment. Deploy again: deploy-website.
     - See what runs on the server: list-websites, get-website, list-groups.
     - Set or remove .env variables: update-environment. Turn a site off or on: set-website-enabled.
+    - Put files the repository does not carry into a site (a Firebase key in storage/app/private, or a .zip/.tgz unpacked into
+      a folder): upload-file, after the site's first deploy has finished. Deploys keep these files.
+    - Ports are picked by themselves: every new site gets a port nothing else uses, including apps still running from an old
+      server. Ports in an old server's nginx files do not matter, only the domains. list-ports shows what holds which port.
     - Laravel, PHP, Express, NestJS, Node.js, React, Vue, Angular, Svelte, Astro, static HTML, Next.js, Nuxt, and SvelteKit (list-site-types).
 
     To deploy a repository:
@@ -38,7 +44,8 @@ use Laravel\Mcp\Server\Attributes\Version;
     3. create-website with a group, name, type, repository, branch, and either a domain plus cloudflare_tunnel_id, or nothing for a free HTTP port.
        Laravel and PHP apps that need MySQL: create_database true. Pass the app's required settings in env ("KEY=value").
     4. get-deployment every 10–20 seconds until finished. On failure read log_tail, fix the cause (env, build command, branch), and deploy-website again.
-    5. Tell the user the URL. For a domain, the DNS record is added by the tunnel; it can take a minute.
+    5. Private files the app needs (like storage/app/private keys from a backup): upload-file now. Deploy again only if the build reads them.
+    6. Tell the user the URL. For a domain, the DNS record is added by the tunnel; it can take a minute.
 
     To deploy a project folder on the user's computer: the server cannot read local files. Push it to GitHub first, from the user's
     machine: `gh repo create <name> --private --source . --push` (or add a remote and push). Make sure the Laravelify GitHub App
@@ -60,7 +67,9 @@ class LaravelifyServer extends Server
         DeployWebsite::class,
         GetDeployment::class,
         UpdateEnvironment::class,
+        UploadFile::class,
         SetWebsiteEnabled::class,
+        ListPorts::class,
     ];
 
     protected array $resources = [];
