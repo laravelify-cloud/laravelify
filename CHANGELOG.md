@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.30] - 2026-10-15
+
+- **nginx variable table raised for many sites.** Writing a website's nginx files now also installs `/etc/nginx/conf.d/laravelify-hash.conf` with `variables_hash_bucket_size 128;` (unless you already set that directive yourself), so a server with many sites and security rules no longer fails `nginx -t` with "could not build variables_hash", even for security files written by older versions.
+
 ## [0.3.0-beta.29] - 2026-10-15
 
 - **New Server → Nginx page.** A **Test nginx** button (`nginx -t`, with nginx's own message when it fails), every server block with its domains, ports, target (proxy, PHP, files, redirect), owner website and file, a warning when two blocks answer for the same domain and port, the ports nginx listens on, nginx's error log (`/var/log/nginx/error.log`), and every config file, read-only.

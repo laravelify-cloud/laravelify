@@ -103,6 +103,15 @@ install_site_nginx() {
   local sec_dir=/etc/nginx/laravelify-security
   ensure_dirs /etc/nginx/sites-available /etc/nginx/sites-enabled "${sec_dir}" /etc/nginx/conf.d
 
+  # Every site's security rules define a few nginx variables; with many sites nginx's default table
+  # (64) overflows ("could not build variables_hash"). Raised once, unless the admin already set it.
+  if ! grep -rqsE '^[[:space:]]*variables_hash_bucket_size' /etc/nginx --exclude=laravelify-hash.conf; then
+    printf '# Written by Laravelify (host-apply.sh): room for the variables of many sites.
+variables_hash_bucket_size 128;
+' > /etc/nginx/conf.d/laravelify-hash.conf
+    chmod 644 /etc/nginx/conf.d/laravelify-hash.conf
+  fi
+
   # Monitoring: shared log format, and the visitor IP (trusts CF-Connecting-IP only
   # from a local cloudflared). nginx (root) writes the logs; the panel (www-data) reads them.
   mkdir -p /var/log/laravelify
