@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.25] - 2026-10-15
+
+- **No www for subdomains.** "Also open on www" and "+ Add www" are offered only for a bare domain (`example.com`, `example.co.uk`), never for `shop.example.com`, and `include_www` in MCP is ignored for a subdomain.
+
 ## [0.3.0-beta.24] - 2026-10-15
 
 - **Redirects without a tunnel route.** A redirecting domain can now be set to **Server IP (A record, port 80)** instead of **Cloudflare tunnel**. nginx answers it on port 80 (open in the firewall), no tunnel route is added, and with a Cloudflare API token Laravelify creates a proxied A record to the server's public IP. Set the domain's Cloudflare SSL/TLS mode to **Flexible** (Cloudflare reaches the server on port 80). MCP `set-redirects` takes `via`.

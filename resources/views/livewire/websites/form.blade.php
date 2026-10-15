@@ -104,7 +104,7 @@
             <small class="text-muted">Needed for a Cloudflare tunnel.</small>
             @error('domain') <small class="error">{{ $message }}</small> @enderror
 
-            <label class="flex items-start gap-2 rounded-lg border border-line bg-recessed px-3 py-2.5" x-show="($wire.domain || '').trim() !== '' && !($wire.domain || '').trim().toLowerCase().startsWith('www.')" x-cloak>
+            <label class="flex items-start gap-2 rounded-lg border border-line bg-recessed px-3 py-2.5" x-show="isApexDomain($wire.domain) && !($wire.domain || '').trim().toLowerCase().startsWith('www.')" x-cloak>
                 <input class="mt-0.5" type="checkbox" wire:model="include_www">
                 <span>
                     <span class="block text-[13.5px] font-medium">Also open on <b x-text="'www.' + ($wire.domain || '').trim().toLowerCase()"></b></span>

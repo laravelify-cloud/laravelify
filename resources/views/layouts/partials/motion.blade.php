@@ -52,6 +52,17 @@
         }, 8000);
     })();
 
+    /** True for a bare domain (example.com, example.co.uk): only those get a www name. A subdomain (shop.example.com) has none. */
+    window.isApexDomain = function (domain) {
+        var labels = String(domain || '').trim().toLowerCase().replace(/^www\./, '').split('.');
+
+        if (labels.length === 2) {
+            return true;
+        }
+
+        return labels.length === 3 && labels[2].length === 2 && ['co', 'com', 'net', 'org', 'gov', 'edu', 'ac'].indexOf(labels[1]) !== -1;
+    };
+
     window.websitePage = function () {
         var allowed = ['general', 'environment', 'runtime', 'nginx', 'security', 'redirects', 'processes', 'deployments', 'monitoring', 'logs', 'health', 'terminal', 'files', 'danger'];
         var params = new URLSearchParams(window.location.search);

@@ -157,7 +157,7 @@ class WebsiteCreator
     {
         $aliases = WebsiteDomains::normalize($input['aliases'] ?? []);
 
-        if ($domain !== null && $input['include_www']) {
+        if ($domain !== null && $input['include_www'] && WebsiteDomains::isApex($domain)) {
             $aliases[] = WebsiteDomains::wwwOf($domain);
         }
 

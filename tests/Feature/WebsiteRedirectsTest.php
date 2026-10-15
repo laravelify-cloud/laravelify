@@ -213,4 +213,13 @@ class WebsiteRedirectsTest extends TestCase
         $this->assertSame('203.0.113.9', $created[0]['content']);
         $this->assertContains('apply.coupons', $website->fresh()->claimedHostnames());
     }
+
+    public function test_only_a_bare_domain_gets_a_www_name(): void
+    {
+        $this->assertTrue(WebsiteDomains::isApex('example.com'));
+        $this->assertTrue(WebsiteDomains::isApex('example.co.uk'));
+        $this->assertTrue(WebsiteDomains::isApex('www.example.az'));
+        $this->assertFalse(WebsiteDomains::isApex('supercell.apply.coupons'));
+        $this->assertFalse(WebsiteDomains::isApex('api.example.com'));
+    }
 }

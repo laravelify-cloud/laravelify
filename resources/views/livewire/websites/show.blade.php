@@ -182,7 +182,7 @@
                             <small class="text-muted">One per line. Every domain opens this same website, and nginx{{ $website->tunnel ? ', the tunnel' : '' }} answers on all of them.</small>
                             <button class="text-[12.5px] text-accent hover:underline" type="button"
                                 x-data
-                                x-show="($wire.domain || '').trim() !== '' && !($wire.aliases_text || '').split(/\s+/).includes('www.' + ($wire.domain || '').trim().toLowerCase().replace(/^www\./, ''))"
+                                x-show="isApexDomain($wire.domain) && !($wire.aliases_text || '').split(/\s+/).includes('www.' + ($wire.domain || '').trim().toLowerCase().replace(/^www\./, ''))"
                                 @click="$wire.aliases_text = (($wire.aliases_text || '').trim() + '\nwww.' + ($wire.domain || '').trim().toLowerCase().replace(/^www\./, '')).trim()">
                                 + Add www.{{ preg_replace('/^www\./', '', (string) $website->domain) ?: 'your-domain' }}
                             </button>

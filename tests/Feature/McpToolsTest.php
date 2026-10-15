@@ -131,11 +131,11 @@ class McpToolsTest extends TestCase
         $server = $this->server();
 
         $server->tool(SetDomains::class, ['website' => 'shop', 'include_www' => true, 'aliases' => ['second.com']])
-            ->assertOk()->assertSee('shop.example.com')->assertSee('www.shop.example.com')->assertSee('second.com');
+            ->assertOk()->assertSee('shop.example.com')->assertDontSee('www.shop.example.com')->assertSee('second.com');
 
         $website = Website::query()->where('slug', 'shop')->sole();
-        $this->assertSame(['second.com', 'www.shop.example.com'], $website->aliases);
-        $this->assertStringContainsString('server_name shop.example.com second.com www.shop.example.com;', (string) $website->nginx_config);
+        $this->assertSame(['second.com'], $website->aliases);
+        $this->assertStringContainsString('server_name shop.example.com second.com;', (string) $website->nginx_config);
 
         $server->tool(ListFiles::class, ['website' => 'second.com'])->assertOk();
         $server->tool(SetDomains::class, ['website' => 'shop', 'aliases' => ['www.other.com']])->assertHasErrors(['already belongs to the website']);

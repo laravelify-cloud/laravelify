@@ -25,7 +25,7 @@ class SetDomains extends Tool
         $domain = $request->get('domain') !== null ? (WebsiteDomains::normalize((string) $request->get('domain'))[0] ?? null) : $website->domain;
         $aliases = $request->get('aliases') !== null ? WebsiteDomains::normalize((array) $request->get('aliases')) : (array) ($website->aliases ?? []);
 
-        if ($request->get('include_www', false) && $domain !== null) {
+        if ($request->get('include_www', false) && $domain !== null && WebsiteDomains::isApex($domain)) {
             $aliases[] = WebsiteDomains::wwwOf($domain);
         }
 

@@ -48,6 +48,17 @@ class WebsiteDomains
         return array_values(array_unique($hosts));
     }
 
+    /**
+     * A bare domain (example.com, example.co.uk) can also open on www. A subdomain (shop.example.com) has no www.
+     */
+    public static function isApex(string $domain): bool
+    {
+        $labels = explode('.', preg_replace('/^www\./', '', strtolower(trim($domain))));
+
+        return count($labels) === 2
+            || (count($labels) === 3 && strlen($labels[2]) === 2 && in_array($labels[1], ['co', 'com', 'net', 'org', 'gov', 'edu', 'ac'], true));
+    }
+
     public static function wwwOf(string $domain): string
     {
         return 'www.'.preg_replace('/^www\./', '', $domain);
