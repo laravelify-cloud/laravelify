@@ -53,7 +53,7 @@
     })();
 
     window.websitePage = function () {
-        var allowed = ['general', 'environment', 'runtime', 'nginx', 'security', 'processes', 'deployments', 'monitoring', 'logs', 'health', 'terminal', 'files', 'danger'];
+        var allowed = ['general', 'environment', 'runtime', 'nginx', 'security', 'redirects', 'processes', 'deployments', 'monitoring', 'logs', 'health', 'terminal', 'files', 'danger'];
         var params = new URLSearchParams(window.location.search);
         var requested = params.get('tab');
         var tab = allowed.indexOf(requested) === -1 ? 'general' : requested;

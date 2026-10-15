@@ -106,7 +106,7 @@ class WebsiteSwitch
     public function delete(Website $website): void
     {
         $tunnel = $website->tunnel;
-        $domains = $website->domains();
+        $domains = $website->hostnames();
         $this->host->removeWebsite($website);
         $website->delete();
 

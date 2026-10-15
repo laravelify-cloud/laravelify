@@ -32,6 +32,7 @@ use App\Mcp\Tools\RunBackup;
 use App\Mcp\Tools\RunCommand;
 use App\Mcp\Tools\ServerStatus;
 use App\Mcp\Tools\SetDomains;
+use App\Mcp\Tools\SetRedirects;
 use App\Mcp\Tools\SetWebsiteEnabled;
 use App\Mcp\Tools\SyncCloudflare;
 use App\Mcp\Tools\UpdateEnvironment;
@@ -56,6 +57,7 @@ use Laravel\Mcp\Server\Attributes\Version;
     - Domains: one website can answer on many domains, so one app never needs a second website [set-domains, or domain / include_www /
       aliases in create-website]. include_www adds www.<domain>. nginx, the Cloudflare tunnel and (with an API token in Settings → Cloudflare)
       Cloudflare DNS are all updated; if the result has "problems" or a note about the token, tell the user exactly what it says. [sync-cloudflare]
+    - Redirects: send a domain (apply.coupons, www.apply.coupons) to this site or any URL, or one page to another [set-redirects, the complete list each time].
     - Look: websites, groups, settings, ports, server load and services [list-websites, get-website, list-groups, list-ports, server-status, list-site-types, list-sources].
     - Change a website: settings, branch, commands, versions [update-website]; environment variables [get-environment (secrets hidden), update-environment];
       nginx [get-nginx, update-nginx, rolled back when rejected]; on or off [set-website-enabled]; restart its workers or PM2 app [restart-website].
@@ -102,6 +104,7 @@ class LaravelifyServer extends Server
         CreateWebsite::class,
         UpdateWebsite::class,
         SetDomains::class,
+        SetRedirects::class,
         SyncCloudflare::class,
         DeleteWebsite::class,
         SetWebsiteEnabled::class,

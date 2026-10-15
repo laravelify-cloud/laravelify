@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.23] - 2026-10-15
+
+- **Redirects from the panel.** A new **Redirects** tab on every website (Settings group). A domain redirect sends another domain, like `apply.coupons` or `www.apply.coupons`, to this site or any URL (path and query kept by default; 301, 302, 307, or 308), and a page redirect sends `/old-page` (or a whole folder) to a new path or URL. Saving writes managed blocks into the site's nginx file (tested first, rolled back when rejected), and redirecting domains are added to the Cloudflare tunnel and DNS like the site's other domains. The security include (basic auth, blocked IPs) skips the redirect servers, and a domain used as a redirect cannot be taken by another website. MCP gets `set-redirects` (37 tools).
+
 ## [0.3.0-beta.22] - 2026-10-15
 
 - **Log times follow your timezone.** The Logs tab showed times as the app wrote them (UTC unless its `.env` sets `APP_TIMEZONE`). The viewer now shows the timestamp at the start of each line in your timezone (Settings → General, or your browser's), for Laravel and worker logs, nginx's error log, and nginx's access log (its `+0000` becomes your offset). The clock button above the log switches back to the original times, search and copy follow what you see, and a timestamp inside a message is never changed.

@@ -3,7 +3,7 @@
     $publicUrl = $website->publicUrl();
     $repositoryUrl = preg_match('#^https?://#', (string) $website->repository) === 1 ? preg_replace('/\.git$/', '', (string) $website->repository) : null;
     $navGroups = [
-        'settings' => ['Settings', ['general' => ['General', 'settings'], 'environment' => ['Environment', 'variables'], 'runtime' => ['Runtime', 'runtime'], 'nginx' => ['Nginx', 'nginx'], 'security' => ['Security', 'shield']]],
+        'settings' => ['Settings', ['general' => ['General', 'settings'], 'environment' => ['Environment', 'variables'], 'runtime' => ['Runtime', 'runtime'], 'nginx' => ['Nginx', 'nginx'], 'security' => ['Security', 'shield'], 'redirects' => ['Redirects', 'arrow-up-right']]],
         'observe' => ['Observe', ['monitoring' => ['Monitoring', 'chart'], 'deployments' => ['Deployments', 'deployments'], 'logs' => ['Logs', 'logs'], 'health' => ['Health', 'pulse'], 'processes' => ['Processes', 'processes'], 'terminal' => ['Terminal', 'terminal'], 'files' => ['Files', 'files']]],
         'operations' => ['Operations', ['danger' => ['Danger zone', 'danger']]],
     ];
@@ -375,6 +375,48 @@
                     @error('nginx_config') <p class="error px-4 pb-3">{{ $message }}</p> @enderror
                 </form>
             </x-layer-card>
+
+            {{-- Redirects --}}
+            <form x-show="tab === 'redirects'" x-cloak wire:submit="saveRedirects">
+                <x-layer-card title="Redirects" helper="Send a domain, or a page, somewhere else. Saving rewrites nginx and adds redirecting domains to the tunnel and DNS.">
+                    <x-slot:actions>
+                        <button class="btn" type="button" wire:click="addRedirect('path')">Add page redirect</button>
+                        <button class="btn" type="button" wire:click="addRedirect('domain')">Add domain redirect</button>
+                        <button class="btn btn-primary" type="submit">Save and apply</button>
+                    </x-slot:actions>
+                    @error('redirects') <p class="error mb-3">{{ $message }}</p> @enderror
+                    <div class="flex flex-col gap-3">
+                        @forelse ($redirect_rows as $index => $row)
+                            <div class="rounded-lg border border-line bg-recessed p-3" wire:key="redirect-{{ $index }}">
+                                <div class="grid gap-2 sm:grid-cols-[1fr_auto_1fr]">
+                                    <input class="input font-mono text-[13px]" type="text" wire:model="redirect_rows.{{ $index }}.from" spellcheck="false" placeholder="apply.coupons  or  /old-page" aria-label="Redirect from">
+                                    <span class="hidden items-center text-muted sm:flex">→</span>
+                                    <input class="input font-mono text-[13px]" type="text" wire:model="redirect_rows.{{ $index }}.to" spellcheck="false" placeholder="{{ str_starts_with((string) ($row['from'] ?? ''), '/') ? '/new-page  or  https://example.com/page' : ($website->domain ? 'blank = https://'.$website->domain : 'https://example.com') }}" aria-label="Redirect to">
+                                </div>
+                                <div class="mt-2 flex flex-wrap items-center gap-3 text-[12.5px]">
+                                    <select class="input w-auto" wire:model="redirect_rows.{{ $index }}.code" aria-label="Redirect type">
+                                        @foreach (\App\Support\Redirects::CODES as $code => $label)
+                                            <option value="{{ $code }}">{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                    @if (str_starts_with((string) ($row['from'] ?? ''), '/'))
+                                        <select class="input w-auto" wire:model="redirect_rows.{{ $index }}.match" aria-label="Match">
+                                            <option value="exact">Only this exact page</option>
+                                            <option value="prefix">This folder and everything under it</option>
+                                        </select>
+                                    @else
+                                        <label class="flex items-center gap-1.5"><input type="checkbox" wire:model="redirect_rows.{{ $index }}.keep_path"> Keep the path and query (example.com/a → target/a)</label>
+                                    @endif
+                                    <button class="btn btn-ghost ml-auto" type="button" wire:click="removeRedirect({{ $index }})"><x-menu-icon name="trash" class="size-4" /> Remove</button>
+                                </div>
+                                @error('redirects.'.$index) <p class="error mt-2">{{ $message }}</p> @enderror
+                            </div>
+                        @empty
+                            <p class="text-[13px] text-muted">No redirects yet. A domain redirect sends another domain (like <code>apply.coupons</code> or <code>www.apply.coupons</code>) to this site or any URL; a page redirect sends <code>/old-page</code> to a new page.</p>
+                        @endforelse
+                    </div>
+                </x-layer-card>
+            </form>
 
             {{-- Security --}}
             <form class="flex flex-col gap-6" wire:submit="saveSecurity" x-show="tab === 'security'" x-cloak>

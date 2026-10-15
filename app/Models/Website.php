@@ -26,6 +26,7 @@ class Website extends Model
         'type',
         'domain',
         'aliases',
+        'redirects',
         'repository',
         'branch',
         'php_version',
@@ -80,6 +81,7 @@ class Website extends Model
         return [
             'enabled' => 'boolean',
             'aliases' => 'array',
+            'redirects' => 'array',
             'enable_reverb' => 'boolean',
             'provision_database' => 'boolean',
             'db_password' => 'encrypted',
@@ -298,6 +300,30 @@ class Website extends Model
     public function domains(): array
     {
         return array_values(array_unique(array_filter([$this->domain, ...(array) ($this->aliases ?? [])])));
+    }
+
+    /**
+     * Domains that only redirect somewhere else (apply.coupons → supercell.apply.coupons).
+     *
+     * @return list<string>
+     */
+    public function redirectHosts(): array
+    {
+        return array_values(array_unique(array_filter(array_map(
+            fn ($rule): ?string => is_array($rule) && isset($rule['from']) && ! str_starts_with((string) $rule['from'], '/') ? (string) $rule['from'] : null,
+            (array) ($this->redirects ?? []),
+        ))));
+    }
+
+    /**
+     * Every hostname this website's nginx answers for: its domains and the domains that redirect.
+     * These are the hostnames that need a Cloudflare tunnel route and a DNS record.
+     *
+     * @return list<string>
+     */
+    public function hostnames(): array
+    {
+        return array_values(array_unique([...$this->domains(), ...$this->redirectHosts()]));
     }
 
     public function publicUrl(): ?string

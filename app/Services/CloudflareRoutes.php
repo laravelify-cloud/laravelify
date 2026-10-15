@@ -32,7 +32,7 @@ class CloudflareRoutes
         }
 
         $service = 'http://127.0.0.1:'.($website->http_port ?: 80);
-        $desired = array_fill_keys($website->domains(), $service);
+        $desired = array_fill_keys($website->hostnames(), $service);
 
         return $this->reconcile($tunnel, $desired, array_values(array_diff($removed, array_keys($desired))));
     }

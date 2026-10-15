@@ -14,9 +14,12 @@ use App\Services\HostWriter;
 use App\Services\ServerProcesses;
 use App\Services\SiteSecurity;
 use App\Services\WebsiteDomains;
+use App\Services\WebsiteRedirects;
 use App\Services\WebsiteSwitch;
 use App\Support\BuildOutput;
+use App\Support\Redirects;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Renderless;
 use Throwable;
@@ -31,6 +34,13 @@ class Show extends PanelComponent
 
     /** Other domains that open this website, one per line. */
     public string $aliases_text = '';
+
+    /**
+     * Redirect rows of the Redirects tab.
+     *
+     * @var list<array{from: string, to: string, code: int, keep_path: bool, match: string}>
+     */
+    public array $redirect_rows = [];
 
     public string $http_port = '';
 
@@ -126,7 +136,7 @@ class Show extends PanelComponent
         }
 
         $previousTunnel = $this->website->tunnel;
-        $previousDomains = $this->website->domains();
+        $previousDomains = $this->website->hostnames();
 
         $this->website->update([
             'name' => $this->name,
@@ -250,6 +260,43 @@ class Show extends PanelComponent
             $this->toast('Environment saved. Applying it on the server failed: '.$exception->getMessage(), 'error');
         }
 
+        $this->saved();
+    }
+
+    public function addRedirect(string $kind = 'domain'): void
+    {
+        $this->redirect_rows[] = ['from' => $kind === 'path' ? '/' : '', 'to' => '', 'code' => 301, 'keep_path' => true, 'match' => 'exact'];
+    }
+
+    public function removeRedirect(int $index): void
+    {
+        unset($this->redirect_rows[$index]);
+        $this->redirect_rows = array_values($this->redirect_rows);
+    }
+
+    public function saveRedirects(WebsiteRedirects $redirects): void
+    {
+        $this->resetErrorBag();
+
+        try {
+            $report = $redirects->apply($this->website, $this->redirect_rows);
+        } catch (ValidationException $exception) {
+            foreach ($exception->errors() as $key => $messages) {
+                $this->addError($key, $messages[0]);
+            }
+
+            $this->toast(collect($exception->errors())->flatten()->first(), 'error');
+
+            return;
+        }
+
+        $this->website->refresh();
+        $this->fillFromWebsite();
+        $problems = CloudflareRoutes::problems($report);
+
+        $problems === []
+            ? $this->toast('Redirects saved and applied.')
+            : $this->toast('Redirects saved, but Cloudflare needs attention: '.implode(' ', $problems), 'warning');
         $this->saved();
     }
 
@@ -522,7 +569,7 @@ class Show extends PanelComponent
         }
 
         $tunnel = $this->website->tunnel;
-        $domains = $this->website->domains();
+        $domains = $this->website->hostnames();
         $group = $this->website->group;
 
         try {
@@ -579,6 +626,7 @@ class Show extends PanelComponent
         $this->domain = $this->website->domain ?? '';
         $this->aliases_text = implode('
 ', (array) ($this->website->aliases ?? []));
+        $this->redirect_rows = Redirects::normalize((array) ($this->website->redirects ?? []));
         $this->http_port = $this->website->http_port ? (string) $this->website->http_port : '';
         $this->repository = $this->website->repository ?? '';
         $this->branch = $this->website->branch;

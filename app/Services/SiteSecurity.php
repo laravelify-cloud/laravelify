@@ -67,6 +67,14 @@ class SiteSecurity
         $line = $this->includeLine($website);
         $config = (string) $website->nginx_config;
 
+        // The panel's own redirect servers carry no security rules (a login prompt on a redirect helps no one).
+        $redirects = '';
+
+        if (preg_match('/\r?\n*# laravelify-redirects:start.*?# laravelify-redirects:end[ \t]*\r?\n?/s', $config, $found) === 1) {
+            $redirects = $found[0];
+            $config = str_replace($redirects, '', $config);
+        }
+
         // After the server_name directive (also with a trailing comment or Windows line
         // endings), or, when a block has none, right after its opening "server {".
         foreach (['/^([ \t]*server_name\b[^;]*;[^\r\n]*?)(\r?)$/m', '/^([ \t]*server\s*\{[^\r\n]*?)(\r?)$/m'] as $pattern) {
@@ -79,7 +87,7 @@ class SiteSecurity
             );
 
             if (is_string($updated) && $count > 0) {
-                $website->nginx_config = $updated;
+                $website->nginx_config = $updated.$redirects;
 
                 return true;
             }

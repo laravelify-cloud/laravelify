@@ -15,7 +15,7 @@ class WebsiteDomains
 {
     public const MAX_ALIASES = 20;
 
-    private const HOST = '/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/';
+    public const HOST = '/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/';
 
     public function __construct(
         private ConfigRenderer $renderer,
@@ -84,6 +84,12 @@ class WebsiteDomains
                 break;
             }
 
+            if ($current && in_array($alias, $current->redirectHosts(), true)) {
+                $errors['aliases'] = $alias.' is a redirect of this website (Redirects tab). Remove the redirect to serve it instead.';
+
+                break;
+            }
+
             if ($alias === $domain) {
                 $errors['aliases'] = $alias.' is already the main domain.';
 
@@ -111,8 +117,8 @@ class WebsiteDomains
     {
         return Website::query()
             ->when($current?->exists, fn ($query) => $query->whereKeyNot($current->id))
-            ->get(['id', 'name', 'domain', 'aliases'])
-            ->first(fn (Website $website): bool => in_array($host, $website->domains(), true));
+            ->get(['id', 'name', 'domain', 'aliases', 'redirects'])
+            ->first(fn (Website $website): bool => in_array($host, $website->hostnames(), true));
     }
 
     /**
@@ -129,7 +135,7 @@ class WebsiteDomains
         $aliases = array_values(array_diff($aliases, [$domain]));
         $this->validate($website, $domain, $aliases);
 
-        $old = $website->domains();
+        $old = $website->hostnames();
         $previous = ['domain' => $website->domain, 'aliases' => $website->aliases, 'nginx_config' => $website->nginx_config];
 
         $website->domain = $domain;
@@ -137,7 +143,7 @@ class WebsiteDomains
         $website->nginx_config = $this->renderer->withServerNames($website, (string) $website->nginx_config);
         $website->save();
 
-        if ($old !== $website->domains() || $website->wasChanged('nginx_config')) {
+        if ($old !== $website->hostnames() || $website->wasChanged('nginx_config')) {
             try {
                 $this->host->writeNginx($website);
             } catch (Throwable $exception) {
@@ -155,6 +161,6 @@ class WebsiteDomains
 
         $this->renderer->refreshTunnel($website->tunnel);
 
-        return $this->cloudflare->sync($website, array_values(array_diff($old, $website->domains())));
+        return $this->cloudflare->sync($website, array_values(array_diff($old, $website->hostnames())));
     }
 }

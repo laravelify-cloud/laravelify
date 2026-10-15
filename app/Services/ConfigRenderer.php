@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CloudflareTunnel;
 use App\Models\Website;
+use App\Support\Redirects;
 
 class ConfigRenderer
 {
@@ -68,7 +69,7 @@ class ConfigRenderer
         $lines = ['ingress:'];
 
         foreach ($tunnel->websites()->orderBy('domain')->get() as $website) {
-            foreach ($website->domains() as $domain) {
+            foreach ($website->hostnames() as $domain) {
                 $lines[] = '  - hostname: '.$domain;
                 $lines[] = '    service: http://127.0.0.1:'.($website->http_port ?: 80);
             }
@@ -531,6 +532,23 @@ ENV;
         $updated = preg_replace('/(^[ 	]*|\{\s*)server_name\s+[^;]*;/m', '${1}server_name '.$names.';', $nginx, 1, $count);
 
         return $count === 1 && is_string($updated) ? $updated : $nginx;
+    }
+
+    /**
+     * The site's nginx file with its managed redirects (Redirects tab) rewritten: path redirects as
+     * locations right after its first server_name, domain redirects as their own server blocks at the end.
+     */
+    public function withRedirects(Website $website, string $nginx): string
+    {
+        $nginx = (string) preg_replace('/\r?\n*# laravelify-redirects:start.*?# laravelify-redirects:end[ \t]*\r?\n?/s', "\n", $nginx);
+        $nginx = (string) preg_replace('/[ \t]*# laravelify-path-redirects:start.*?# laravelify-path-redirects:end[ \t]*\r?\n/s', '', $nginx);
+        $blocks = Redirects::nginx($website);
+
+        if ($blocks['paths'] !== '') {
+            $nginx = (string) preg_replace_callback('/^[ \t]*server_name\b[^;]*;[^\r\n]*$/m', fn (array $match): string => $match[0]."\n".$blocks['paths'], $nginx, 1);
+        }
+
+        return $blocks['servers'] === '' ? rtrim($nginx)."\n" : rtrim($nginx)."\n\n".$blocks['servers']."\n";
     }
 
     /**
