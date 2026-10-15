@@ -541,6 +541,7 @@ class Show extends PanelComponent
                 ? Deployment::query()->find($this->deploymentId)
                 : $this->website->deployments()->first(),
             'webhookUrl' => url('/hooks/github/'.$this->website->slug),
+            'deployApp' => $this->website->githubApp,
         ])->layout('layouts.app')->title($this->website->name);
     }
 

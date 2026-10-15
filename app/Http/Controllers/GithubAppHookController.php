@@ -27,6 +27,12 @@ class GithubAppHookController extends Controller
 
         $event = $request->header('X-GitHub-Event');
 
+        // The App also sends installation, pull request, and other events. Only pushes deploy,
+        // and the others must not replace each website's last deploy status.
+        if ($event !== 'push') {
+            return response()->json(['ok' => true, 'ignored' => true, 'reason' => 'only push events deploy']);
+        }
+
         foreach ($githubApp->websites as $website) {
             if ($fullName === '' || ! $this->repositoryMatches($website, $fullName)) {
                 continue;

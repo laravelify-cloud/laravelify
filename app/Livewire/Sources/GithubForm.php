@@ -20,7 +20,7 @@ class GithubForm extends PanelComponent
 
     public string $git_port = '22';
 
-    public bool $pull_request_previews = true;
+    public bool $pull_request_previews = false;
 
     public bool $github_runners = false;
 

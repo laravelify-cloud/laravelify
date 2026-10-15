@@ -16,10 +16,10 @@
 
     <div>
         <p class="font-medium">Use this App for</p>
-        <p class="text-muted">Deploying repositories is always included. These choices set the permissions sent to GitHub.</p>
+        <p class="text-muted">Automatic deploys on every push are always included: sites using this App need no repository webhook. These choices add permissions sent to GitHub.</p>
         <label class="mt-2 flex items-center gap-2">
             <input type="checkbox" wire:model="pull_request_previews">
-            <span>Pull request previews</span>
+            <span>Pull request previews <span class="text-[12px] text-muted">(not used yet, leave off unless you plan to)</span></span>
         </label>
         <label class="mt-1 flex items-center gap-2">
             <input type="checkbox" wire:model.live="github_runners">

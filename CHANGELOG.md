@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.14] - 2026-10-15
+
+- **GitHub App sites deploy automatically, and the page now says so.** A site that uses a connected GitHub App shows **Automatic** on the Deployments tab with "Ready. Push to main and it deploys", instead of "Waiting for GitHub" and the steps for a repository webhook (those are still there under "Use a repository webhook instead").
+- Events from the App other than pushes (pull requests, installations) no longer replace each site's last deploy status with "Ignored a pull_request event".
+- New GitHub Apps leave **Pull request previews** off: Laravelify does not build previews yet, so the App no longer asks for that permission.
+
 ## [0.3.0-beta.13] - 2026-10-15
 
 - **Security → Access:** a browser sign-in box in front of the panel and phpMyAdmin, before any page loads. It can ask for your authenticator code, a username and password, or the password followed by the code. Allowed IPs (single IPs or CIDR ranges, IPv4 and IPv6) skip it, a right answer is remembered for 1 to 72 hours, and five wrong answers block an IP for 15 minutes. Webhooks and the health check stay open. phpMyAdmin is protected through nginx `auth_request`, so its own login is untouched. If you lock yourself out: `sudo -u www-data php /opt/laravelify/artisan laravelify:access-off`.

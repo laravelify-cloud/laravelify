@@ -585,18 +585,37 @@
                         </label>
                     </x-slot:actions>
 
+                    @php
+                        $viaApp = $deployApp !== null && $deployApp->isConnected();
+                    @endphp
+
                     <div class="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-recessed px-3 py-2.5 text-[13px]">
-                        <span class="status-badge" style="--status-color: {{ ! $website->auto_deploy ? 'var(--color-muted)' : ($website->last_webhook_at ? 'var(--color-success)' : 'var(--color-warning)') }}">
-                            {{ ! $website->auto_deploy ? 'Paused' : ($website->last_webhook_at ? 'Connected' : 'Waiting for GitHub') }}
+                        <span class="status-badge" style="--status-color: {{ ! $website->auto_deploy ? 'var(--color-muted)' : ($website->last_webhook_at || $viaApp ? 'var(--color-success)' : 'var(--color-warning)') }}">
+                            {{ ! $website->auto_deploy ? 'Paused' : ($viaApp ? 'Automatic' : ($website->last_webhook_at ? 'Connected' : 'Waiting for GitHub')) }}
                         </span>
                         @if ($website->last_webhook_at)
                             <span class="min-w-0 flex-1">{{ $website->last_webhook_result }}</span>
                             <span class="text-[12px] text-muted" title="@datetime($website->last_webhook_at)">@ago($website->last_webhook_at)</span>
+                        @elseif ($viaApp)
+                            <span class="min-w-0 flex-1 text-muted">Ready. Push to <code>{{ $website->branch }}</code> and it deploys; the first push shows up here.</span>
                         @else
                             <span class="min-w-0 flex-1 text-muted">No delivery yet. Add the webhook below in GitHub; its first ping shows up here.</span>
                         @endif
                     </div>
 
+                    @if ($viaApp)
+                        <x-callout type="success" title="Set up by the GitHub App {{ $deployApp->name }}">
+                            GitHub sends every push to the App, and the App's webhook deploys this site. Nothing to add in the repository. If pushes do not arrive, check that the App is installed on this repository (GitHub → Settings → Applications → {{ $deployApp->name }} → Repository access).
+                        </x-callout>
+                    @endif
+
+                    <div @if ($viaApp) x-data="{ manual: false }" @endif>
+                    @if ($viaApp)
+                        <button class="mt-3 text-[12.5px] text-muted hover:text-ink" type="button" @click="manual = ! manual">
+                            <x-menu-icon name="chevron-right" class="inline size-3.5 transition-transform" ::class="manual && 'rotate-90'" /> Use a repository webhook instead
+                        </button>
+                    @endif
+                    <div @if ($viaApp) class="mt-3" x-show="manual" x-cloak @endif>
                     <dl class="flex flex-col gap-3 text-[13px]">
                         <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center">
                             <dt class="w-28 shrink-0 text-muted">Payload URL</dt>
@@ -623,7 +642,11 @@
                         <li>Choose <b class="text-ink-dim">Just the push event</b> and save. GitHub sends a ping, which appears above.</li>
                         <li>Push to <code>{{ $website->branch }}</code>: the site pulls, installs, migrates, and caches, and Telegram tells you how it went.</li>
                     </ol>
-                    <p class="mt-3 text-[12px] text-muted">Sites connected through a GitHub App deploy from the App's webhook instead and need no setup here.</p>
+                    @unless ($viaApp)
+                        <p class="mt-3 text-[12px] text-muted">Sites connected through a GitHub App deploy from the App's webhook instead and need no setup here.</p>
+                    @endunless
+                    </div>
+                    </div>
                 </x-layer-card>
             </div>
 
