@@ -290,7 +290,7 @@ class DeployOperationsTest extends TestCase
         $git = collect($runner->commands)->filter(fn (array $command): bool => $command[0] === 'git')->map(fn (array $command): string => implode(' ', $command));
 
         $this->assertTrue($git->contains(fn (string $line): bool => str_contains($line, 'remote set-url origin https://github.com/FFKRISTAL-AZ/chat-app-widget-laravel.git')));
-        $this->assertTrue($git->contains(fn (string $line): bool => str_contains($line, 'fetch https://x-access-token:ghp_freshToken123@github.com/FFKRISTAL-AZ/chat-app-widget-laravel.git +refs/heads/main:refs/remotes/origin/main')));
+        $this->assertTrue($git->contains(fn (string $line): bool => str_contains($line, 'fetch -- https://x-access-token:ghp_freshToken123@github.com/FFKRISTAL-AZ/chat-app-widget-laravel.git +refs/heads/main:refs/remotes/origin/main')));
         $this->assertFalse($git->contains(fn (string $line): bool => str_contains($line, 'fetch origin')));
         $this->assertStringNotContainsString('ghp_freshToken123', (string) $deployment->fresh()->log);
     }

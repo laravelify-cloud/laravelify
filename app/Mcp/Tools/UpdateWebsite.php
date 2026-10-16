@@ -6,6 +6,7 @@ use App\Mcp\Concerns\DescribesWebsites;
 use App\Services\ConfigRenderer;
 use App\Services\HostWriter;
 use App\Support\BuildOutput;
+use App\Support\GitInput;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -31,8 +32,8 @@ class UpdateWebsite extends Tool
 
         $rules = [
             'name' => ['string', 'max:80'],
-            'repository' => ['nullable', 'string', 'max:500'],
-            'branch' => ['string', 'max:120'],
+            'repository' => ['nullable', 'string', 'max:500', fn (string $attribute, mixed $value, \Closure $fail) => GitInput::validRepository((string) $value) ? null : $fail('Use a Git URL like https://github.com/owner/repo.git, owner/repo, or a folder path.')],
+            'branch' => [fn (string $attribute, mixed $value, \Closure $fail) => GitInput::validBranch((string) $value) ? null : $fail('That is not a branch name.'), 'string', 'max:120'],
             'auto_deploy' => ['boolean'],
             'github_app_id' => ['nullable', 'integer', 'exists:github_apps,id'],
             'php_version' => ['string', Rule::in(config('laravelify.php_versions'))],

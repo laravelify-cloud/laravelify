@@ -3,6 +3,7 @@
 use App\Http\Controllers\AccessGateController;
 use App\Http\Middleware\PanelAccess;
 use App\Http\Middleware\PanelGate;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -20,7 +21,9 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->trustProxies(at: '*');
+        // Only this server's own proxies (cloudflared, nginx) may say who the visitor is; a forwarded
+        // header from anywhere else could fake the address, the scheme, or the host of links.
+        $middleware->trustProxies(at: ['127.0.0.1', '::1']);
 
         $middleware->encryptCookies(except: [
             'laravelify-theme',
@@ -29,6 +32,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->web(append: [
+            SecurityHeaders::class,
             PanelAccess::class,
             PanelGate::class,
         ]);

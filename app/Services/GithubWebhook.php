@@ -10,7 +10,8 @@ class GithubWebhook
 
     public function valid(string $secret, string $body, ?string $header): bool
     {
-        if ($header === null || ! str_starts_with($header, 'sha256=')) {
+        // Without a secret anyone could sign a delivery (an HMAC with an empty key).
+        if (trim($secret) === '' || $header === null || ! str_starts_with($header, 'sha256=')) {
             return false;
         }
 

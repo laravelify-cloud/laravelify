@@ -208,8 +208,17 @@ class PanelTest extends TestCase
             ]),
         ]);
 
+        // Not signed in: the callback sends the browser to the login first.
+        $this->get(route('hooks.github-app.callback', ['githubApp' => $app, 'code' => 'the-code']))
+            ->assertRedirect(route('login'));
+
+        $this->signIn();
         $this->get(route('hooks.github-app.callback', ['githubApp' => $app, 'code' => 'the-code']))
             ->assertRedirect('https://github.com/apps/calm-lynx/installations/new');
+
+        // Registered once: a second (or forged) callback cannot replace its keys.
+        $this->get(route('hooks.github-app.callback', ['githubApp' => $app, 'code' => 'other-code']))
+            ->assertRedirect(route('sources.github.show', $app));
 
         Http::assertSent(function ($request): bool {
             return $request->url() === 'https://api.github.com/app-manifests/the-code/conversions'

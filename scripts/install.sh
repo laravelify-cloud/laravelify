@@ -502,10 +502,18 @@ if [[ ! -f "$APP_ROOT/.env" ]]; then
   cp "$APP_ROOT/.env.example" "$APP_ROOT/.env"
 fi
 
+if [[ ! -s /tmp/laravelify-install/setup-token ]]; then
+  existing_token="$(grep -E '^LARAVELIFY_SETUP_TOKEN=' "$APP_ROOT/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+  printf '%s' "${existing_token:-$(openssl rand -hex 20)}" > /tmp/laravelify-install/setup-token
+  chmod 600 /tmp/laravelify-install/setup-token
+fi
+SETUP_TOKEN="$(cat /tmp/laravelify-install/setup-token)"
+
 PANEL_DOMAIN="$PANEL_DOMAIN" php <<'PHP'
 <?php
 $path = "/opt/laravelify/.env";
 $password = file_get_contents("/tmp/laravelify-install/password");
+$setupToken = trim((string) @file_get_contents("/tmp/laravelify-install/setup-token"));
 $values = [
   "APP_ENV" => "production",
   "APP_DEBUG" => "false",
@@ -524,6 +532,8 @@ $values = [
   "REDIS_PASSWORD" => "null",
   "REDIS_PORT" => "6379",
   "LARAVELIFY_HOST_COMMANDS" => "true",
+  // Only the person who ran the installer can create the superadmin: /setup needs this token.
+  "LARAVELIFY_SETUP_TOKEN" => $setupToken,
 ];
 $contents = file_get_contents($path);
 foreach ($values as $key => $value) {
@@ -727,7 +737,8 @@ ufw --force enable
 
 echo
 echo "Laravelify is installed."
-echo "Panel: https://${PANEL_DOMAIN}/setup"
+echo "Panel: https://${PANEL_DOMAIN}/setup?token=${SETUP_TOKEN}"
+echo "Open that link to create the superadmin. Without the token, /setup does not open."
 echo "phpMyAdmin: https://${PHPMYADMIN_DOMAIN}/  user root, and the MySQL root password you just set."
 echo "In Cloudflare, send ${PANEL_DOMAIN} and ${PHPMYADMIN_DOMAIN} to http://localhost:80."
 echo "Redis has no password yet. Set one in the panel under Server, Redis."

@@ -16,10 +16,24 @@ class CreateAdmin extends Component
 
     public string $password_confirmation = '';
 
+    public bool $allowed = false;
+
     public function mount(): void
     {
         if (User::query()->exists()) {
             $this->redirect(route('login'));
+
+            return;
+        }
+
+        $expected = (string) config('laravelify.setup_token');
+        $given = (string) request()->query('token', '');
+
+        // The installer prints /setup?token=...; without it, someone who found the panel first
+        // could make themselves the superadmin.
+        if ($expected === '' || hash_equals($expected, $given) || session('setup_token_ok') === true) {
+            session(['setup_token_ok' => true]);
+            $this->allowed = true;
         }
     }
 
@@ -27,6 +41,12 @@ class CreateAdmin extends Component
     {
         if (User::query()->exists()) {
             $this->redirect(route('login'));
+
+            return;
+        }
+
+        if ((string) config('laravelify.setup_token') !== '' && session('setup_token_ok') !== true) {
+            $this->addError('email', 'Open the setup link the installer printed (it ends with ?token=...).');
 
             return;
         }

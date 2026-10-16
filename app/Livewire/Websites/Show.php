@@ -17,6 +17,7 @@ use App\Services\WebsiteDomains;
 use App\Services\WebsiteRedirects;
 use App\Services\WebsiteSwitch;
 use App\Support\BuildOutput;
+use App\Support\GitInput;
 use App\Support\Redirects;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -108,8 +109,8 @@ class Show extends PanelComponent
             'http_port' => $this->http_port === ''
                 ? ['nullable']
                 : ['integer', 'between:80,65535', Rule::unique('websites', 'http_port')->ignore($this->website->id), Rule::notIn([8000, 3306, 6379])],
-            'repository' => ['nullable', 'string', 'max:500'],
-            'branch' => ['required', 'string', 'max:120'],
+            'repository' => ['nullable', 'string', 'max:500', fn (string $attribute, mixed $value, \Closure $fail) => GitInput::validRepository((string) $value) ? null : $fail('Use a Git URL like https://github.com/owner/repo.git, owner/repo, or a folder path.')],
+            'branch' => [fn (string $attribute, mixed $value, \Closure $fail) => GitInput::validBranch((string) $value) ? null : $fail('That is not a branch name.'), 'required', 'string', 'max:120'],
             'cloudflare_tunnel_id' => $this->cloudflare_tunnel_id === ''
                 ? ['nullable']
                 : ['integer', 'exists:cloudflare_tunnels,id'],

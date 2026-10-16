@@ -12,6 +12,18 @@ class GithubAppManifestController extends Controller
 {
     public function callback(Request $request, GithubApp $githubApp): RedirectResponse
     {
+        // GitHub sends the browser back here, so the signed-in admin is here too. These URLs sit
+        // under /hooks (open for webhooks), so the sign-in is checked here.
+        if ($denied = $this->requireAdmin()) {
+            return $denied;
+        }
+
+        // A connected App keeps its keys: a second callback (or a forged one) cannot replace them.
+        if (filled($githubApp->app_id)) {
+            return redirect()->route('sources.github.show', $githubApp)
+                ->with('status', 'This GitHub App is already registered.');
+        }
+
         $code = (string) $request->query('code', '');
 
         if ($code === '') {
@@ -57,14 +69,29 @@ class GithubAppManifestController extends Controller
 
     public function install(Request $request, GithubApp $githubApp): RedirectResponse
     {
+        if ($denied = $this->requireAdmin()) {
+            return $denied;
+        }
+
         $installationId = $request->query('installation_id');
 
-        if (is_scalar($installationId) && (string) $installationId !== '') {
+        if (is_scalar($installationId) && ctype_digit((string) $installationId)) {
             $githubApp->installation_id = (string) $installationId;
             $githubApp->save();
         }
 
         return redirect()->route('sources.github.show', $githubApp)
             ->with('status', $githubApp->isConnected() ? 'GitHub App registered.' : 'GitHub App created. Install it to finish.');
+    }
+
+    private function requireAdmin(): ?RedirectResponse
+    {
+        $user = auth()->user();
+
+        if ($user === null || ! $user->hasConfirmedTwoFactor()) {
+            return redirect()->guest(route('login'));
+        }
+
+        return null;
     }
 }

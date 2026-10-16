@@ -7,6 +7,7 @@ use App\Models\Setting;
 use App\Models\Website;
 use App\Support\BuildOutput;
 use App\Support\EnvFile;
+use App\Support\GitInput;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Throwable;
@@ -132,8 +133,9 @@ class Deployer
             // Never trust the stored origin: it may hold an expired GitHub App token from
             // an earlier clone. Keep origin token-free and fetch with a fresh token each time.
             $this->must($this->runner->run(['git', '-C', $path, 'remote', 'set-url', 'origin', (string) $website->repository]), $log);
+            GitInput::assertSafe((string) $website->repository, $website->branch);
             $this->must($this->runner->run([
-                'git', '-C', $path, 'fetch', $repository,
+                'git', '-C', $path, 'fetch', '--', $repository,
                 '+refs/heads/'.$website->branch.':refs/remotes/origin/'.$website->branch,
             ]), $log);
             $this->must($this->runner->run(['git', '-C', $path, 'checkout', '-B', $website->branch, 'origin/'.$website->branch]), $log);
@@ -146,8 +148,9 @@ class Deployer
         File::deleteDirectory($staging);
         File::ensureDirectoryExists(storage_path('app/checkouts'));
 
+        GitInput::assertSafe((string) $website->repository, $website->branch);
         $this->must($this->runner->run([
-            'git', 'clone', '--branch', $website->branch, '--single-branch', $repository, $staging,
+            'git', 'clone', '--branch', $website->branch, '--single-branch', '--', $repository, $staging,
         ]), $log);
         // The clone URL carries a short-lived token. Do not leave it in .git/config.
         $this->must($this->runner->run(['git', '-C', $staging, 'remote', 'set-url', 'origin', (string) $website->repository]), $log);

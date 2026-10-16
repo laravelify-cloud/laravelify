@@ -1,3 +1,9 @@
+@unless ($allowed)
+<div class="flex flex-col gap-3">
+    <h2 class="text-base font-medium">Open the setup link from the installer</h2>
+    <p class="text-muted">To keep anyone else from creating the superadmin, setup needs the link the installer printed at the end, like <code>https://your-panel/setup?token=...</code>. It is also in <code>/opt/laravelify/.env</code> as <code>LARAVELIFY_SETUP_TOKEN</code>.</p>
+</div>
+@else
 <form class="flex flex-col gap-4" wire:submit="save">
     <div>
         <h2 class="text-base font-medium">Create the superadmin</h2>
@@ -29,3 +35,4 @@
 
     <button class="btn btn-primary" type="submit">Continue</button>
 </form>
+@endunless

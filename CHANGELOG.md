@@ -2,6 +2,19 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.39] - 2026-10-16
+
+Security fixes from an audit of the panel, the landing site, and the docs.
+
+- **Login is rate limited.** Five wrong answers (password or authenticator code) per account and IP, or twenty per IP, pause logins for five minutes. The password and the code are both checked before a session starts; before, a right password with a wrong code signed in for a moment.
+- **First setup needs the installer's token.** `/setup` (creating the superadmin) opens only with the link the installer prints (`/setup?token=...`, also `LARAVELIFY_SETUP_TOKEN` in `.env`), so nobody who finds a fresh panel first can claim it. Existing panels are not affected.
+- **GitHub App callback and install links need the signed-in admin.** They live under `/hooks` (open for webhooks), so anyone could call them; now they send you to the login first, a registered App cannot be overwritten by a second callback, and the installation id must be a number.
+- **Only local proxies are trusted.** Forwarded headers (`X-Forwarded-For`, `-Proto`, `-Host`) are believed only from this server's own cloudflared and nginx, not from any visitor.
+- **Browser protections on every panel page:** `X-Frame-Options` and `frame-ancestors` (no clickjacking), `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, and a `Permissions-Policy`.
+- **Git values that look like options are refused.** A repository or branch starting with `-` (like `--upload-pack=...`, which runs a command) is rejected on save and before every deploy, and git gets `--` before the repository.
+- **A webhook without a secret is never accepted.**
+- Dependencies: `composer audit` and `npm audit` (panel and landing) report no known vulnerabilities.
+
 ## [0.3.0-beta.38] - 2026-10-16
 
 - **Database tool: sort by clicking a column header.** Databases (name, tables, size) and tables (name, rows, size, engine, last change); click again to reverse.
