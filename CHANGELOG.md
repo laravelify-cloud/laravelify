@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
-## [0.3.0-beta.45] - unreleased
+## [0.3.0-beta.45] - 2026-10-16
 
 - **Database tool: the grid reads rows from the server as you scroll.** No more pages: blocks of 100 rows load while you scroll, sorted and filtered in MySQL, so any table size works.
 - **Filter from a column header, like a spreadsheet.** The funnel on a header lists the column's values from the database with how many rows have each (search them, tick some, **(Empty)** for NULL), or takes a condition (contains, is exactly, starts with, a pattern, empty…). The active filter shows on the funnel and in the filters above the grid.
