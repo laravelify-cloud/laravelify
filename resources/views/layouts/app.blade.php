@@ -48,6 +48,10 @@
                         <x-menu-icon name="terminal" />
                         <span>Terminal</span>
                     </a>
+                    <a class="menu-item {{ request()->routeIs('database.*') ? 'menu-item-active' : '' }}" href="{{ route('database.index') }}" wire:navigate>
+                        <x-menu-icon name="database" />
+                        <span>Database</span>
+                    </a>
 
                     @php($sidebarLinks = \App\Support\SidebarLinks::custom())
                     @php($hasPhpMyAdmin = \App\Support\SidebarLinks::phpMyAdminAvailable())

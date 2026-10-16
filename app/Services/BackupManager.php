@@ -100,6 +100,33 @@ class BackupManager
     }
 
     /**
+     * Back up some databases now (the Database tool's Back up button), each in its own dump, through
+     * a by-hand schedule named "Database tool" so the backups are listed and kept like any other.
+     *
+     * @param  list<string>  $databases
+     */
+    public function backupDatabases(array $databases): BackupSchedule
+    {
+        $databases = array_values(array_filter($databases, fn (string $name): bool => DatabaseDumper::validName($name)));
+        $storage = BackupStorage::query()->where('is_default', true)->first() ?? BackupStorage::query()->first()
+            ?? throw new RuntimeException('Add a backup storage first (Backups → Backup storage): an S3 bucket or a folder on this server.');
+
+        $schedule = BackupSchedule::query()->firstOrCreate(
+            ['kind' => BackupSchedule::KIND_DATABASE, 'name' => 'Database tool'],
+            ['backup_storage_id' => $storage->id, 'frequency' => 'manual', 'interval' => 1, 'run_time' => '00:00', 'weekday' => 0, 'cron' => BackupCron::NEVER, 'targets' => ['all' => false, 'databases' => []], 'retention_count' => 10],
+        );
+
+        $schedule->targets = [...($schedule->targets ?? []), 'all' => false, 'databases' => $databases];
+        $schedule->save();
+
+        if (! $this->queue($schedule->load('storage'), 'manual')) {
+            throw new RuntimeException('A backup from the Database tool is already running. Try again when it is done.');
+        }
+
+        return $schedule;
+    }
+
+    /**
      * A waiting run for every target of the schedule. The runs of one go share a batch id, so the
      * list shows them together (a full backup, then each website in it).
      *

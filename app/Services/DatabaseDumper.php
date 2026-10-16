@@ -73,6 +73,38 @@ class DatabaseDumper
     }
 
     /**
+     * Dump only some tables of a database (structure and rows), for a copy before a risky change.
+     *
+     * @param  list<string>  $tables
+     */
+    public function dumpTables(string $database, array $tables, string $file): void
+    {
+        $this->assertName($database);
+        $tables = array_values(array_filter($tables, fn (string $table): bool => preg_match('/^[A-Za-z0-9_$-]{1,64}$/', $table) === 1));
+
+        if ($tables === []) {
+            throw new RuntimeException('Choose at least one table.');
+        }
+
+        $result = $this->withDefaults(fn (string $defaults) => $this->runner->run([
+            'bash', '-c',
+            'set -o pipefail; mysqldump --defaults-extra-file="$1" --single-transaction --quick --no-tablespaces --default-character-set=utf8mb4 "$2" "${@:4}" | gzip -c > "$3"',
+            '_', $defaults, $database, $file, ...$tables,
+        ]));
+
+        if ($result->skipped) {
+            touch($file);
+
+            return;
+        }
+
+        if (! $result->ok) {
+            @unlink($file);
+            throw new RuntimeException('mysqldump failed: '.$result->output);
+        }
+    }
+
+    /**
      * Load a whole dump into a database (created when it does not exist), or only some tables.
      *
      * @param  list<string>|null  $tables

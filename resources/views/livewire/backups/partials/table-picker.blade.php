@@ -12,6 +12,7 @@
         loading: false,
         error: null,
         query: '',
+        order: 'name',
         rule: '',
         cache: {},
         async open(database) {
@@ -39,7 +40,7 @@
             this.skip = this.skip.includes(entry) ? this.skip.filter((item) => item !== entry) : [...this.skip, entry].sort();
         },
         setAll(skipAll) {
-            const entries = this.tables.map((table) => this.current + '.' + table);
+            const entries = this.tables.map((table) => this.current + '.' + table.name);
             const others = this.skip.filter((item) => !entries.includes(item));
             this.skip = skipAll ? [...others, ...entries].sort() : others;
         },
@@ -48,7 +49,23 @@
         },
         get shown() {
             const query = this.query.trim().toLowerCase();
-            return query ? this.tables.filter((table) => table.toLowerCase().includes(query)) : this.tables;
+            const list = query ? this.tables.filter((table) => table.name.toLowerCase().includes(query)) : [...this.tables];
+            return this.order === 'size'
+                ? list.sort((a, b) => (b.size || 0) - (a.size || 0))
+                : list.sort((a, b) => a.name.localeCompare(b.name));
+        },
+        size(bytes) {
+            if (bytes === null || bytes === undefined) return '';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let value = bytes, unit = 0;
+            while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+            return (unit === 0 ? value : value.toFixed(1)) + ' ' + units[unit];
+        },
+        get skippedSize() {
+            return this.tables.filter((table) => this.skipped(table.name)).reduce((sum, table) => sum + (table.size || 0), 0);
+        },
+        get totalSize() {
+            return this.tables.reduce((sum, table) => sum + (table.size || 0), 0);
         },
         addRule() {
             const rule = this.rule.trim();
@@ -75,21 +92,29 @@
         <div class="table-picker-tables">
             <div class="flex flex-wrap items-center gap-2 border-b border-line p-2">
                 <input class="input h-8 min-w-0 flex-1" type="search" x-model="query" placeholder="Search tables" aria-label="Search tables">
+                <div class="segmented" role="group" aria-label="Sort tables">
+                    <button type="button" class="text-[12px]" @click="order = 'name'" :aria-pressed="order === 'name'">Name</button>
+                    <button type="button" class="text-[12px]" @click="order = 'size'" :aria-pressed="order === 'size'">Size</button>
+                </div>
                 <button class="btn btn-sm" type="button" @click="setAll(false)" :disabled="!tables.length">Back up all</button>
                 <button class="btn btn-sm" type="button" @click="setAll(true)" :disabled="!tables.length">Skip all</button>
             </div>
             <div class="table-picker-list">
                 <p class="flex items-center gap-2 p-3 text-[12.5px] text-muted" x-show="loading"><span class="loader-spinner" style="width:14px;height:14px"></span> Reading tables…</p>
                 <p class="p-3 text-[12.5px] text-danger" x-show="error && !loading" x-text="error"></p>
-                <template x-for="table in shown" :key="current + '.' + table">
-                    <label class="table-picker-row" :class="skipped(table) && 'is-skipped'">
-                        <input type="checkbox" :checked="!skipped(table)" :disabled="skip.includes('*.' + table)" @change="toggle(table)">
-                        <span class="min-w-0 flex-1 truncate font-mono text-[12.5px]" x-text="table"></span>
-                        <span class="text-[11.5px] text-muted" x-text="skip.includes('*.' + table) ? 'Skipped in every database' : (skipped(table) ? 'Skipped' : '')"></span>
+                <template x-for="table in shown" :key="current + '.' + table.name">
+                    <label class="table-picker-row" :class="skipped(table.name) && 'is-skipped'">
+                        <input type="checkbox" :checked="!skipped(table.name)" :disabled="skip.includes('*.' + table.name)" @change="toggle(table.name)">
+                        <span class="min-w-0 flex-1 truncate font-mono text-[12.5px]" x-text="table.name"></span>
+                        <span class="text-[11.5px] text-muted" x-text="skip.includes('*.' + table.name) ? 'Skipped in every database' : (skipped(table.name) ? 'Skipped' : '')"></span>
+                        <span class="w-24 shrink-0 text-right tabular-nums text-[12px] text-muted" x-text="size(table.size)" :title="table.rows !== null ? table.rows.toLocaleString() + ' rows' : ''"></span>
                     </label>
                 </template>
                 <p class="p-3 text-[12.5px] text-muted" x-show="!loading && !error && current && shown.length === 0">No tables.</p>
             </div>
+            <p class="border-t border-line px-3 py-2 text-[12px] text-muted" x-show="tables.length && totalSize > 0">
+                <span x-text="size(totalSize)"></span> in <span x-text="current"></span><template x-if="skippedSize > 0"><span> · <span x-text="size(skippedSize)"></span> skipped</span></template>
+            </p>
         </div>
     </div>
 

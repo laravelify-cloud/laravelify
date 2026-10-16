@@ -2,6 +2,16 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.36] - 2026-10-16
+
+- **New Tools → Database.** Every MySQL database with its size and tables, without leaving the panel:
+  - **Databases and tables** with rows and size, sortable and searchable, and **Back up** for one database (to your backup storage).
+  - **Rows** a page at a time (25 to 500), sorted by any column, a search in every column, and filters on single columns (contains, =, ≠, starts or ends with, regex, >, <, NULL). Click a row to see every value; **Edit**, **Add row**, and **Delete** (one or many).
+  - **Triggers, events, procedures, and functions**: view, change (if MySQL refuses the new one, the old one is put back), create, and drop.
+  - **Search everywhere**: a value in every table of every database (or chosen ones), optionally only in columns named like `firstname`, as contains, exact, starts with, or regex; or tables and columns by name. A result opens its record.
+  - **Changes (checkpoints)**: every row added, edited, or deleted and every trigger, event, procedure, or function changed here is logged with what was there before. **Undo** puts back only that row or object, so rows others added meanwhile stay; when the row changed again since, it asks before writing over it. Deleting can save a copy of the table first (restorable from the log) and start a backup of the whole database.
+- **Skip tables picker shows sizes.** Each table's size, sorting by name or size, and the total and skipped size of the database.
+
 ## [0.3.0-beta.35] - 2026-10-16
 
 - **Skip tables in database backups.** Like skipped folders in file backups: a database schedule has a **Skip tables** picker (open a database, untick tables such as cache, sessions, logs, or data that never changes), and `*.table` skips a table in every database. Skipped tables are left out of the dump with `mysqldump --ignore-table`, listed in the run's log, and not offered in its restore. A restore leaves those tables in the target database as they are.
