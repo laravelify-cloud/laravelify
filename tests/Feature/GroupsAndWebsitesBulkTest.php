@@ -52,7 +52,7 @@ class GroupsAndWebsitesBulkTest extends TestCase
         $this->mock(CommandRunner::class, function (MockInterface $mock) use ($calls, $failingSlug) {
             $mock->shouldReceive('supportsHostCommands')->andReturnTrue();
             $mock->shouldReceive('run')->andReturnUsing(function (array $command) use ($calls, $failingSlug) {
-                $calls[] = array_slice($command, -3);
+                $calls[] = array_slice($command, -4);
                 $failed = $failingSlug !== '' && in_array($failingSlug, $command, true);
 
                 return new CommandResult(! $failed, false, $command, $failed ? 'nginx: test failed' : 'ok', $failed ? 1 : 0);
@@ -89,7 +89,7 @@ class GroupsAndWebsitesBulkTest extends TestCase
 
         Livewire::test(WebsiteShow::class, ['website' => $website->fresh()])->call('setEnabled', true);
         $this->assertTrue($website->fresh()->enabled);
-        $this->assertContains(['site', 'shop', 'laravel'], $calls->getArrayCopy());
+        $this->assertContains(['site', 'shop', 'laravel', $website->fresh()->php_version], $calls->getArrayCopy());
     }
 
     public function test_a_group_turns_all_its_websites_off_and_on(): void

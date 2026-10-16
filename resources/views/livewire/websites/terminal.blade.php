@@ -36,7 +36,7 @@
             @endif
         </div>
         <div class="logs-viewer-end">
-            <span class="hidden text-[12px] text-muted lg:inline">www-data · 60s limit</span>
+            <span class="hidden text-[12px] text-muted lg:inline">{{ $runsAs }} · 60s limit</span>
             @if ($exitCode !== null)
                 <span class="status-badge" style="--status-color: {{ $exitCode === 0 ? 'var(--color-success)' : 'var(--color-danger)' }}">Exit {{ $exitCode }}</span>
             @endif

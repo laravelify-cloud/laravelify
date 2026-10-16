@@ -8,6 +8,8 @@ class CommandRunner
 {
     private $shouldStop = null;
 
+    private ?SiteUser $siteUser = null;
+
     public function stopWhen(?callable $callback): void
     {
         $this->shouldStop = $callback;
@@ -71,21 +73,35 @@ class CommandRunner
     }
 
     /**
-     * Run a command in a site folder as the site user (www-data). Deploys run repository code,
-     * which must never run as the panel. The log shows the command without the sudo wrapper.
+     * The user runAsSite() runs as from now on: the website's own user during its deploy.
+     */
+    public function actAs(?SiteUser $site): void
+    {
+        $this->siteUser = $site;
+    }
+
+    /**
+     * Run a command in a site folder as the site user (the site's own user, or www-data). Deploys
+     * run repository code, which must never run as the panel. The log shows the command without
+     * the sudo wrapper.
      *
      * @param  list<string>  $command
      * @param  (callable(string): void)|null  $onOutput
      */
     public function runAsSite(array $command, ?string $cwd = null, ?callable $onOutput = null): CommandResult
     {
-        $site = app(SiteUser::class);
+        $site = $this->siteUser ?? app(SiteUser::class);
 
         if (! $site->separate()) {
             return $this->run($command, $cwd, [], $onOutput);
         }
 
         $env = [...$this->environment($site->home(), false), 'USER' => $site->name(), 'LOGNAME' => $site->name()];
+
+        // A site's own user keeps its temp files in its own folder, out of other sites' reach.
+        if ($site->isOwn()) {
+            $env['TMPDIR'] = dirname($site->home()).'/tmp';
+        }
         $result = $this->run($site->wrap($command, $env), $cwd, [], $onOutput);
 
         return new CommandResult($result->ok, $result->skipped, $command, $result->output, $result->exitCode, $result->stopped);

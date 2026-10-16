@@ -7,6 +7,7 @@ use App\Models\Website;
 use App\Services\ProcessCommands;
 use App\Services\SiteCommand;
 use App\Services\SitePaths;
+use App\Services\SiteUser;
 use App\Support\TerminalCommands;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Renderless;
@@ -145,6 +146,7 @@ class Terminal extends PanelComponent
     {
         return view('livewire.websites.terminal', [
             'siteFolders' => $this->website ? [] : $this->siteFolders(),
+            'runsAs' => app(SiteUser::class)->terminalUserFor($this->workingDirectory),
             'suggestions' => TerminalCommands::for($this->website),
         ]);
     }

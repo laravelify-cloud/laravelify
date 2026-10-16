@@ -12,7 +12,8 @@ return [
     'files_root' => env('LARAVELIFY_FILES_ROOT'),
 
     // The panel runs as its own user (laravelify). Websites, their workers, deploys, and the
-    // terminal run as the site user, which owns the site folders and cannot read the panel.
+    // terminal run as the site's own user (lfy-<slug>), or this shared user for sites that have
+    // not been moved to their own user yet. Neither can read the panel.
     'site_user' => env('LARAVELIFY_SITE_USER', 'www-data'),
 
     // HOME and the Composer, npm, and Corepack caches of deploy commands (owned by the site user).
@@ -20,6 +21,10 @@ return [
 
     // The file manager's trash (owned by the site user, which moves files in and out).
     'trash_root' => env('LARAVELIFY_TRASH_ROOT', '/var/lib/laravelify/trash'),
+
+    // Each website's own user (lfy-<slug>) keeps its HOME, caches, trash, and temp files in
+    // <site_users_root>/<slug> (owned by that user).
+    'site_users_root' => env('LARAVELIFY_SITE_USERS_ROOT', '/var/lib/laravelify/sites'),
 
     // Supervisor program logs, one folder per site (root-owned, readable by the panel).
     'site_log_dir' => env('LARAVELIFY_SITE_LOG_DIR', '/var/log/laravelify/sites'),

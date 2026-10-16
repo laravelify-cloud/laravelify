@@ -14,7 +14,7 @@ class HostWriter
     {
         $this->renderSite($website);
 
-        return $this->apply(['site', $website->slug, $website->type]);
+        return $this->apply(['site', $website->slug, $website->type, (string) ($website->php_version ?: '8.4')]);
     }
 
     /**
@@ -56,6 +56,13 @@ class HostWriter
         $this->ensurePanelCanWrite($directory);
         $security = app(SiteSecurity::class);
 
+        // A new site gets its folder (and its own user) first: the files below follow its user.
+        if (! is_dir((string) $website->deploy_path) && app(SiteUser::class)->separate()) {
+            $this->prepareSiteDirectory($website);
+        }
+
+        $user = app(SiteUser::class)->for($website);
+
         // Every site includes its security snippet: it also carries the Monitoring request log.
         if ($security->ensureInclude($website)) {
             $website->save();
@@ -64,10 +71,20 @@ class HostWriter
         // Supervisor programs run as the site user and log outside the site folder (host-apply.sh
         // refuses anything else). Older configs are brought up to date here and saved.
         if ($website->isLaravel()) {
-            $secured = ConfigRenderer::secureSupervisor((string) $website->process_config, $website->slug);
+            $secured = ConfigRenderer::secureSupervisor((string) $website->process_config, $website->slug, $user->name(), $user->isOwn() ? $user->home() : null);
 
             if (trim($secured) !== trim((string) $website->process_config)) {
                 $website->process_config = $secured;
+                $website->save();
+            }
+        }
+
+        // PHP runs in the site's own PHP-FPM pool once it has its own user.
+        if ($website->isPhp()) {
+            $nginx = ConfigRenderer::withSiteSocket((string) $website->nginx_config, $website, $user->isOwn());
+
+            if ($nginx !== (string) $website->nginx_config) {
+                $website->nginx_config = $nginx;
                 $website->save();
             }
         }
@@ -129,6 +146,33 @@ class HostWriter
     public function prepareSiteDirectory(Website $website): string
     {
         return $this->apply(['mkdir-site', $website->slug]);
+    }
+
+    /**
+     * Move a website to its own Unix user (lfy-<slug>): its files, PHP-FPM pool, workers, and PM2
+     * app. The items of the shared trash that came from this site move to the site's own trash.
+     *
+     * @param  list<int>  $trashIds
+     */
+    public function separateSite(Website $website, array $trashIds = []): string
+    {
+        return $this->apply(['site-user', $website->slug, ...array_map('strval', $trashIds)]);
+    }
+
+    /**
+     * Give a website back to the shared user (www-data), for scripts/rollback-site-users.sh.
+     */
+    public function unseparateSite(Website $website): string
+    {
+        return $this->apply(['site-user-drop', $website->slug]);
+    }
+
+    /**
+     * The folder in the sites root that restores of folder backups are written to.
+     */
+    public function restoreFolder(): string
+    {
+        return $this->apply(['restore-folder', 'make']);
     }
 
     private function tunnelUnit(CloudflareTunnel $tunnel): string

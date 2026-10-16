@@ -21,6 +21,7 @@ class TrashItem extends Model
 
     protected $fillable = [
         'scope',
+        'site_slug',
         'original_path',
         'name',
         'is_dir',
@@ -44,11 +45,14 @@ class TrashItem extends Model
     }
 
     /**
-     * The folder this item is kept in.
+     * The folder this item is kept in: the trash of the website's own user, or the shared trash.
      */
     public function folder(): string
     {
-        return app(SiteUser::class)->trashRoot().DIRECTORY_SEPARATOR.$this->id;
+        $site = app(SiteUser::class);
+        $owner = filled($this->site_slug) ? $site->forSlug((string) $this->site_slug) : $site->shared();
+
+        return $owner->trashRoot().DIRECTORY_SEPARATOR.$this->id;
     }
 
     /**

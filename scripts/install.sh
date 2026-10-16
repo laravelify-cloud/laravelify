@@ -659,7 +659,7 @@ install -d -o www-data -g www-data -m 0755 /var/www
 chmod 755 "$APP_ROOT"/scripts/*.sh
 
 # The panel's own user (laravelify) with its own PHP-FPM pool, queue worker, and scheduler;
-# websites stay www-data and cannot read the panel. Also writes the sudo rule and Supervisor
+# every website gets its own user (lfy-<slug>) and cannot read the panel or other websites. Also writes the sudo rule and Supervisor
 # programs, and sets the owners and permissions of the panel's files.
 LARAVELIFY_ROOT="$APP_ROOT" LARAVELIFY_PHP="php${PANEL_PHP}" bash "$APP_ROOT/scripts/privileges.sh"
 bash "$APP_ROOT/scripts/host-apply.sh" phpmyadmin-hide all || true

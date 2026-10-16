@@ -39,8 +39,11 @@ class FileTrash
             }
 
             $isDir = ! is_link($full) && is_dir($full);
+            // A website with its own user keeps deleted files in its own trash folder.
+            $owner = $this->files->userOf($full);
             $item = TrashItem::query()->create([
                 'scope' => $scope,
+                'site_slug' => $owner->isOwn() ? $owner->slug() : null,
                 'original_path' => $this->paths->relative($root, $full),
                 'name' => basename($full),
                 'is_dir' => $isDir,

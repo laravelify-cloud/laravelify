@@ -5,8 +5,8 @@ namespace App\Services;
 use Throwable;
 
 /**
- * PM2 and Supervisor commands typed in the terminal. Terminal commands run as
- * www-data in a sandbox that cannot reach the PM2 daemon or the Supervisor socket,
+ * PM2 and Supervisor commands typed in the terminal. Terminal commands run as the
+ * site user in a sandbox that cannot reach the PM2 daemons or the Supervisor socket,
  * so these few commands go through ServerProcesses (sudo host-apply.sh) instead.
  * Anything else returns null and runs as a normal command.
  */

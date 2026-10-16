@@ -256,7 +256,7 @@ class FileOperations
             if ($this->site->separate()) {
                 // The names were checked above. unzip runs as the site user, so the files are the site's.
                 $this->files->makeDirectory($target);
-                $result = $this->files->exec(['unzip', '-q', '-o', $full, '-d', $target]);
+                $result = $this->files->exec(['unzip', '-q', '-o', $full, '-d', $target], null, null, $this->files->userOf($full, $target));
 
                 if (! $result->ok && $result->exitCode !== 1) {
                     throw new RuntimeException('Could not extract that archive: '.$result->output);

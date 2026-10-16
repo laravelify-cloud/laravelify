@@ -11,11 +11,20 @@
 #   laravelify       the panel: its PHP-FPM pool (/run/php/laravelify.sock, also phpMyAdmin),
 #                    the queue worker, and the scheduler. Owns storage/ and bootstrap/cache.
 #                    In the www-data group, so it can read site files.
-#   www-data         websites (PHP-FPM www pools, Supervisor workers, PM2 apps), deploy commands,
-#                    and the terminal. Cannot read /opt/laravelify/.env or storage, has no sudo.
+#   lfy-<slug>       one user per website: its PHP-FPM pool (/run/php/site-<slug>.sock), Supervisor
+#                    workers, PM2 daemon, deploy commands, and terminal. Owns /var/www/<slug>
+#                    (group laravelify-sites, setgid). Cannot read other sites or the panel, has no
+#                    sudo. New sites get one; existing sites move with LARAVELIFY_SITE_USERS=1 or
+#                    `artisan laravelify:separate-sites --site=<slug>` (see rollback-site-users.sh).
+#   www-data         websites not moved to their own user yet (PHP-FPM www pools, Supervisor
+#                    workers, PM2 apps), their deploy commands and terminal. Cannot read
+#                    /opt/laravelify/.env or storage, has no sudo.
 #   laravelify-web   nginx's worker processes (unless nginx already had its own user). The only
 #                    user besides the panel that may open the panel's PHP-FPM socket.
 #   root             nginx's master, Supervisor, host-apply.sh (which the panel may run with sudo).
+#
+# Groups: laravelify-sites (the panel and nginx: they read site folders through it; never a site
+# user) and laravelify-tenants (every site's own user: the panel may sudo to them).
 set -euo pipefail
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -28,6 +37,8 @@ export LARAVELIFY_PRIVILEGES=1
 PANEL_USER=laravelify
 SITE_USER=www-data
 WEB_USER_NEW=laravelify-web
+READ_GROUP=laravelify-sites
+TENANT_GROUP=laravelify-tenants
 STATE_DIR=/var/lib/laravelify
 SITE_HOME="${STATE_DIR}/home"
 PANEL_SOCKET=/run/php/laravelify.sock
@@ -153,13 +164,44 @@ if ! id -nG "${WEB_USER}" | tr ' ' '\n' | grep -qx "${SITE_USER}"; then
 fi
 WEB_GROUP="$(id -gn "${WEB_USER}")"
 
+# One user per website: the panel and nginx read site folders through laravelify-sites, and the
+# panel may sudo to the members of laravelify-tenants (the sites' own users, nobody else).
+GROUPS_CHANGED=0
+if [[ ! -f "${STATE_DIR}/.no-site-users" ]]; then
+  for group in "${READ_GROUP}" "${TENANT_GROUP}"; do
+    getent group "${group}" >/dev/null || groupadd --system "${group}"
+  done
+  for user in "${PANEL_USER}" "${WEB_USER}"; do
+    if ! id -nG "${user}" | tr ' ' '\n' | grep -qx "${READ_GROUP}"; then
+      usermod -aG "${READ_GROUP}" "${user}"
+      GROUPS_CHANGED=1
+    fi
+  done
+  # Nobody but the sites' own users is in laravelify-tenants: sudo to it is sudo to them.
+  for user in $(getent group "${TENANT_GROUP}" | cut -d: -f4 | tr ',' ' '); do
+    [[ "${user}" == lfy-* ]] || fail "${user} must not be in ${TENANT_GROUP} (gpasswd -d ${user} ${TENANT_GROUP})"
+  done
+fi
+
 # --- 3. Folders --------------------------------------------------------------------------
 
 install -d -o root -g root -m 0755 "${STATE_DIR}" "${STATE_DIR}/pm2"
 install -d -o "${SITE_USER}" -g "${SITE_USER}" -m 0750 "${SITE_HOME}" "${STATE_DIR}/trash"
 install -d -o "${SITE_USER}" -g "${SITE_USER}" -m 0750 "${SITE_HOME}/.composer" "${SITE_HOME}/.npm" "${SITE_HOME}/.corepack" "${SITE_HOME}/checkouts"
 install -d -o root -g "${PANEL_USER}" -m 0750 /var/log/laravelify /var/log/laravelify/sites
-install -d -o "${SITE_USER}" -g "${SITE_USER}" -m 0755 /var/www
+# /var/www is root's once websites have their own users: the owner of /var/www could rename any
+# site's folder and put its own in its place.
+if [[ -f "${STATE_DIR}/.no-site-users" ]]; then
+  install -d -o "${SITE_USER}" -g "${SITE_USER}" -m 0755 /var/www
+else
+  install -d -o root -g root -m 0755 /var/www "${STATE_DIR}/sites"
+  # Sites still on www-data keep HOME=/var/www for their workers: their tool folders stay theirs.
+  for dir in .cache .config .local .npm; do
+    if [[ ! -e "/var/www/${dir}" ]]; then
+      install -d -o "${SITE_USER}" -g "${SITE_USER}" -m 0700 "/var/www/${dir}"
+    fi
+  done
+fi
 
 # The file manager's trash moves out of the panel's storage: the site user moves files in and out.
 if [[ -d "${APP_ROOT}/storage/app/trash" ]]; then
@@ -341,16 +383,18 @@ rm -rf -- "${NGINX_BACKUP}"
 SUDO_TMP="$(mktemp)"
 cat > "${SUDO_TMP}" <<SUDO
 # Written by Laravelify (scripts/privileges.sh).
-# The panel may run its host script as root, and commands as the site user (deploys and file
-# changes in site folders). Website code (${SITE_USER}) has no sudo at all.
+# The panel may run its host script as root, and commands as the site users (deploys and file
+# changes in site folders): www-data and every website's own user (the members of
+# ${TENANT_GROUP}). Website code has no sudo at all.
 ${PANEL_USER} ALL=(root) NOPASSWD: ${APP_ROOT}/scripts/host-apply.sh
-${PANEL_USER} ALL=(${SITE_USER}) NOPASSWD: ALL
+${PANEL_USER} ALL=(${SITE_USER}, %${TENANT_GROUP}) NOPASSWD: ALL
 Defaults>${SITE_USER} !syslog
+Defaults>%${TENANT_GROUP} !syslog
 SUDO
 if ! cmp -s "${SUDO_TMP}" "${SUDOERS}"; then
   visudo -cf "${SUDO_TMP}" >/dev/null || { rm -f -- "${SUDO_TMP}"; fail "the new sudoers file is invalid"; }
   install -m 0440 -o root -g root "${SUDO_TMP}" "${SUDOERS}"
-  say "sudo: ${PANEL_USER} may run host-apply.sh; ${SITE_USER} has no sudo"
+  say "sudo: ${PANEL_USER} may run host-apply.sh and commands as the site users; sites have no sudo"
 fi
 rm -f -- "${SUDO_TMP}"
 
@@ -407,7 +451,8 @@ for nginx_file in /etc/nginx/sites-available/laravelify-*.conf; do
   [[ "${slug}" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || continue
   [[ "${slug}" == panel || "${slug}" == phpmyadmin ]] && continue
   site_dir="/var/www/${slug}"
-  if [[ -d "${site_dir}" && ! -L "${site_dir}" ]]; then
+  # Only folders of sites still on www-data (a site with its own user is never touched here).
+  if [[ -d "${site_dir}" && ! -L "${site_dir}" && "$(stat -c '%U' -- "${site_dir}")" == "${SITE_USER}" ]]; then
     find "${site_dir}" -xdev -user root -exec chown -h "${SITE_USER}:${SITE_USER}" {} + 2>/dev/null || true
   fi
 done
@@ -438,4 +483,27 @@ bash "${APP_ROOT}/scripts/host-apply.sh" pm2-boot all || say "warning: PM2 boot 
 
 supervisorctl start laravelify-queue laravelify-scheduler >/dev/null 2>&1 || true
 
-say "Done. Panel: ${PANEL_USER} (${PANEL_SOCKET}, PHP ${PANEL_PHP}). Websites: ${SITE_USER}. nginx workers: ${WEB_USER}."
+# --- 11. One user per website --------------------------------------------------------------
+# A process gets new groups only when it starts: the panel's pool, its queue worker (after its
+# current job), and nginx's workers start again once, so they can read laravelify-sites folders.
+
+if [[ "${GROUPS_CHANGED}" == 1 ]]; then
+  say "The panel and nginx joined ${READ_GROUP}: restarting them once"
+  systemctl reload "php${PANEL_PHP}-fpm" || true
+  systemctl reload nginx || true
+  as_panel "${PHP_BIN}" "${APP_ROOT}/artisan" queue:restart --no-ansi >/dev/null 2>&1 || true
+  supervisorctl restart laravelify-scheduler >/dev/null 2>&1 || true
+fi
+
+if [[ -f "${STATE_DIR}/.no-site-users" ]]; then
+  say "Websites keep www-data: ${STATE_DIR}/.no-site-users exists (rolled back)."
+elif [[ "${LARAVELIFY_SITE_USERS:-}" == 1 ]]; then
+  say "Moving every website to its own user"
+  as_panel "${PHP_BIN}" "${APP_ROOT}/artisan" laravelify:separate-sites --all --no-ansi \
+    || say "warning: some websites still run as ${SITE_USER} (see above). They work as before; run this again to retry."
+else
+  say "New websites get their own user. Existing ones keep ${SITE_USER} until you move them:"
+  say "  sudo LARAVELIFY_SITE_USERS=1 bash ${APP_ROOT}/scripts/privileges.sh"
+fi
+
+say "Done. Panel: ${PANEL_USER} (${PANEL_SOCKET}, PHP ${PANEL_PHP}). Websites: their own users (lfy-<slug>) or ${SITE_USER}. nginx workers: ${WEB_USER}."

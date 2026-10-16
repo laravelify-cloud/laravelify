@@ -7,6 +7,10 @@ use RuntimeException;
 /**
  * Folder backups: tar + gzip of folders inside the file manager root (/var/www by default),
  * with exclude patterns, and restores of the whole archive or one folder from it.
+ *
+ * Websites with their own user can only be read and written by that user, so a backup of several
+ * of them is made of one tar per user, one after the other in the same gzip file. Reading such an
+ * archive needs --ignore-zeros (harmless for archives of one tar).
  */
 class FileArchiver
 {
@@ -149,12 +153,24 @@ class FileArchiver
             }
         }
 
-        $command = [...$command, '--', ...array_values(array_unique($members))];
+        if (! $this->site->separate()) {
+            $result = $this->runner->run([...$command, '--', ...array_values(array_unique($members))]);
+        } else {
+            // Each site user reads its own sites (some files are its own only), and the panel keeps
+            // the archive.
+            $result = null;
+            $append = false;
 
-        // The site user reads the sites (some files are its own only) and the panel keeps the archive.
-        $result = $this->site->separate()
-            ? $this->files->execToFile(array_replace($command, [3 => '-']), $file)
-            : $this->runner->run($command);
+            foreach ($this->byUser($root, $members) as [$user, $group]) {
+                $part = $this->files->execToFile(array_replace([...$command, '--', ...$group], [3 => '-']), $file, null, $user, $append);
+                $append = true;
+
+                // Keep the worst result: a failure over "files changed while read" (1) over success.
+                if ($result === null || $result->ok || ($result->exitCode === 1 && ! $part->ok)) {
+                    $result = $part;
+                }
+            }
+        }
 
         if ($result->skipped) {
             touch($file);
@@ -188,20 +204,36 @@ class FileArchiver
             $destination = $root.'/laravelify-restore/'.now()->format('Ymd-His');
 
             if (! is_dir($destination)) {
+                // The sites folder belongs to root once websites have their own users.
+                if (! is_dir($root.'/laravelify-restore') && $this->site->separate()) {
+                    app(HostWriter::class)->restoreFolder();
+                }
+
                 $this->files->makeDirectory($destination, 0775, true);
             }
         }
 
-        $command = ['tar', '--force-local', '-xzf', $file, '-C', $destination, '--no-same-owner'];
+        $command = ['tar', '--force-local', '-xzf', $file, '-C', $destination, '--no-same-owner', '--ignore-zeros'];
 
         $members = array_values(array_unique(array_filter(array_map(self::cleanPath(...), $members), fn (string $member) => $member !== '')));
 
-        if ($members !== []) {
-            $command[] = '--';
-            array_push($command, ...$members);
+        if (! $this->site->separate()) {
+            $result = $this->runner->run($members === [] ? $command : [...$command, '--', ...$members]);
+
+            if (! $result->ok) {
+                throw new RuntimeException('tar could not unpack the backup: '.$result->output);
+            }
+
+            return $destination;
         }
 
-        if ($this->site->separate()) {
+        // Back in their place, every website's files are written by its own user. A new restore
+        // folder is written by the shared user.
+        $groups = $toOriginal
+            ? $this->byUser($root, $members === [] ? $this->topLevel($file) : $members)
+            : [[$this->files->userOf($destination), $members]];
+
+        foreach ($groups as [$user, $group]) {
             // The site user writes the files, reading the archive the panel downloaded from stdin.
             $stream = @fopen($file, 'rb');
 
@@ -210,16 +242,14 @@ class FileArchiver
             }
 
             try {
-                $result = $this->files->exec(array_replace($command, [3 => '-']), $stream);
+                $result = $this->files->exec(array_replace($group === [] ? $command : [...$command, '--', ...$group], [3 => '-']), $stream, null, $user);
             } finally {
                 fclose($stream);
             }
-        } else {
-            $result = $this->runner->run($command);
-        }
 
-        if (! $result->ok) {
-            throw new RuntimeException('tar could not unpack the backup: '.$result->output);
+            if (! $result->ok) {
+                throw new RuntimeException('tar could not unpack the backup: '.$result->output);
+            }
         }
 
         return $destination;
@@ -230,9 +260,50 @@ class FileArchiver
      *
      * @return array{entries: list<string>, files: int}
      */
+    /**
+     * Members of the root grouped by the user that may read and write them: a website's own user
+     * for its folder, the shared user for everything else.
+     *
+     * @param  list<string>  $members
+     * @return list<array{0: SiteUser, 1: list<string>}>
+     */
+    private function byUser(string $root, array $members): array
+    {
+        $groups = [];
+
+        foreach (array_values(array_unique($members)) as $member) {
+            $user = $this->files->userOf($root.'/'.explode('/', $member, 2)[0]);
+            $groups[$user->name()] ??= [$user, []];
+            $groups[$user->name()][1][] = $member;
+        }
+
+        return array_values($groups);
+    }
+
+    /**
+     * The first-level names in an archive.
+     *
+     * @return list<string>
+     */
+    private function topLevel(string $file): array
+    {
+        $result = $this->runner->run(['tar', '--force-local', '-tzf', $file, '--ignore-zeros']);
+        $names = [];
+
+        foreach (explode("\n", $result->output) as $line) {
+            $name = explode('/', (string) preg_replace('#^\./#', '', trim($line)), 2)[0];
+
+            if ($name !== '' && $name !== '.') {
+                $names[$name] = true;
+            }
+        }
+
+        return array_keys($names);
+    }
+
     private function describe(string $file): array
     {
-        $result = $this->runner->run(['tar', '--force-local', '-tzf', $file]);
+        $result = $this->runner->run(['tar', '--force-local', '-tzf', $file, '--ignore-zeros']);
         $directories = [];
         $files = 0;
 

@@ -212,7 +212,7 @@ class BackupInspector
      */
     public function readArchive(string $tarGz): array
     {
-        $result = $this->runner->run(['tar', '--force-local', '-tvzf', $tarGz]);
+        $result = $this->runner->run(['tar', '--force-local', '-tvzf', $tarGz, '--ignore-zeros']);
         $entries = [];
 
         if (! $result->ok && ! $result->skipped) {

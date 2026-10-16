@@ -54,6 +54,8 @@ class Deployer
                 throw new RuntimeException('Website is missing.');
             }
 
+            $this->actAsSiteOf($website);
+
             $log->line('Deploying '.$website->name.' ('.$website->type.', branch '.$website->branch.').');
 
             if (! $deployment->branch) {
@@ -121,6 +123,7 @@ class Deployer
             $this->report($log, $this->notifier->failed($deployment->refresh(), $exception->getMessage()));
         } finally {
             $this->runner->stopWhen(null);
+            $this->runner->actAs(null);
         }
     }
 
@@ -130,6 +133,8 @@ class Deployer
         $repository = $this->authenticatedRepository($website);
 
         $log->line($this->hostWriter->prepareSiteDirectory($website));
+        // A new site's folder (and its own user) exists only now.
+        $this->actAsSiteOf($website);
 
         if (is_dir($path.'/.git')) {
             // Never trust the stored origin: it may hold an expired GitHub App token from
@@ -158,8 +163,19 @@ class Deployer
         ]), $log);
         // The clone URL carries a short-lived token. Do not leave it in .git/config.
         $this->must($this->runner->runAsSite(['git', '-C', $staging, 'remote', 'set-url', 'origin', (string) $website->repository]), $log);
-        $this->must($this->runner->runAsSite(['cp', '-a', $staging.'/.', $path.'/']), $log);
+        // Without the owner and group: new files take the site folder's group, which the panel
+        // and nginx read through.
+        $this->must($this->runner->runAsSite(['cp', '-R', '-P', '--preserve=mode,timestamps,links', $staging.'/.', $path.'/']), $log);
         $this->files->delete($staging);
+    }
+
+    /**
+     * Deploy commands run as the website's own user (or the shared one, for sites not moved yet).
+     */
+    private function actAsSiteOf(Website $website): void
+    {
+        $this->site = app(SiteUser::class)->for($website);
+        $this->runner->actAs($this->site);
     }
 
     /**

@@ -112,6 +112,24 @@ fi
 rm -rf /root/.pm2
 systemctl disable --now pm2-www-data >/dev/null 2>&1 || true
 rm -f /etc/systemd/system/pm2-www-data.service /etc/php/*/fpm/pool.d/laravelify.conf
+# Every website's own user (lfy-<slug>): its PM2 daemon, PHP-FPM pool, and the user itself.
+# The site folders in /var/www stay, owned by www-data.
+for site_user in $(getent passwd | cut -d: -f1 | grep '^lfy-' || true); do
+  systemctl disable --now "pm2-${site_user}" >/dev/null 2>&1 || true
+  rm -f "/etc/systemd/system/pm2-${site_user}.service"
+  pkill -u "${site_user}" >/dev/null 2>&1 || true
+  for dir in /var/www/*/; do
+    if [[ "$(stat -c '%U' -- "${dir}")" == "${site_user}" ]]; then
+      chown -R -P www-data:www-data -- "${dir}" || true
+      chmod 0755 -- "${dir}" || true
+    fi
+  done
+  userdel "${site_user}" >/dev/null 2>&1 || true
+done
+rm -f /etc/php/*/fpm/pool.d/laravelify-site-*.conf
+groupdel laravelify-sites >/dev/null 2>&1 || true
+groupdel laravelify-tenants >/dev/null 2>&1 || true
+chown www-data:www-data /var/www 2>/dev/null || true
 rm -rf /var/lib/laravelify /var/log/laravelify
 # nginx's workers ran as laravelify-web; nginx is purged below, so only the users go.
 userdel laravelify >/dev/null 2>&1 || true

@@ -342,12 +342,15 @@ NGINX;
     /**
      * Make a site's Supervisor config safe to apply: every program runs as the site user, and
      * its logs go to the site's log folder (a program's own log name is kept). host-apply.sh
-     * refuses anything else.
+     * refuses anything else. HOME follows the user: the site's own home folder for its own
+     * user, /var/www for the shared one.
      */
-    public static function secureSupervisor(string $config, string $slug): string
+    public static function secureSupervisor(string $config, string $slug, ?string $user = null, ?string $home = null): string
     {
         $logs = self::supervisorLogDirectory($slug);
-        $user = (string) (config('laravelify.site_user') ?: 'www-data');
+        $user ??= (string) (config('laravelify.site_user') ?: 'www-data');
+        $home ??= '/var/www';
+        $homes = ['/var/www', rtrim((string) config('laravelify.site_users_root'), '/').'/'.$slug.'/home'];
         $lines = preg_split('/\R/', $config) ?: [];
         $output = [];
         $program = null;
@@ -387,6 +390,16 @@ NGINX;
                 continue;
             }
 
+            if ($program !== null && preg_match('/^environment\s*[=:]/i', $trimmed) === 1) {
+                foreach ($homes as $known) {
+                    $line = str_replace('HOME="'.$known.'"', 'HOME="'.$home.'"', $line);
+                }
+
+                $output[] = $line;
+
+                continue;
+            }
+
             if ($program !== null && preg_match('/^(stdout_logfile|stderr_logfile)\s*[=:]\s*(\S+)\s*(?:[;#].*)?$/i', $trimmed, $match) === 1) {
                 $value = $match[2];
 
@@ -406,6 +419,24 @@ NGINX;
         $closeProgram();
 
         return implode("\n", $output);
+    }
+
+    /**
+     * The PHP-FPM socket in a site's nginx file: the site's own pool once it has its own user
+     * (host-apply.sh writes that pool), the shared pool of its PHP version before.
+     */
+    public static function withSiteSocket(string $nginx, Website $website, bool $ownUser): string
+    {
+        $socket = $ownUser
+            ? self::siteSocket((string) $website->slug)
+            : 'unix:/run/php/php'.($website->php_version ?: '8.4').'-fpm.sock';
+
+        return (string) preg_replace('#unix:/run/php/(?:php[0-9]+\.[0-9]+-fpm|site-[a-z0-9-]+)\.sock#', $socket, $nginx);
+    }
+
+    public static function siteSocket(string $slug): string
+    {
+        return 'unix:/run/php/site-'.$slug.'.sock';
     }
 
     private function supervisor(Website $website): string

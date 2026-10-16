@@ -8,8 +8,10 @@ use Symfony\Component\Process\Process;
 
 /**
  * Changes to files in site folders (and the file manager's trash). When the panel runs as its
- * own user, they run as the site user through sudo, so every file stays owned by www-data and
- * the site can keep writing it. Reading needs no help: the panel user is in the www-data group.
+ * own user, they run through sudo as the user of the site the path belongs to (its own user, or
+ * www-data for sites not moved yet), so every file stays the site's and the site can keep
+ * writing it. Paths outside a site folder are changed as www-data. Reading needs no help: the
+ * panel is in the group of the site folders (laravelify-sites, or www-data).
  * On development machines and servers not migrated yet, PHP does the same work directly.
  */
 class SiteFiles
@@ -22,13 +24,15 @@ class SiteFiles
      */
     public function put(string $path, string $contents, ?int $mode = null): void
     {
-        if (! $this->site->separate()) {
+        $user = $this->userOf($path);
+
+        if (! $user->separate()) {
             $this->putDirectly($path, $contents, $mode);
 
             return;
         }
 
-        $this->run(['/bin/sh', '-c', self::PUT_SCRIPT, 'put', $path, $mode === null ? '' : sprintf('%04o', $mode)], $contents, 'Could not write '.basename($path).'.');
+        $this->run($user, ['/bin/sh', '-c', self::PUT_SCRIPT, 'put', $path, $mode === null ? '' : sprintf('%04o', $mode)], $contents, 'Could not write '.basename($path).'.');
     }
 
     /**
@@ -36,7 +40,9 @@ class SiteFiles
      */
     public function putFile(string $path, string $source, ?int $mode = null): void
     {
-        if (! $this->site->separate()) {
+        $user = $this->userOf($path);
+
+        if (! $user->separate()) {
             if (is_link($path) && ! @unlink($path)) {
                 throw new RuntimeException('Could not replace '.basename($path).'.');
             }
@@ -57,7 +63,7 @@ class SiteFiles
         }
 
         try {
-            $this->run(['/bin/sh', '-c', self::PUT_SCRIPT, 'put', $path, $mode === null ? '' : sprintf('%04o', $mode)], $stream, 'Could not write '.basename($path).'.');
+            $this->run($user, ['/bin/sh', '-c', self::PUT_SCRIPT, 'put', $path, $mode === null ? '' : sprintf('%04o', $mode)], $stream, 'Could not write '.basename($path).'.');
         } finally {
             if (is_resource($stream)) {
                 fclose($stream);
@@ -67,7 +73,9 @@ class SiteFiles
 
     public function makeDirectory(string $path, int $mode = 0755, bool $recursive = false): void
     {
-        if (! $this->site->separate()) {
+        $user = $this->userOf($path);
+
+        if (! $user->separate()) {
             if (! is_dir($path) && ! @mkdir($path, $mode, $recursive) && ! is_dir($path)) {
                 throw new RuntimeException('Could not create the folder '.basename($path).'.');
             }
@@ -75,7 +83,7 @@ class SiteFiles
             return;
         }
 
-        $this->run(array_values(array_filter(['mkdir', $recursive ? '-p' : null, '-m', sprintf('%04o', $mode), '--', $path])), null, 'Could not create the folder '.basename($path).'.');
+        $this->run($user, array_values(array_filter(['mkdir', $recursive ? '-p' : null, '-m', sprintf('%04o', $mode), '--', $path])), null, 'Could not create the folder '.basename($path).'.');
     }
 
     /**
@@ -83,7 +91,9 @@ class SiteFiles
      */
     public function move(string $from, string $to): void
     {
-        if (! $this->site->separate()) {
+        $user = $this->userOf($from, $to);
+
+        if (! $user->separate()) {
             if (@rename($from, $to)) {
                 return;
             }
@@ -105,7 +115,7 @@ class SiteFiles
             return;
         }
 
-        $this->run(['mv', '-T', '--', $from, $to], null, 'Could not move '.basename($from).'.');
+        $this->run($user, ['mv', '-T', '--', $from, $to], null, 'Could not move '.basename($from).'.');
     }
 
     /**
@@ -113,7 +123,9 @@ class SiteFiles
      */
     public function copy(string $from, string $to): void
     {
-        if (! $this->site->separate()) {
+        $user = $this->userOf($from, $to);
+
+        if (! $user->separate()) {
             if (is_dir($from) && ! is_link($from)) {
                 if (! File::copyDirectory($from, $to)) {
                     throw new RuntimeException('Could not copy '.basename($from).'.');
@@ -131,7 +143,7 @@ class SiteFiles
             return;
         }
 
-        $this->run(['cp', '-R', '-P', '--preserve=mode,timestamps', '-T', '--', $from, $to], null, 'Could not copy '.basename($from).'.');
+        $this->run($user, ['cp', '-R', '-P', '--preserve=mode,timestamps', '-T', '--', $from, $to], null, 'Could not copy '.basename($from).'.');
     }
 
     /**
@@ -139,7 +151,9 @@ class SiteFiles
      */
     public function delete(string $path): void
     {
-        if (! $this->site->separate()) {
+        $user = $this->userOf($path);
+
+        if (! $user->separate()) {
             if (is_link($path) || is_file($path)) {
                 if (! @unlink($path)) {
                     throw new RuntimeException('Could not delete '.basename($path).'.');
@@ -155,12 +169,14 @@ class SiteFiles
             return;
         }
 
-        $this->run(['rm', '-rf', '--', $path], null, 'Could not delete '.basename($path).'.');
+        $this->run($user, ['rm', '-rf', '--', $path], null, 'Could not delete '.basename($path).'.');
     }
 
     public function chmod(string $path, int $mode): void
     {
-        if (! $this->site->separate()) {
+        $user = $this->userOf($path);
+
+        if (! $user->separate()) {
             if (! @chmod($path, $mode)) {
                 throw new RuntimeException('Could not change the permissions of '.basename($path).'.');
             }
@@ -168,7 +184,7 @@ class SiteFiles
             return;
         }
 
-        $this->run(['chmod', sprintf('%04o', $mode), '--', $path], null, 'Could not change the permissions of '.basename($path).'.');
+        $this->run($user, ['chmod', sprintf('%04o', $mode), '--', $path], null, 'Could not change the permissions of '.basename($path).'.');
     }
 
     /**
@@ -176,7 +192,9 @@ class SiteFiles
      */
     public function symlink(string $target, string $link): void
     {
-        if (! $this->site->separate()) {
+        $user = $this->userOf($link);
+
+        if (! $user->separate()) {
             if ((is_link($link) || is_file($link)) && ! @unlink($link)) {
                 throw new RuntimeException('Could not replace '.basename($link).'.');
             }
@@ -188,18 +206,20 @@ class SiteFiles
             return;
         }
 
-        $this->run(['ln', '-sfnT', '--', $target, $link], null, 'Could not link '.basename($link).' to '.$target.'.');
+        $this->run($user, ['ln', '-sfnT', '--', $target, $link], null, 'Could not link '.basename($link).' to '.$target.'.');
     }
 
     /**
-     * Run a command as the site user, for unpacking archives into site folders.
+     * Run a command as a site user (the shared one unless $user is given), for unpacking
+     * archives into site folders.
      *
      * @param  list<string>  $command
      * @param  resource|string|null  $input
      */
-    public function exec(array $command, $input = null, ?string $cwd = null): CommandResult
+    public function exec(array $command, $input = null, ?string $cwd = null, ?SiteUser $user = null): CommandResult
     {
-        $argv = $this->site->separate() ? $this->site->wrap($command, ['PATH' => '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', 'LANG' => 'C.UTF-8']) : $command;
+        $user ??= $this->site->shared();
+        $argv = $user->separate() ? $user->wrap($command, ['PATH' => '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', 'LANG' => 'C.UTF-8']) : $command;
         $process = new Process($argv, $cwd, null, $input, 3600);
         $process->run();
 
@@ -218,15 +238,16 @@ class SiteFiles
      *
      * @param  list<string>  $command
      */
-    public function execToFile(array $command, string $outputFile, ?string $cwd = null): CommandResult
+    public function execToFile(array $command, string $outputFile, ?string $cwd = null, ?SiteUser $user = null, bool $append = false): CommandResult
     {
-        $handle = @fopen($outputFile, 'wb');
+        $user ??= $this->site->shared();
+        $handle = @fopen($outputFile, $append ? 'ab' : 'wb');
 
         if ($handle === false) {
             throw new RuntimeException('Could not write '.basename($outputFile).'.');
         }
 
-        $argv = $this->site->separate() ? $this->site->wrap($command, ['PATH' => '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', 'LANG' => 'C.UTF-8']) : $command;
+        $argv = $user->separate() ? $user->wrap($command, ['PATH' => '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', 'LANG' => 'C.UTF-8']) : $command;
         $errors = '';
 
         try {
@@ -265,12 +286,29 @@ trap - EXIT
 SH;
 
     /**
+     * The user that changes these paths: the user of the site they are in. Paths in two sites
+     * with their own users cannot be changed in one step: no user may write both.
+     */
+    public function userOf(string ...$paths): SiteUser
+    {
+        $users = array_map(fn (string $path) => $this->site->forPath($path), $paths);
+
+        foreach ($users as $user) {
+            if ($user->name() !== $users[0]->name()) {
+                throw new RuntimeException('Files cannot be moved or copied between two websites that each have their own user. Download them from one website and upload them to the other.');
+            }
+        }
+
+        return $users[0];
+    }
+
+    /**
      * @param  list<string>  $command
      * @param  resource|string|null  $input
      */
-    private function run(array $command, $input, string $error): void
+    private function run(SiteUser $user, array $command, $input, string $error): void
     {
-        $result = $this->exec($command, $input);
+        $result = $this->exec($command, $input, null, $user);
 
         if (! $result->ok) {
             throw new RuntimeException($error.($result->output !== '' ? ' '.$result->output : ''));

@@ -41,6 +41,13 @@ restore() {
   return 1
 }
 
+# Websites with their own user go back to www-data first, while the panel still runs as its own
+# user (it rewrites their workers and nginx files).
+if getent passwd | cut -d: -f1 | grep -q '^lfy-'; then
+  say "Giving every website back to www-data first"
+  bash "${APP_ROOT}/scripts/rollback-site-users.sh" || { echo "Some websites still have their own user; fix that first (see above)." >&2; exit 1; }
+fi
+
 touch "${STATE_DIR}/.no-separation"
 rm -f "${STATE_DIR}/.sites-separated"
 
