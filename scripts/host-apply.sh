@@ -147,16 +147,28 @@ ensure_site_user() {
   install -d -o "${user}" -g "${READ_GROUP}" -m 2750 "${base}/trash"
 }
 
-# Give a site folder to its user. chown -R -P never follows links. The setgid bit (so new files
-# get the folder's group) is set by the site user itself, which owns every folder by then.
+# Give a site folder to its user. chown -R -P never follows links. Folders get the setgid bit,
+# so new files take the folder's group (the site user cannot set it: it is not in that group).
 own_site_folder() {
   local site_dir="$1"
   [[ -d "${site_dir}" && ! -L "${site_dir}" ]] || return 0
   chown -R -P -h "${SITE_USER}:${SITE_GROUP}" -- "${site_dir}" || true
   if site_has_own_user; then
     chmod 2750 -- "${site_dir}"
-    as_site find "${site_dir}" -xdev -type d ! -perm -2000 -exec chmod g+s -- {} + 2>/dev/null || true
+    setgid_folders "${site_dir}"
   fi
+}
+
+# Set the setgid bit on every folder below $1 as root without following a link the site may swap
+# in: find enters each folder itself (-execdir), and perl opens the name with O_NOFOLLOW and
+# changes the folder it opened (fchmod). Files never get the bit.
+setgid_folders() {
+  find "$1" -xdev -mindepth 1 -type d ! -perm -2000 -execdir perl -MFcntl -e '
+    for my $name (@ARGV) {
+      sysopen(my $folder, $name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW) or next;
+      chmod(((stat $folder)[2] & 07777) | 02000, $folder);
+    }
+  ' {} + 2>/dev/null || true
 }
 
 # The site folder of a new site: owned by its own user when sites get their own users.

@@ -163,10 +163,13 @@ class Deployer
         ]), $log);
         // The clone URL carries a short-lived token. Do not leave it in .git/config.
         $this->must($this->runner->runAsSite(['git', '-C', $staging, 'remote', 'set-url', 'origin', (string) $website->repository]), $log);
-        // Without the owner and group: new files take the site folder's group, which the panel
-        // and nginx read through.
-        $this->must($this->runner->runAsSite(['cp', '-R', '-P', '--preserve=mode,timestamps,links', $staging.'/.', $path.'/']), $log);
+        // Without the owner, group, or mode of the clone: the site folder keeps its own (the
+        // permissions of new files still follow the clone's, minus the umask).
+        $this->must($this->runner->runAsSite(['cp', '-R', '-P', '--preserve=timestamps,links', $staging.'/.', $path.'/']), $log);
         $this->files->delete($staging);
+        // Every copied file and folder gets the site folder's group (the panel and nginx read
+        // through it) and folders the setgid bit, which only root can set for a site's own user.
+        $log->line($this->hostWriter->prepareSiteDirectory($website));
     }
 
     /**
