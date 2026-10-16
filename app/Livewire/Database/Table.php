@@ -509,7 +509,18 @@ class Table extends PanelComponent
             }
 
             $find = trim($find);
-            $list = $browser->distinctValues($this->database, $this->table, $column, $this->search, $this->filtersForQuery(), '', $find === '' ? 200 : 1000, $this->searchExact());
+            $encrypted = null;
+
+            // Typed text finds the stored value as it is, and the same text encrypted (one run).
+            if ($find !== '') {
+                try {
+                    $encrypted = app(CryptoMethods::class)->encrypt($method, $find);
+                } catch (Throwable) {
+                    $encrypted = null;
+                }
+            }
+
+            $list = $browser->distinctValues($this->database, $this->table, $column, $this->search, $this->filtersForQuery(), $find, 200, $this->searchExact(), $encrypted);
         } catch (Throwable $exception) {
             return ['values' => [], 'more' => false, 'error' => $this->message($exception)];
         }
@@ -522,14 +533,10 @@ class Table extends PanelComponent
         foreach ($list['values'] as $index => $item) {
             $label = $plain[$index][$column];
 
-            if ($find !== '' && ($label === null || ! str_contains(mb_strtolower((string) $label), mb_strtolower($find)))) {
-                continue;
-            }
-
             $values[] = $label !== $item['value'] && $label !== null ? [...$item, 'label' => (string) $label] : $item;
         }
 
-        return ['values' => array_slice($values, 0, 200), 'more' => $list['more'] || count($values) > 200, ...($error === null ? [] : ['error' => $error])];
+        return ['values' => array_slice($values, 0, 200), 'more' => $list['more'], ...($error === null ? [] : ['error' => $error])];
     }
 
     /**

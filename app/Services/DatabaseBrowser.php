@@ -343,9 +343,10 @@ class DatabaseBrowser
      *
      * @param  list<array{column: string, operator: string, value?: mixed}>  $filters
      * @param  array<string, string>  $searchExact
+     * @param  ?string  $findEncrypted  The search text encrypted for an encrypted column: matches the stored value exactly too.
      * @return array{values: list<array{value: ?string, count: int}>, more: bool}
      */
-    public function distinctValues(string $database, string $table, string $column, string $search = '', array $filters = [], string $find = '', int $limit = 200, array $searchExact = []): array
+    public function distinctValues(string $database, string $table, string $column, string $search = '', array $filters = [], string $find = '', int $limit = 200, array $searchExact = [], ?string $findEncrypted = null): array
     {
         $columns = array_column($this->columns($database, $table), 'name');
 
@@ -358,8 +359,16 @@ class DatabaseBrowser
         $quoted = $this->quote($column);
 
         if (trim($find) !== '') {
-            $where .= ($where === '' ? ' WHERE ' : ' AND ').'CAST('.$quoted.' AS CHAR) LIKE ?';
+            $match = 'CAST('.$quoted.' AS CHAR) LIKE ?';
             $bindings[] = '%'.$this->like(trim($find)).'%';
+
+            // An encrypted column: the text as typed, or its encrypted form as the stored value.
+            if ($findEncrypted !== null && $findEncrypted !== '') {
+                $match .= ' OR '.$quoted.' = ?';
+                $bindings[] = $findEncrypted;
+            }
+
+            $where .= ($where === '' ? ' WHERE ' : ' AND ').'('.$match.')';
         }
 
         $limit = max(10, min(1000, $limit));

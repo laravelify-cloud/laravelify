@@ -514,8 +514,11 @@ class DatabaseToolTest extends TestCase
         $this->assertDatabaseHas('encrypted_columns', ['database' => self::DB, 'table' => 'people', 'column' => 'secret_passport', 'crypto_method_id' => $method->id]);
         $this->assertSame(['AZE1234567', 'AZE7654321', null], array_column($page->instance()->fetchRows($this->browser, 0, 100)['rows'], 'secret_passport'));
 
-        $values = collect($page->instance()->columnValues($this->browser, 'secret_passport', '7654')['values']);
-        $this->assertSame([['value' => $encrypt('AZE7654321'), 'count' => 1, 'label' => 'AZE7654321']], $values->all(), 'The value list shows decrypted labels and searches them.');
+        // Typing the whole decrypted text finds its stored value, however rare; the stored text finds it too.
+        $values = collect($page->instance()->columnValues($this->browser, 'secret_passport', 'AZE7654321')['values']);
+        $this->assertSame([['value' => $encrypt('AZE7654321'), 'count' => 1, 'label' => 'AZE7654321']], $values->all(), 'The value list shows decrypted labels and finds the typed text.');
+        $this->assertSame(['AZE7654321'], array_column($page->instance()->columnValues($this->browser, 'secret_passport', substr($encrypt('AZE7654321'), 0, 12))['values'], 'label'));
+        $this->assertSame([], $page->instance()->columnValues($this->browser, 'secret_passport', 'AZE')['values']);
 
         // "Is exactly" and the search encrypt the text first; the column's own method is used.
         $page->call('setColumnFilter', 'secret_passport', ['mode' => 'condition', 'operator' => 'equals', 'value' => 'AZE7654321'])

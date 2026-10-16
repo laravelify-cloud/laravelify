@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.47] - 2026-10-16
+
+- **Database tool: search values of an encrypted column by the text you type.** In a marked column's header filter, **Search values** now finds the typed text as it is stored and also the same text encrypted, so a decrypted value is found however rare it is (before, only the most common values were searched).
+
 ## [0.3.0-beta.46] - 2026-10-16
 
 - **Database tool: mark a column encrypted.** Pick a column's encryption method once, from **⋮ → Encrypted with… ▸** on its header or in the **Structure** tab. The panel then handles that column everywhere:
