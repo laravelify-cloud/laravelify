@@ -184,7 +184,11 @@ CONF;
         config(['laravelify.site_log_dir' => $logs]);
         File::ensureDirectoryExists($logs.'/shop');
         File::put($logs.'/shop/queue.log', "first\nlast job done\n");
-        $website = Website::factory()->create(['type' => 'laravel', 'slug' => 'shop']);
+        $site = str_replace('\\', '/', storage_path('framework/testing/site-root-shop'));
+        File::ensureDirectoryExists($site.'/storage/logs');
+        File::put($site.'/storage/logs/queue.log', "from before the move\n");
+        File::put($site.'/storage/logs/callback.log', "callback\n");
+        $website = Website::factory()->create(['type' => 'laravel', 'slug' => 'shop', 'deploy_path' => $site]);
         $website->update(['process_config' => "[program:shop-queue]\nuser=www-data\nstdout_logfile={$logs}/shop/queue.log\n"]);
 
         try {
@@ -192,8 +196,11 @@ CONF;
 
             $this->assertSame($logs.'/shop/queue.log', $sources['program:shop-queue']['path']);
             $this->assertStringContainsString('last job done', app(SiteLogs::class)->tail($website, 'program:shop-queue', 10));
+            $this->assertArrayNotHasKey('file:queue.log', $sources->all(), 'The old copy of a moved worker log is not listed twice.');
+            $this->assertArrayHasKey('file:callback.log', $sources->all());
         } finally {
             File::deleteDirectory($logs);
+            File::deleteDirectory($site);
         }
     }
 

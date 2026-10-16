@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.42] - 2026-10-16
+
+- **Fixed: the Logs tab listed each worker log twice.** Since beta.40 worker logs are written to `/var/log/laravelify/sites/<site>/` (under **Supervisor**), and the old files of the same name in the site's `storage/logs` (written before the update) also showed under **Other logs**. The old copies are no longer listed; they stay on disk and the File manager still opens them.
+
 ## [0.3.0-beta.41] - 2026-10-16
 
 - **Older worker names are renamed by themselves.** Since beta.40 every Supervisor program of a site must start with the site name (so one site cannot replace another site's workers), and the update left a site with names like `[program:balances-listen]` running as before with "is not allowed". Now the update, the re-apply (`LARAVELIFY_REAPPLY=1 privileges.sh`), and **Save** on the Processes tab rename such programs to `<site>-balances-listen` (and `[group:...]` with its `programs=` list), apply them, and show the saved file. Names that already fit are left as they are; if a new name is taken, `-2` is added.

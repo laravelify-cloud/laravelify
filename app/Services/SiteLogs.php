@@ -50,8 +50,12 @@ class SiteLogs
         }
 
         if ($root !== null) {
+            // A worker's log from before 0.3.0-beta.40 (in storage/logs, same name as its log in the
+            // site log folder now) is not listed twice; it stays on disk for the file manager.
+            $moved = array_map('basename', array_filter($seen, fn (?string $path): bool => $path !== null && str_starts_with($path, ConfigRenderer::supervisorLogDirectory($website->slug).'/')));
+
             foreach (glob($root.'/storage/logs/*.log') ?: [] as $file) {
-                if (in_array($file, $seen, true) || is_link($file)) {
+                if (in_array($file, $seen, true) || is_link($file) || in_array(basename($file), $moved, true)) {
                     continue;
                 }
 
