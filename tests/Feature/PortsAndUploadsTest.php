@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\Websites\Form;
 use App\Mcp\Servers\LaravelifyServer;
 use App\Mcp\Tools\CreateWebsite;
 use App\Mcp\Tools\ListPorts;
@@ -15,6 +16,7 @@ use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
+use Livewire\Livewire;
 use Mockery\MockInterface;
 use PharData;
 use Tests\TestCase;
@@ -160,5 +162,30 @@ class PortsAndUploadsTest extends TestCase
         } finally {
             File::deleteDirectory($work);
         }
+    }
+
+    public function test_a_site_on_a_port_links_to_the_server_ip_and_is_checked_locally(): void
+    {
+        config(['laravelify.public_ip' => '187.7.72.156']);
+        $website = Website::factory()->create(['domain' => null, 'http_port' => 8090]);
+
+        $this->assertSame('http://187.7.72.156:8090', $website->publicUrl());
+        $this->assertSame('http://127.0.0.1:8090', $website->checkUrl());
+
+        config(['laravelify.public_ip' => null]);
+        $this->assertSame('http://127.0.0.1:8090', $website->publicUrl(), 'Without host commands nothing is looked up.');
+    }
+
+    public function test_the_add_website_form_offers_the_used_ports_list(): void
+    {
+        $this->actingAs(User::factory()->create([
+            'two_factor_secret' => app(TwoFactor::class)->generateSecret(),
+            'two_factor_confirmed_at' => now(),
+        ]));
+
+        Livewire::test(Form::class, ['group' => Group::factory()->create()])
+            ->assertSee('Used ports')
+            ->call('portMap')
+            ->assertOk();
     }
 }

@@ -64,8 +64,16 @@ class BackupPerSiteTest extends TestCase
             ]);
         }
 
+        foreach (['shop', 'blog'] as $site) {
+            BackupRun::query()->create([
+                'backup_schedule_id' => $schedule->id, 'backup_storage_id' => $storage->id, 'batch' => 'b2', 'type' => 'backup', 'kind' => 'files',
+                'target' => $site, 'status' => 'success', 'trigger' => 'manual', 'object_key' => 'k2/'.$site, 'size_bytes' => 2048,
+            ]);
+        }
+
         Livewire::test(BackupsIndex::class, ['kind' => 'files'])
-            ->assertSeeInOrder(['Full backup', '2 archives, one per website', 'blog', 'shop']);
+            ->assertSeeInOrder(['Full backup', '2 archives, one per website', '2 runs', 'blog', 'shop', '1 older run', 'Run of', 'blog', 'shop'])
+            ->assertSeeHtml('wire:key="schedule-group-'.$schedule->id);
     }
 
     public function test_a_folder_on_this_server_is_saved_as_storage_outside_var_www(): void

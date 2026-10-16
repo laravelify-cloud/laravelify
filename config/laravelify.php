@@ -19,6 +19,9 @@ return [
 
     'host_commands' => env('LARAVELIFY_HOST_COMMANDS'),
 
+    // This server's public IP, for links to sites on a port. Found by itself when empty.
+    'public_ip' => env('LARAVELIFY_PUBLIC_IP'),
+
     // Shown in the sidebar (Help). Set your own after publishing the docs and the repository.
     'docs_url' => env('LARAVELIFY_DOCS_URL', 'https://docs.laravelify.cloud'),
 

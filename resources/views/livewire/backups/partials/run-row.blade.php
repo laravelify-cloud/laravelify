@@ -1,7 +1,7 @@
 {{-- One backup or restore in the list. Older runs of the same database hang under the newest. --}}
 <tr
     wire:key="run-{{ $run->id }}-{{ $run->status }}"
-    @if ($nested) class="run-older" x-show="open" x-cloak @endif
+    @if ($nested) class="run-older" x-show="{{ $show ?? 'open' }}" x-cloak @endif
     :class="selected.includes({{ $run->id }}) && 'is-selected'"
 >
     <td>

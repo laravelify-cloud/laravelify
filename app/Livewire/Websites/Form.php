@@ -9,9 +9,11 @@ use App\Models\Group;
 use App\Services\CloudflareApi;
 use App\Services\CloudflareRoutes;
 use App\Services\GithubAppClient;
+use App\Services\ServerProcesses;
 use App\Services\WebsiteCreator;
 use App\Support\Examples;
 use App\Support\SiteTypes;
+use Livewire\Attributes\Renderless;
 
 class Form extends PanelComponent
 {
@@ -148,6 +150,17 @@ class Form extends PanelComponent
         };
 
         $this->redirect(route('websites.show', $result['website']));
+    }
+
+    /**
+     * Ports for the "Used ports" modal (loaded when it opens, without a re-render).
+     *
+     * @return array{rows: list<array<string, mixed>>, next_free: int, checked: bool}
+     */
+    #[Renderless]
+    public function portMap(ServerProcesses $processes): array
+    {
+        return $processes->portMap();
     }
 
     public function render()

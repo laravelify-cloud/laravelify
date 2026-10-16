@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.34] - 2026-10-16
+
+- **File backups are grouped by schedule.** One row per schedule (like **FULL BACKUP · 6 archives, one per website · 2 runs**), the newest run's archive of each website under it, and the older runs, each with its archives, behind **older runs**. Before, every run of the same schedule was a separate group.
+- **Sites on a port open from outside.** A website without a domain links to `http://SERVER_IP:port` (the server's public IP, found by itself or set with `LARAVELIFY_PUBLIC_IP`) instead of `127.0.0.1`, and its port is opened in the firewall (ufw) when its nginx file is written, and closed again when the port changes or the site is deleted. Health checks and the uptime monitor still check it on `127.0.0.1`.
+- **Add website: Used ports.** The HTTP port field of the Add website form has the same **Used ports** list as the General tab, with the next free port one click away.
+
 ## [0.3.0-beta.33] - 2026-10-16
 
 - **Backups without a bucket.** Backup storage has a new provider, **This server (a folder)**: give a full path like `/backups` and backups are saved there instead of S3. Laravelify makes the folder (owned by the panel's user) and tests it; it must be outside `/var/www` and system folders. Backups, restores, look inside, and download work the same. "S3 storage" is now **Backup storage**.

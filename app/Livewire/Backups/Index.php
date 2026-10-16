@@ -570,10 +570,11 @@ class Index extends PanelComponent
             'lastRuns' => $lastRuns,
             'running' => $schedules->mapWithKeys(fn (BackupSchedule $schedule) => [$schedule->id => $backups->isRunning($schedule)]),
             'runs' => $runs,
-            // Databases: by database, older dumps under the newest. Files: by run, each website's archive under it.
+            // Databases: by database, older dumps under the newest. Files: by schedule, the newest run's
+            // archive of each website under it, older runs behind a toggle. Restores stand alone.
             'runGroups' => $runs->groupBy(fn (BackupRun $run) => match (true) {
                 $isDatabase => 'database:'.$run->target,
-                $run->isBackup() && $run->batch !== null => 'batch:'.$run->batch,
+                $run->isBackup() && $run->backup_schedule_id !== null => 'schedule:'.$run->backup_schedule_id,
                 default => 'run:'.$run->id,
             }),
             'filters' => $this->filterOptions($restorable, $schedules),

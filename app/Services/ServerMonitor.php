@@ -48,7 +48,7 @@ class ServerMonitor
         $report = [];
 
         foreach ($this->monitoredWebsites() as $website) {
-            $url = (string) $website->publicUrl();
+            $url = (string) $website->checkUrl();
 
             $started = microtime(true);
             $status = null;

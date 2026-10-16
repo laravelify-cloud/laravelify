@@ -129,8 +129,11 @@
         </div>
 
         <div x-show="access === 'port'" x-cloak>
-            <input class="input" wire:model="http_port" inputmode="numeric" placeholder="8081">
-            <small class="text-muted">Leave empty for the next free port from 8081, then open http://127.0.0.1:port.</small>
+            <div class="flex gap-2">
+                <input class="input min-w-0 flex-1" wire:model="http_port" inputmode="numeric" placeholder="8081">
+                @include('livewire.websites.partials.ports-modal', ['model' => 'http_port'])
+            </div>
+            <small class="text-muted">Leave empty for the next free port from 8081. The site opens on http://{{ \App\Support\ServerAddress::publicIp() ?? 'SERVER_IP' }}:port, and the port is opened in the firewall (ufw).</small>
             @error('http_port') <small class="error">{{ $message }}</small> @enderror
         </div>
     </div>

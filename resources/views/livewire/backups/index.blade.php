@@ -121,7 +121,7 @@
     </x-layer-card>
 
     {{-- Backups and restores --}}
-    <x-layer-card title="Backups and restores" helper="{{ $isDatabase ? 'Grouped by database, newest first. Open a group to see its older backups.' : 'Newest first. Each run lists one archive per website or folder: look inside, download, or restore one website on its own.' }} Any backup still in storage can be restored." flush>
+    <x-layer-card title="Backups and restores" helper="{{ $isDatabase ? 'Grouped by database, newest first. Open a group to see its older backups.' : 'Newest first. Grouped by schedule: its newest run lists one archive per website or folder, older runs open below. Look inside, download, or restore one website on its own.' }} Any backup still in storage can be restored." flush>
         <x-slot:actions>
             @if ($filters !== [])
                 <select class="select h-8 text-[13px]" wire:model.live="filter" aria-label="Show backups of">
@@ -155,13 +155,8 @@
                 </tr>
             </thead>
                 @forelse ($runGroups as $key => $group)
-                    @if (! $isDatabase && str_starts_with($key, 'batch:') && ($group->count() > 1 || ! empty($group->first()->schedule?->targets['websites'])))
-                        <tbody x-data="{ open: {{ $loop->first ? 'true' : 'false' }} }" wire:key="run-group-{{ md5($key) }}">
-                            @include('livewire.backups.partials.batch-row', ['group' => $group])
-                            @foreach ($group->sortBy('target') as $run)
-                                @include('livewire.backups.partials.run-row', ['run' => $run, 'older' => 0, 'nested' => true])
-                            @endforeach
-                        </tbody>
+                    @if (! $isDatabase && str_starts_with($key, 'schedule:'))
+                        @include('livewire.backups.partials.schedule-group', ['group' => $group, 'first' => $loop->first])
                     @else
                         <tbody x-data="{ open: false }" wire:key="run-group-{{ md5($key) }}">
                             @include('livewire.backups.partials.run-row', ['run' => $group->first(), 'older' => $group->count() - 1, 'nested' => false])

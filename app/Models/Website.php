@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Jobs\RunDeployment;
 use App\Services\PortAllocator;
+use App\Support\ServerAddress;
 use App\Support\SiteTypes;
 use Database\Factories\WebsiteFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -337,10 +338,23 @@ class Website extends Model
         return array_values(array_unique([...$this->domains(), ...$this->redirectHosts('tunnel')]));
     }
 
+    /**
+     * The address the server itself checks the site on: a port site on 127.0.0.1 (a provider's
+     * firewall may block its public IP from inside), anything else on its public address.
+     */
+    public function checkUrl(): ?string
+    {
+        if ($this->http_port && ! $this->domain) {
+            return 'http://127.0.0.1:'.$this->http_port;
+        }
+
+        return $this->publicUrl();
+    }
+
     public function publicUrl(): ?string
     {
         if ($this->http_port) {
-            $host = $this->domain ?: '127.0.0.1';
+            $host = $this->domain ?: (ServerAddress::publicIp() ?? '127.0.0.1');
 
             return 'http://'.$host.':'.$this->http_port;
         }

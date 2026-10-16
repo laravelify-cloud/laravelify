@@ -98,6 +98,36 @@ version_ok() {
 # and the Monitoring tab's JSON request log. Security files go first because the
 # site config includes the server-level snippet; they are always written so the
 # include never points at a missing file.
+# Ports a site's nginx file listens on for everyone: not 80/443 (always open), not 127.0.0.1.
+site_public_ports() {
+  [[ -f "$1" ]] || return 0
+  grep -oE '^[[:space:]]*listen[[:space:]]+[^;]+' "$1" | awk '{print $2}' | while read -r address; do
+    case "${address}" in
+      127.0.0.1:*|localhost:*|unix:*|"[::1]":*) continue ;;
+    esac
+    port="${address##*:}"
+    [[ "${port}" =~ ^[0-9]+$ ]] || continue
+    [[ "${port}" == 80 || "${port}" == 443 ]] && continue
+    echo "${port}"
+  done | sort -u
+}
+
+# A site without a domain answers on its own port (http://SERVER_IP:8090). When ufw is on, open
+# the ports the new file listens on and close the ones only the old file used.
+sync_site_firewall() {
+  local old="$1" new="$2" port
+  command -v ufw >/dev/null 2>&1 || return 0
+  ufw status 2>/dev/null | grep -q '^Status: active' || return 0
+  for port in $(site_public_ports "${old}"); do
+    if ! site_public_ports "${new}" | grep -qx "${port}"; then
+      ufw delete allow "${port}/tcp" >/dev/null 2>&1 || true
+    fi
+  done
+  for port in $(site_public_ports "${new}"); do
+    ufw allow "${port}/tcp" comment "Laravelify site" >/dev/null 2>&1 || echo "warning: could not open port ${port} in ufw" >&2
+  done
+}
+
 install_site_nginx() {
   local slug="$1" src="$2"
   local sec_dir=/etc/nginx/laravelify-security
@@ -159,7 +189,12 @@ ROTATE
   else
     rm -f "${sec_dir}/${slug}.htpasswd"
   fi
+  local previous
+  previous="$(mktemp)"
+  cp -f -- "/etc/nginx/sites-available/laravelify-${slug}.conf" "${previous}" 2>/dev/null || : > "${previous}"
   write_file 644 "${src}/nginx.conf" "/etc/nginx/sites-available/laravelify-${slug}.conf"
+  sync_site_firewall "${previous}" "/etc/nginx/sites-available/laravelify-${slug}.conf"
+  rm -f -- "${previous}"
   ln -sfn "/etc/nginx/sites-available/laravelify-${slug}.conf" "/etc/nginx/sites-enabled/laravelify-${slug}.conf"
 }
 
@@ -513,6 +548,7 @@ PHP
     ;;
   remove-site)
     slug_ok "${TARGET}" || die "invalid slug"
+    sync_site_firewall "/etc/nginx/sites-available/laravelify-${TARGET}.conf" /dev/null
     rm -f "/etc/nginx/sites-enabled/laravelify-${TARGET}.conf" \
       "/etc/nginx/sites-available/laravelify-${TARGET}.conf" \
       "/etc/nginx/laravelify-security/${TARGET}.conf" \

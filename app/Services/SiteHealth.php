@@ -39,7 +39,7 @@ class SiteHealth
      */
     private function http(Website $website): array
     {
-        $url = $website->publicUrl();
+        $url = $website->checkUrl();
 
         if (! $url) {
             return ['key' => 'http', 'title' => 'Website responds', 'status' => 'unknown', 'detail' => 'No domain or HTTP port yet.'];
