@@ -5,16 +5,21 @@ namespace Tests\Feature;
 use App\Livewire\Database\Index as DatabaseIndex;
 use App\Livewire\Database\Show as DatabaseShow;
 use App\Livewire\Database\Table as DatabaseTable;
+use App\Models\CryptoMethod;
 use App\Models\DatabaseChange;
 use App\Models\User;
+use App\Models\Website;
+use App\Services\CommandResult;
 use App\Services\DatabaseBrowser;
 use App\Services\DatabaseSql;
+use App\Services\SiteCommand;
 use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use PDO;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 use Throwable;
 
@@ -378,11 +383,15 @@ class DatabaseToolTest extends TestCase
             ->test(DatabaseTable::class, ['database' => self::DB, 'table' => 'orders'])
             ->assertSet('filters', [['column' => 'person_id', 'operator' => 'equals', 'value' => '1']])
             ->assertSee('2 rows match')
-            ->assertSee('?where%5Bid%5D=1', false);
+            ->assertViewHas('relations', fn (array $relations): bool => $relations['out']['person_id']['table'] === 'people');
 
+        // The grid gets the relations both ways with each page of rows.
         Livewire::test(DatabaseTable::class, ['database' => self::DB, 'table' => 'people'])
-            ->assertSee('Rows that point at id = 1')
-            ->assertSee('where%5Bperson_id%5D=1', false);
+            ->assertSeeHtml('data-db-grid-payload=')
+            ->assertSeeHtml('&quot;in&quot;:[{&quot;database&quot;:&quot;'.self::DB.'&quot;,&quot;table&quot;:&quot;orders&quot;,&quot;column&quot;:&quot;person_id&quot;')
+            ->call('sortTo', 'firstname', 'desc')
+            ->assertSet('sort', 'firstname')
+            ->assertSet('direction', 'desc');
     }
 
     public function test_the_row_form_uses_pickers_and_stores_mysql_formats(): void
@@ -432,5 +441,51 @@ class DatabaseToolTest extends TestCase
             ->assertSet('sql', 'SELECT * FROM `people` LIMIT 100;')
             ->call('runSql')
             ->assertSee('AZE1234567');
+    }
+
+    public function test_encrypted_columns_are_searched_filtered_and_shown_decrypted(): void
+    {
+        $key = 'site-secret';
+        $iv = substr(hash('sha256', $key), 0, 16);
+        $encrypted = openssl_encrypt('AZE1234567', 'AES-256-CBC', $key, 0, $iv);
+        $this->browser->connection()->unprepared('ALTER TABLE `'.self::DB.'`.`people` ADD secret_passport VARCHAR(200) NULL');
+        $this->browser->connection()->update('UPDATE `'.self::DB.'`.`people` SET secret_passport = ? WHERE id = 1', [$encrypted]);
+
+        $this->mock(SiteCommand::class, function ($mock): void {
+            $mock->shouldReceive('run')->andReturnUsing(function ($website, string $command) {
+                $process = Process::fromShellCommandline((string) preg_replace('/^php[0-9.]*/', escapeshellarg(PHP_BINARY), $command));
+                $process->run();
+
+                return new CommandResult(true, false, [$command], $process->getOutput(), 0);
+            });
+        });
+        $method = CryptoMethod::factory()->create([
+            'website_id' => Website::factory()->create(['type' => 'laravel'])->id,
+            'boot_laravel' => false,
+            'encrypt_code' => "return openssl_encrypt(\$text, 'AES-256-CBC', 'site-secret', 0, substr(hash('sha256', 'site-secret'), 0, 16));",
+            'decrypt_code' => "return openssl_decrypt(\$text, 'AES-256-CBC', 'site-secret', 0, substr(hash('sha256', 'site-secret'), 0, 16));",
+        ]);
+
+        Livewire::test(DatabaseIndex::class)
+            ->set('tab', 'search')
+            ->set('query', 'AZE1234567')
+            ->set('match', 'equals')
+            ->set('scope', [self::DB])
+            ->set('searchCrypto', (string) $method->id)
+            ->call('runSearch')
+            ->assertSet('searchedFor', $encrypted)
+            ->assertSee('secret_passport:');
+
+        Livewire::test(DatabaseTable::class, ['database' => self::DB, 'table' => 'people'])
+            ->call('addFilter')
+            ->set('filters.0.column', 'secret_passport')
+            ->set('filters.0.operator', 'equals')
+            ->set('filters.0.crypto', (string) $method->id)
+            ->set('filters.0.value', 'AZE1234567')
+            ->assertSee('1 row match')
+            ->call('openRow', ['id' => 1])
+            ->set('decryptWith', (string) $method->id)
+            ->call('decryptRow')
+            ->assertSet('decrypted', ['secret_passport' => 'AZE1234567']);
     }
 }

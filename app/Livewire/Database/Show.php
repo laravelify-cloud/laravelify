@@ -5,8 +5,10 @@ namespace App\Livewire\Database;
 use App\Livewire\Concerns\ManagesDatabaseChanges;
 use App\Livewire\Concerns\RunsSql;
 use App\Livewire\PanelComponent;
+use App\Models\CryptoMethod;
 use App\Models\DatabaseChange;
 use App\Services\BackupManager;
+use App\Services\CryptoMethods;
 use App\Services\DatabaseBrowser;
 use Livewire\Attributes\Url;
 use Throwable;
@@ -49,6 +51,11 @@ class Show extends PanelComponent
     public ?array $found = null;
 
     public ?string $searchError = null;
+
+    /** An encryption method to run on the search text first (search for the encrypted value). */
+    public string $searchCrypto = '';
+
+    public ?string $searchedFor = null;
 
     public bool $exportOpen = false;
 
@@ -104,13 +111,22 @@ class Show extends PanelComponent
         $this->sort = in_array($column, ['name', 'rows', 'size', 'engine', 'updated'], true) ? $column : 'name';
     }
 
-    public function runSearch(DatabaseBrowser $browser): void
+    public function runSearch(DatabaseBrowser $browser, CryptoMethods $crypto): void
     {
         $this->searchError = null;
         $this->found = null;
+        $this->searchedFor = null;
 
         try {
-            $this->found = $browser->search($this->query, ['mode' => $this->mode, 'match' => $this->match, 'column' => $this->column, 'databases' => [$this->database]]);
+            $term = $this->query;
+            $method = $this->mode === 'data' && $this->searchCrypto !== '' ? CryptoMethod::query()->find((int) $this->searchCrypto) : null;
+
+            if ($method && trim($this->query) !== '') {
+                $term = $crypto->encrypt($method, trim($this->query));
+                $this->searchedFor = $term;
+            }
+
+            $this->found = $browser->search($term, ['mode' => $this->mode, 'match' => $this->match, 'column' => $this->column, 'databases' => [$this->database]]);
         } catch (Throwable $exception) {
             $this->searchError = $exception->getMessage();
         }

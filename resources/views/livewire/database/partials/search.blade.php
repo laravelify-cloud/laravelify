@@ -35,6 +35,18 @@
                     <span class="label">Only columns named</span>
                     <input class="input" wire:model="column" placeholder="Optional. Blank searches every column." aria-label="Only columns named">
                 </label>
+                @php $searchMethods = \App\Models\CryptoMethod::query()->orderBy('name')->get(['id', 'name']); @endphp
+                @if ($searchMethods->isNotEmpty())
+                    <label class="field min-w-0">
+                        <span class="label">Encrypt first with</span>
+                        <select class="select" wire:model="searchCrypto" aria-label="Encrypt the text first with">
+                            <option value="">Nothing (search the text as typed)</option>
+                            @foreach ($searchMethods as $searchMethod)
+                                <option value="{{ $searchMethod->id }}">{{ $searchMethod->name }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                @endif
             @endif
             @if (count($scopeChoices) > 1 && ! isset($fixedScope))
                 <div class="field">
@@ -57,6 +69,9 @@
 
         @if ($searchError)
             <p class="error">{{ $searchError }}</p>
+        @endif
+        @if ($searchedFor)
+            <p class="text-[12.5px] text-muted">Searched for the encrypted text <span class="break-all font-mono text-ink">{{ $searchedFor }}</span></p>
         @endif
     </form>
 

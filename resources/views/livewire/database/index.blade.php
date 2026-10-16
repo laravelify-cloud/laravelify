@@ -12,6 +12,7 @@
         <button type="button" wire:click="$set('tab', 'sql')" aria-pressed="{{ $tab === 'sql' ? 'true' : 'false' }}">SQL</button>
         <button type="button" wire:click="$set('tab', 'search')" aria-pressed="{{ $tab === 'search' ? 'true' : 'false' }}">Search everywhere</button>
         <button type="button" wire:click="$set('tab', 'changes')" aria-pressed="{{ $tab === 'changes' ? 'true' : 'false' }}">Changes</button>
+        <button type="button" wire:click="$set('tab', 'encryption')" aria-pressed="{{ $tab === 'encryption' ? 'true' : 'false' }}">Encryption</button>
     </div>
 
     @if ($error)
@@ -58,6 +59,8 @@
                 </table>
             </div>
         </x-layer-card>
+    @elseif ($tab === 'encryption')
+        @include('livewire.database.partials.crypto')
     @elseif ($tab === 'sql')
         @include('livewire.database.partials.sql', ['sqlTarget' => $sqlIn, 'sqlChoices' => $allDatabases])
     @elseif ($tab === 'search')

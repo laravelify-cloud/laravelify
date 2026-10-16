@@ -2,6 +2,15 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.44] - unreleased
+
+- **Database tool: rows in AG Grid.** The rows of a table are an AG Grid (Community edition, MIT: free, no watermark) in the panel's colours: resize, move, and pin columns (kept per table in your browser), tick rows to delete them, row numbers, tooltips with each column's type. Sorting, paging, the search, and filters still run in MySQL; a click on a header sorts there. Foreign-key values are links to the row they point at, and a value other tables point at opens a list of them (like DataGrip). The grid loads only on table pages.
+- **Encryption methods (Database → Encryption).** For websites that save some columns encrypted (like `encryptString()` in their helpers): add the website's method as PHP code that takes `$text` and returns text, like `return encryptString($text);`, plus an optional decrypt. It runs in the website's folder as the website's user, with its Laravel app loaded, so it uses the website's own helpers and keys; the panel never sees them. Then:
+  - **Search** can encrypt what you type first and look for the encrypted value (**Encrypt first with**).
+  - A table **filter** can be marked **Encrypted with** a method.
+  - A **record** can be shown decrypted (**Show decrypted with…**).
+  - **Try a method** encrypts a text and decrypts it again to check it. The code is stored encrypted.
+
 ## [0.3.0-beta.43] - 2026-10-16
 
 - **Full backup: tick or untick whole databases.** Each database in the dialog has its own tick box next to its tables. Unticked databases are skipped and stay unticked for the next full backup; databases added later are backed up.

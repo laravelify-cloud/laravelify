@@ -4,7 +4,9 @@ namespace App\Livewire\Database;
 
 use App\Livewire\Concerns\RunsSql;
 use App\Livewire\PanelComponent;
+use App\Models\CryptoMethod;
 use App\Services\BackupManager;
+use App\Services\CryptoMethods;
 use App\Services\DatabaseBrowser;
 use Livewire\Attributes\Url;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -43,6 +45,15 @@ class Table extends PanelComponent
 
     /** @var list<array{column: string, operator: string, value: string}> */
     public array $filters = [];
+
+    /** @var array<string, string> Filter values encrypted by a method: "methodId|value" => encrypted value. */
+    public array $encryptedValues = [];
+
+    /** The method the open record is shown decrypted with. */
+    public string $decryptWith = '';
+
+    /** @var array<string, string> Decrypted values of the open record, by column. */
+    public array $decrypted = [];
 
     /** A record to open (from a search result): its keys as JSON. */
     #[Url(as: 'row')]
@@ -137,12 +148,106 @@ class Table extends PanelComponent
     public function updatedFilters(): void
     {
         $this->page = 1;
+        $this->encryptFilterValues(app(CryptoMethods::class));
+    }
+
+    /**
+     * A filter with "encrypted with" looks for the encrypted value: encrypt each new value once.
+     */
+    private function encryptFilterValues(CryptoMethods $crypto): void
+    {
+        $this->resetErrorBag('filters');
+
+        foreach ($this->filters as $filter) {
+            $methodId = (int) ($filter['crypto'] ?? 0);
+            $value = (string) ($filter['value'] ?? '');
+            $key = $methodId.'|'.$value;
+
+            if ($methodId === 0 || $value === '' || isset($this->encryptedValues[$key])) {
+                continue;
+            }
+
+            $method = CryptoMethod::query()->find($methodId);
+
+            if (! $method) {
+                continue;
+            }
+
+            try {
+                $this->encryptedValues[$key] = $crypto->encrypt($method, $value);
+            } catch (Throwable $exception) {
+                $this->addError('filters', $exception->getMessage());
+            }
+        }
+    }
+
+    /**
+     * The filters as MySQL gets them: an encrypted filter's value replaced by its encrypted form.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function filtersForQuery(): array
+    {
+        return array_values(array_filter(array_map(function (array $filter): ?array {
+            $methodId = (int) ($filter['crypto'] ?? 0);
+
+            if ($methodId === 0 || (string) ($filter['value'] ?? '') === '') {
+                return $filter;
+            }
+
+            $encrypted = $this->encryptedValues[$methodId.'|'.$filter['value']] ?? null;
+
+            return $encrypted === null ? null : [...$filter, 'value' => $encrypted];
+        }, $this->filters)));
+    }
+
+    /**
+     * Show the open record decrypted with a method: every text value it can decrypt.
+     */
+    public function decryptRow(CryptoMethods $crypto): void
+    {
+        $this->decrypted = [];
+        $method = CryptoMethod::query()->find((int) $this->decryptWith);
+
+        if (! $method) {
+            return;
+        }
+
+        $columns = array_keys(array_filter($this->rowData, fn ($value): bool => is_string($value) && $value !== '' && ! str_starts_with($value, '[binary, ')));
+
+        try {
+            $plain = $crypto->decrypt($method, array_map(fn (string $column): string => (string) $this->rowData[$column], $columns));
+        } catch (Throwable $exception) {
+            $this->toast($exception->getMessage(), 'error');
+
+            return;
+        }
+
+        foreach ($columns as $index => $column) {
+            $value = $plain[$index] ?? null;
+
+            if ($value !== null && $value !== '' && $value !== $this->rowData[$column] && mb_check_encoding($value, 'UTF-8')) {
+                $this->decrypted[$column] = $value;
+            }
+        }
+
+        $this->toast($this->decrypted === [] ? 'No value of this record decrypts with '.$method->name.'.' : 'Decrypted '.count($this->decrypted).' '.(count($this->decrypted) === 1 ? 'value' : 'values').' with '.$method->name.'.', $this->decrypted === [] ? 'error' : 'success');
     }
 
     public function sortBy(string $column): void
     {
         $this->direction = $this->sort === $column && $this->direction === 'asc' ? 'desc' : 'asc';
         $this->sort = $column;
+        $this->page = 1;
+    }
+
+    /**
+     * Sort as the grid asks: a column and a direction, or no column for the table's own order.
+     */
+    public function sortTo(?string $column, string $direction = 'asc'): void
+    {
+        $this->sort = $column !== null && $column !== '' ? $column : null;
+        $this->direction = $direction === 'desc' ? 'desc' : 'asc';
         $this->page = 1;
     }
 
@@ -186,6 +291,7 @@ class Table extends PanelComponent
 
         $this->rowKeys = $keys;
         $this->rowData = $row;
+        $this->decrypted = [];
         $this->rowParam = (string) json_encode($keys);
         $this->editing = false;
         $this->creating = false;
@@ -348,7 +454,7 @@ class Table extends PanelComponent
                     'sort' => $this->sort,
                     'direction' => $this->direction,
                     'search' => $this->search,
-                    'filters' => $this->filters,
+                    'filters' => $this->filtersForQuery(),
                 ]);
                 $this->page = $data['page'];
             }
@@ -367,6 +473,7 @@ class Table extends PanelComponent
             'data' => $data,
             'error' => $error,
             'operators' => DatabaseBrowser::OPERATORS,
+            'cryptoMethods' => CryptoMethod::query()->orderBy('name')->get(['id', 'name', 'decrypt_code']),
         ])->layout('layouts.app')->title($this->database.'.'.$this->table);
     }
 }

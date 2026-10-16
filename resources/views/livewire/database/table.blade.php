@@ -9,7 +9,7 @@
         return \Illuminate\Support\Str::limit((string) $value, 80);
     };
 @endphp
-<div class="flex flex-col gap-6" x-data="{ selected: [] }" @rows-deleted.window="selected = []">
+<div class="flex flex-col gap-6" x-data="{ selected: [] }" @rows-deleted.window="selected = []" @db-grid-selected.window="selected = $event.detail">
     <div class="page-header">
         <div class="min-w-0">
             <p class="flex flex-wrap items-center gap-1.5 text-[13px] text-muted">
@@ -103,9 +103,21 @@
                             @else
                                 <span></span>
                             @endunless
+                            @if ($cryptoMethods->isNotEmpty() && ! in_array($filter['operator'] ?? '', ['null', 'not_null'], true))
+                                <label class="field w-48">
+                                    <span class="label">Encrypted with</span>
+                                    <select class="select" wire:model.live="filters.{{ $index }}.crypto" aria-label="The column is encrypted with">
+                                        <option value="">Not encrypted</option>
+                                        @foreach ($cryptoMethods as $method)
+                                            <option value="{{ $method->id }}">{{ $method->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </label>
+                            @endif
                             <button class="icon-btn" type="button" wire:click="removeFilter({{ $index }})" aria-label="Remove filter"><x-menu-icon name="close" class="size-4" /></button>
                         </div>
                     @endforeach
+                    @error('filters') <p class="error">{{ $message }}</p> @enderror
                 </div>
             @endif
 
@@ -118,83 +130,32 @@
             </div>
 
             @php
-                $relatedLink = fn (array $to, $value) => route('database.table', [$to['database'], $to['table']]).'?'.http_build_query(['where' => [$to['column'] => (string) $value]]);
+                $gridPayload = [
+                    'database' => $database,
+                    'table' => $table,
+                    'urlTemplate' => route('database.table', ['__DB__', '__TABLE__']),
+                    'columns' => collect($columns)->map(fn ($column) => [
+                        'name' => $column['name'],
+                        'type' => $column['type'],
+                        'key' => in_array($column['name'], $keyColumns, true),
+                        'numeric' => in_array($column['data_type'], ['tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint', 'decimal', 'float', 'double', 'year'], true),
+                        'out' => $relations['out'][$column['name']] ?? null,
+                        'in' => $relations['in'][$column['name']] ?? [],
+                    ])->values()->all(),
+                    'rows' => $data['rows'],
+                    'keyColumns' => $keyColumns,
+                    'canChange' => $canChange,
+                    'sort' => $sort,
+                    'direction' => $direction,
+                    'offset' => ($data['page'] - 1) * $data['per_page'],
+                    'filtered' => $search !== '' || $filters !== [],
+                ];
+                $gridJson = json_encode($gridPayload, JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR);
             @endphp
-            <div class="db-grid-wrap">
-                <table class="db-grid">
-                    <thead>
-                        <tr>
-                            <th class="db-grid-num">#</th>
-                            @if ($canChange)
-                                <th class="db-grid-check"></th>
-                            @endif
-                            @foreach ($columns as $column)
-                                @php
-                                    $out = $relations['out'][$column['name']] ?? null;
-                                    $in = $relations['in'][$column['name']] ?? [];
-                                @endphp
-                                <th title="{{ $column['type'] }}{{ $out ? ' · points at '.$out['table'].'.'.$out['column'] : '' }}{{ $in !== [] ? ' · used by '.collect($in)->map(fn ($r) => $r['table'].'.'.$r['column'])->implode(', ') : '' }}">
-                                    <button class="db-grid-head" type="button" wire:click="sortBy('{{ $column['name'] }}')">
-                                        <span class="truncate">{{ $column['name'] }}</span>
-                                        @if (in_array($column['name'], $keyColumns, true)) <span class="db-grid-badge is-key">key</span> @endif
-                                        @if ($out) <span class="db-grid-badge is-link">→ {{ $out['table'] }}</span> @endif
-                                        @if ($in !== []) <span class="db-grid-badge is-link">← {{ count($in) }}</span> @endif
-                                        <span class="ml-auto text-[11px] {{ $sort === $column['name'] ? 'text-accent' : 'opacity-40' }}">{{ $sort === $column['name'] ? ($direction === 'asc' ? '↑' : '↓') : '↕' }}</span>
-                                    </button>
-                                </th>
-                            @endforeach
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse ($data['rows'] as $index => $row)
-                            @php $key = json_encode($keyOf($row)); @endphp
-                            <tr wire:key="row-{{ $data['page'] }}-{{ $index }}-{{ md5($key) }}" class="{{ $canChange ? 'cursor-pointer' : '' }}" :class="selected.includes(@js($key)) && 'is-selected'" @if ($canChange) wire:click="openRow(@js($keyOf($row)))" @endif>
-                                <td class="db-grid-num">{{ ($data['page'] - 1) * $data['per_page'] + $index + 1 }}</td>
-                                @if ($canChange)
-                                    <td class="db-grid-check" @click.stop>
-                                        <input type="checkbox" aria-label="Select row" :checked="selected.includes(@js($key))" @change="selected = $event.target.checked ? [...selected, @js($key)] : selected.filter((item) => item !== @js($key))">
-                                    </td>
-                                @endif
-                                @foreach ($columns as $column)
-                                    @php
-                                        $raw = $row[$column['name']] ?? null;
-                                        $value = $cell($raw);
-                                        $out = $relations['out'][$column['name']] ?? null;
-                                        $in = $relations['in'][$column['name']] ?? [];
-                                    @endphp
-                                    <td class="{{ is_numeric($raw) ? 'is-number' : '' }}">
-                                        @if ($value === null)
-                                            <span class="db-grid-null">NULL</span>
-                                        @elseif ($out)
-                                            <a class="db-grid-link" href="{{ $relatedLink($out, $raw) }}" wire:navigate @click.stop title="Open the {{ $out['table'] }} row with {{ $out['column'] }} = {{ $value }}">{{ $value }}</a>
-                                        @elseif ($in !== [])
-                                            <span class="db-grid-related" x-data="{ open: false, x: 0, y: 0 }" @click.stop>
-                                                <button class="db-grid-link" type="button" title="Rows in other tables that point at this one"
-                                                    @click="const box = $el.getBoundingClientRect(); x = Math.min(box.left, window.innerWidth - 300); y = box.bottom + 4; open = ! open">{{ $value }}</button>
-                                                <template x-teleport="body">
-                                                    <div class="db-rel-menu" x-show="open" x-cloak @click.outside="open = false" @keydown.escape.window="open = false" :style="`left: ${x}px; top: ${y}px`">
-                                                        <p class="db-rel-title">Rows that point at {{ $column['name'] }} = {{ $value }}</p>
-                                                        @foreach ($in as $relation)
-                                                            <a class="db-rel-item" href="{{ $relatedLink($relation, $raw) }}" wire:navigate>
-                                                                <x-menu-icon name="table" class="size-4 shrink-0 text-muted" />
-                                                                <span class="font-mono">{{ $relation['database'] !== $database ? $relation['database'].'.' : '' }}{{ $relation['table'] }}</span>
-                                                                <span class="font-mono text-muted">({{ $relation['column'] }})</span>
-                                                            </a>
-                                                        @endforeach
-                                                    </div>
-                                                </template>
-                                            </span>
-                                        @else
-                                            {{ $value }}
-                                        @endif
-                                    </td>
-                                @endforeach
-                            </tr>
-                        @empty
-                            <tr><td colspan="{{ count($columns) + 2 }}" class="table-empty">{{ $search !== '' || $filters !== [] ? 'No rows match.' : 'This table is empty.' }}</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+            {{-- The rows for the grid. A new page from the server replaces this element, which hands the rows over. --}}
+            <div hidden data-db-grid-payload="{{ $gridJson }}" wire:key="grid-data-{{ md5((string) $gridJson) }}" x-data x-init="$dispatch('db-grid-data', JSON.parse($el.dataset.dbGridPayload))"></div>
+            <div wire:ignore x-data="dbGrid()" @db-grid-data.window="receive($event.detail)">
+                <div x-ref="grid" class="db-ag-grid"></div>
             </div>
 
             @if ($data['pages'] > 1)
@@ -287,6 +248,18 @@
                         <button class="btn btn-primary" type="submit" form="row-form" wire:loading.attr="disabled" wire:target="saveRow">{{ $creating ? 'Add row' : 'Save' }}</button>
                     </div>
                 @else
+                    @php $decryptMethods = $cryptoMethods->filter(fn ($method) => $method->canDecrypt()); @endphp
+                    @if ($decryptMethods->isNotEmpty())
+                        <form class="flex flex-wrap items-center gap-2" wire:submit="decryptRow">
+                            <select class="select h-8 w-auto" wire:model="decryptWith" aria-label="Decrypt with">
+                                <option value="">Show decrypted with…</option>
+                                @foreach ($decryptMethods as $method)
+                                    <option value="{{ $method->id }}">{{ $method->name }}</option>
+                                @endforeach
+                            </select>
+                            <button class="btn btn-sm" type="submit" wire:loading.attr="disabled" wire:target="decryptRow">Decrypt</button>
+                        </form>
+                    @endif
                     <div class="max-h-[60vh] overflow-auto rounded-lg border border-line">
                         <dl class="divide-y divide-line">
                             @foreach ($rowData as $column => $value)
@@ -299,6 +272,9 @@
                                         @endif
                                     </dt>
                                     <dd class="m-0 min-w-0 flex-1 font-mono text-[13px] break-words">
+                                        @isset($decrypted[$column])
+                                            <span class="mb-1 flex items-start gap-2 rounded-md px-2 py-1" style="background: color-mix(in srgb, var(--color-success) 10%, transparent)"><span class="shrink-0 text-[11px] text-muted">decrypted</span> <span class="whitespace-pre-wrap break-words">{{ $decrypted[$column] }}</span></span>
+                                        @endisset
                                         @if ($value === null)
                                             <span class="italic text-muted">NULL</span>
                                         @elseif ($value === '')

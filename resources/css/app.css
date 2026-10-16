@@ -2065,6 +2065,12 @@ html:has(.modal-root:not([x-cloak]):not([style*="display: none"])) {
 /* Wide dialogs (restore, view, download). Outside a layer, like .modal-panel itself. */
 .modal-wide .modal-panel { width: min(100%, 56rem); }
 
+/* Database tool: the AG Grid of rows (its theme follows the panel's colours, see resources/js/db-grid.js). */
+.db-ag-grid { height: min(72vh, 860px); min-height: 320px; }
+.db-ag-grid .db-ag-number { text-align: right; font-variant-numeric: tabular-nums; }
+.db-ag-grid .db-ag-num { color: var(--color-muted); font-size: 11px; text-align: right; }
+.db-ag-grid .ag-header-cell-text { text-overflow: ellipsis; }
+
 /* Database tool: rows as a spreadsheet grid (only here: dense, ruled cells, sticky header). */
 .db-grid-wrap { max-height: 70vh; overflow: auto; }
 .db-grid { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-family: var(--font-mono); font-size: 12.5px; }

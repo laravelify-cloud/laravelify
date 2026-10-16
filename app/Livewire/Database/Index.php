@@ -2,11 +2,14 @@
 
 namespace App\Livewire\Database;
 
+use App\Livewire\Concerns\ManagesCryptoMethods;
 use App\Livewire\Concerns\ManagesDatabaseChanges;
 use App\Livewire\Concerns\RunsSql;
 use App\Livewire\PanelComponent;
+use App\Models\CryptoMethod;
 use App\Models\DatabaseChange;
 use App\Services\BackupManager;
+use App\Services\CryptoMethods;
 use App\Services\DatabaseBrowser;
 use Livewire\Attributes\Url;
 use Throwable;
@@ -17,6 +20,7 @@ use Throwable;
  */
 class Index extends PanelComponent
 {
+    use ManagesCryptoMethods;
     use ManagesDatabaseChanges;
     use RunsSql;
 
@@ -60,10 +64,16 @@ class Index extends PanelComponent
 
     public ?string $searchError = null;
 
-    public function runSearch(DatabaseBrowser $browser): void
+    /** An encryption method to run on the search text first (search for the encrypted value). */
+    public string $searchCrypto = '';
+
+    public ?string $searchedFor = null;
+
+    public function runSearch(DatabaseBrowser $browser, CryptoMethods $crypto): void
     {
         $this->searchError = null;
         $this->found = null;
+        $this->searchedFor = null;
 
         if (trim($this->query) === '') {
             $this->searchError = 'Type what to look for.';
@@ -72,7 +82,15 @@ class Index extends PanelComponent
         }
 
         try {
-            $this->found = $browser->search($this->query, [
+            $term = $this->query;
+            $method = $this->mode === 'data' && $this->searchCrypto !== '' ? CryptoMethod::query()->find((int) $this->searchCrypto) : null;
+
+            if ($method) {
+                $term = $crypto->encrypt($method, trim($this->query));
+                $this->searchedFor = $term;
+            }
+
+            $this->found = $browser->search($term, [
                 'mode' => $this->mode,
                 'match' => $this->match,
                 'column' => $this->column,
@@ -146,6 +164,8 @@ class Index extends PanelComponent
             'totalSize' => array_sum(array_column($databases, 'size')),
             'error' => $error,
             'changes' => $this->tab === 'changes' ? DatabaseChange::query()->with('user')->latest('id')->limit(200)->get() : collect(),
+            'cryptoMethods' => CryptoMethod::query()->with('website')->orderBy('name')->get(),
+            'cryptoWebsites' => $this->tab === 'encryption' ? $this->cryptoWebsites() : collect(),
         ])->layout('layouts.app')->title('Database');
     }
 }
