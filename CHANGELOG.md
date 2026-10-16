@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
-## [0.3.0-beta.43] - unreleased
+## [0.3.0-beta.43] - 2026-10-16
 
 - **Full backup: tick or untick whole databases.** Each database in the dialog has its own tick box next to its tables. Unticked databases are skipped and stay unticked for the next full backup; databases added later are backed up.
 - **Database tool, row form:** each column gets a field that fits it. Date, datetime, and time columns use the browser's date and time pickers (with **Now** and **Clear**), enum columns a list of their values, long text a text box; the type never runs over the field any more, and **NULL** sits on the right. Values go back to MySQL's own format (`2025-02-23 17:59:37`). Zero dates and fractions of a second keep a plain field.
