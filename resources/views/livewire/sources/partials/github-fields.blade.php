@@ -52,7 +52,7 @@
 </label>
 <label class="field">
     <span>Private key</span>
-    <select class="input" wire:model="private_key_id" required>
+    <select class="select" wire:model="private_key_id" required>
         <option value="">Select a private key</option>
         @foreach ($privateKeys as $key)
             <option value="{{ $key->id }}">{{ $key->name }}</option>

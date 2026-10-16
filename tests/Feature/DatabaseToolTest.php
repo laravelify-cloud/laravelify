@@ -8,6 +8,7 @@ use App\Livewire\Database\Table as DatabaseTable;
 use App\Models\DatabaseChange;
 use App\Models\User;
 use App\Services\DatabaseBrowser;
+use App\Services\DatabaseSql;
 use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -266,5 +267,98 @@ class DatabaseToolTest extends TestCase
             ->call('sortBy', 'rows')
             ->assertSet('direction', 'asc')
             ->assertSeeInOrder(['logs', 'people']);
+    }
+
+    public function test_sql_console_runs_selects_and_refuses_the_rest(): void
+    {
+        $sql = app(DatabaseSql::class);
+        $ran = $sql->run(self::DB, "SELECT firstname FROM people WHERE firstname = 'Arshad'; SELECT * FROM mysql.user");
+
+        $this->assertSame('That database is not available here.', $ran['error']);
+        $this->assertSame(['Arshad'], array_column($ran['results'][0]['rows'], 'firstname'));
+
+        $refused = $sql->run(self::DB, "SELECT * INTO OUTFILE '/tmp/laravelify-test.sql' FROM people");
+        $this->assertSame('Writing a file on the server is not allowed.', $refused['error']);
+        $this->assertSame([], $refused['results']);
+
+        $before = DatabaseChange::query()->count();
+        $wrote = $sql->run(self::DB, "INSERT INTO people (firstname, city) VALUES ('Nigar', 'Sheki')");
+        $this->assertSame('1 row changed.', $wrote['results'][0]['message']);
+        $this->assertSame($before, DatabaseChange::query()->count());
+
+        $this->browser->connection()->unprepared('CREATE TABLE `'.self::DB.'`.`many` (n INT)');
+        $this->browser->connection()->unprepared('INSERT INTO `'.self::DB.'`.`many` (n) VALUES '.implode(',', array_fill(0, 205, '(1)')));
+        $capped = $sql->run(self::DB, 'SELECT n FROM many');
+        $this->assertTrue($capped['results'][0]['truncated']);
+        $this->assertCount(DatabaseSql::MAX_ROWS, $capped['results'][0]['rows']);
+        $this->assertSame('many', $capped['results'][0]['table']);
+
+        Livewire::test(DatabaseShow::class, ['database' => self::DB])
+            ->set('tab', 'sql')
+            ->assertSee('not added to the change log')
+            ->call('runSql', "SELECT city FROM people WHERE firstname = 'Leyla'", 'SELECT firstname FROM people')
+            ->assertSee('Ganja')
+            ->call('downloadInserts', 0)
+            ->assertFileDownloaded(self::DB.'-people-inserts.sql');
+    }
+
+    public function test_export_dialog_and_download_guards(): void
+    {
+        Livewire::test(DatabaseIndex::class)
+            ->call('openExport', self::DB)
+            ->assertSet('exportOpen', true)
+            ->assertSet('exportTables', ['logs', 'people'])
+            ->assertSee('Download .sql');
+
+        Livewire::test(DatabaseShow::class, ['database' => self::DB])
+            ->assertSee('SQL')
+            ->call('openExport')
+            ->assertSet('exportTables', ['logs', 'people']);
+
+        Livewire::test(DatabaseTable::class, ['database' => self::DB, 'table' => 'people'])
+            ->assertSee('Export SQL')
+            ->call('openExport')
+            ->assertSet('exportSingle', true)
+            ->assertSeeHtml('name="single"');
+
+        $this->post(route('database.export'), [
+            'database' => 'mysql',
+            'contents' => 'both',
+            'tables' => ['user'],
+        ])->assertNotFound();
+
+        $this->post(route('database.export'), [
+            'database' => self::DB,
+            'contents' => 'sideways',
+            'tables' => ['people'],
+        ])->assertRedirect()->assertSessionHas('export_error', 'Choose structure, data, or both.');
+
+        $this->post(route('database.export'), [
+            'database' => self::DB,
+            'contents' => 'structure',
+            'tables' => [],
+        ])->assertRedirect()->assertSessionHas('export_error', 'Choose at least one table.');
+
+    }
+
+    public function test_one_table_exports_as_plain_sql(): void
+    {
+        $response = $this->post(route('database.export'), [
+            'database' => self::DB,
+            'contents' => 'structure',
+            'single' => '1',
+            'tables' => ['people'],
+        ]);
+
+        if ($response->isRedirect()) {
+            $response->assertSessionHas('export_error', 'This server cannot run mysqldump.');
+
+            return;
+        }
+
+        $content = $response->getFile()->getContent();
+        $response->assertOk();
+        $this->assertStringContainsString('people', (string) $response->headers->get('content-disposition'));
+        $this->assertStringContainsString('CREATE TABLE', $content);
     }
 }

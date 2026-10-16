@@ -1,9 +1,11 @@
 <div class="flex flex-col gap-6">
-    <x-page-header title="Database" summary="Every MySQL database on this server: browse, search, and change tables, rows, triggers, events, procedures, and functions. Every change is logged, so one row or object can be undone later.">
+    <x-page-header title="Database" summary="Browse every MySQL database on this server. Search, edit rows, and undo a change later.">
         <x-slot:actions>
             <a class="btn" href="{{ route('backups.databases') }}" wire:navigate><x-menu-icon name="backup" /> Backups</a>
         </x-slot:actions>
     </x-page-header>
+
+    @include('livewire.database.partials.export')
 
     <div class="segmented self-start" role="tablist">
         <button type="button" wire:click="$set('tab', 'databases')" aria-pressed="{{ $tab === 'databases' ? 'true' : 'false' }}">Databases</button>
@@ -27,7 +29,7 @@
                             @foreach (['name' => 'Database', 'tables' => 'Tables', 'size' => 'Size'] as $key => $label)
                                 <th>@include('livewire.database.partials.sort-header', ['key' => $key, 'label' => $label])</th>
                             @endforeach
-                            <th class="w-56"></th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -43,6 +45,7 @@
                                 <td>
                                     <div class="row-actions w-full">
                                         <a class="btn btn-sm" href="{{ route('database.show', $database['name']) }}" wire:navigate>Open</a>
+                                        <button class="btn btn-sm" type="button" wire:click="openExport({{ \Illuminate\Support\Js::from($database['name']) }})"><x-menu-icon name="download" class="size-4" /> Export SQL</button>
                                         <button class="btn btn-sm" type="button" wire:click="backup('{{ $database['name'] }}')" wire:confirm="Back up {{ $database['name'] }} now to your backup storage?"><x-menu-icon name="backup" class="size-4" /> Back up</button>
                                     </div>
                                 </td>

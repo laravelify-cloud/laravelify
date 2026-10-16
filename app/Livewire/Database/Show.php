@@ -7,7 +7,9 @@ use App\Livewire\PanelComponent;
 use App\Models\DatabaseChange;
 use App\Services\BackupManager;
 use App\Services\DatabaseBrowser;
+use App\Services\DatabaseSql;
 use Livewire\Attributes\Url;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 /**
@@ -48,6 +50,22 @@ class Show extends PanelComponent
 
     public ?string $searchError = null;
 
+    public string $sql = '';
+
+    public ?string $sqlError = null;
+
+    /** @var list<array<string, mixed>> */
+    public array $sqlResults = [];
+
+    public bool $exportOpen = false;
+
+    public bool $exportSingle = false;
+
+    public string $exportDatabase = '';
+
+    /** @var list<string> */
+    public array $exportTables = [];
+
     // Trigger, event, procedure, function editor.
     public bool $editorOpen = false;
 
@@ -64,6 +82,46 @@ class Show extends PanelComponent
         abort_unless(DatabaseBrowser::validDatabase($database), 404);
         $this->database = $database;
         $this->scope = [$database];
+        $this->exportDatabase = $database;
+    }
+
+    public function openExport(DatabaseBrowser $browser): void
+    {
+        try {
+            $this->exportTables = array_column($browser->tables($this->database), 'name');
+        } catch (Throwable $exception) {
+            $this->toast($exception->getMessage(), 'error');
+
+            return;
+        }
+
+        $this->exportSingle = false;
+        $this->exportOpen = true;
+    }
+
+    public function runSql(DatabaseSql $runner, string $selection = '', string $sql = ''): void
+    {
+        if ($sql !== '') {
+            $this->sql = $sql;
+        }
+
+        $ran = $runner->run($this->database, trim($selection) !== '' ? $selection : $this->sql);
+        $this->sqlResults = $ran['results'];
+        $this->sqlError = $ran['error'];
+    }
+
+    public function downloadInserts(DatabaseSql $runner, int $index): StreamedResponse
+    {
+        $result = $this->sqlResults[$index] ?? null;
+        abort_unless(is_array($result) && ($result['kind'] ?? '') === 'rows' && ($result['rows'] ?? []) !== [], 404);
+
+        $table = (string) ($result['table'] ?: 'rows');
+        $body = $runner->inserts($table, $result['columns'], $result['rows']);
+        $name = $this->database.'-'.$table.'-inserts.sql';
+
+        return response()->streamDownload(function () use ($body): void {
+            echo $body;
+        }, $name, ['Content-Type' => 'application/sql; charset=UTF-8']);
     }
 
     public function sortBy(string $column): void

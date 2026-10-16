@@ -29,6 +29,15 @@ class Index extends PanelComponent
 
     public string $filter = '';
 
+    public bool $exportOpen = false;
+
+    public bool $exportSingle = false;
+
+    public string $exportDatabase = '';
+
+    /** @var list<string> */
+    public array $exportTables = [];
+
     public string $query = '';
 
     public string $mode = 'data';
@@ -73,6 +82,25 @@ class Index extends PanelComponent
         // The same column again reverses the order; a new one starts A–Z for names, largest first for numbers.
         $this->direction = $this->sort === $column ? ($this->direction === 'asc' ? 'desc' : 'asc') : ($column === 'name' ? 'asc' : 'desc');
         $this->sort = in_array($column, ['name', 'tables', 'size'], true) ? $column : 'name';
+    }
+
+    public function openExport(DatabaseBrowser $browser, string $database): void
+    {
+        if (! DatabaseBrowser::validDatabase($database)) {
+            return;
+        }
+
+        try {
+            $this->exportTables = array_column($browser->tables($database), 'name');
+        } catch (Throwable $exception) {
+            $this->toast($exception->getMessage(), 'error');
+
+            return;
+        }
+
+        $this->exportDatabase = $database;
+        $this->exportSingle = false;
+        $this->exportOpen = true;
     }
 
     public function backup(BackupManager $backups, string $database): void

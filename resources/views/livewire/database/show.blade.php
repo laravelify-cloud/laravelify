@@ -8,12 +8,16 @@
             <p class="page-summary">{{ $tableCount }} tables · {{ \Illuminate\Support\Number::fileSize($totalSize, precision: 1) }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-1.5">
+            <button class="btn" type="button" wire:click="openExport"><x-menu-icon name="download" /> Export SQL</button>
             <button class="btn" type="button" wire:click="backup" wire:confirm="Back up {{ $database }} now to your backup storage?"><x-menu-icon name="backup" /> Back up</button>
         </div>
     </div>
 
+    @include('livewire.database.partials.export')
+
     <div class="segmented self-start" role="tablist">
         <button type="button" wire:click="$set('tab', 'tables')" aria-pressed="{{ $tab === 'tables' ? 'true' : 'false' }}">Tables</button>
+        <button type="button" wire:click="$set('tab', 'sql')" aria-pressed="{{ $tab === 'sql' ? 'true' : 'false' }}">SQL</button>
         <button type="button" wire:click="$set('tab', 'objects')" aria-pressed="{{ $tab === 'objects' ? 'true' : 'false' }}">Triggers, events, routines</button>
         <button type="button" wire:click="$set('tab', 'search')" aria-pressed="{{ $tab === 'search' ? 'true' : 'false' }}">Search</button>
         <button type="button" wire:click="$set('tab', 'changes')" aria-pressed="{{ $tab === 'changes' ? 'true' : 'false' }}">Changes</button>
@@ -97,6 +101,8 @@
                 </div>
             </x-layer-card>
         @endforeach
+    @elseif ($tab === 'sql')
+        @include('livewire.database.partials.sql')
     @elseif ($tab === 'search')
         @include('livewire.database.partials.search', ['scopeChoices' => [$database], 'fixedScope' => true])
     @else
@@ -108,7 +114,10 @@
     <x-modal-frame class="modal-wide" open="$wire.editorOpen" close="$wire.set('editorOpen', false)">
         <form class="grid gap-4" wire:submit="saveObject">
             <div class="modal-head">
-                <h2>{{ $editorReadOnly ? '' : ($editorName ? 'Change ' : 'New ') }}{{ $editorType }}{{ $editorName ? ' '.$editorName : '' }}</h2>
+                <div class="min-w-0">
+                    <p class="text-[12px] text-muted">{{ $editorReadOnly ? 'View' : ($editorName ? 'Change' : 'New') }}</p>
+                    <h2 class="mt-1 truncate font-mono">{{ $editorType }}{{ $editorName ? ' '.$editorName : '' }}</h2>
+                </div>
                 <button class="icon-btn" type="button" wire:click="$set('editorOpen', false)" aria-label="Close"><x-menu-icon name="close" /></button>
             </div>
             <textarea class="textarea min-h-72 font-mono text-[12.5px]" wire:model="editorSql" spellcheck="false" @readonly($editorReadOnly) aria-label="Definition"></textarea>

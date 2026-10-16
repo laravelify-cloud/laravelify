@@ -394,18 +394,18 @@
                                     <input class="input font-mono text-[13px]" type="text" wire:model="redirect_rows.{{ $index }}.to" spellcheck="false" placeholder="{{ str_starts_with((string) ($row['from'] ?? ''), '/') ? '/new-page  or  https://example.com/page' : ($website->domain ? 'blank = https://'.$website->domain : 'https://example.com') }}" aria-label="Redirect to">
                                 </div>
                                 <div class="mt-2 flex flex-wrap items-center gap-3 text-[12.5px]">
-                                    <select class="input w-auto" wire:model="redirect_rows.{{ $index }}.code" data-native aria-label="Redirect type">
+                                    <select class="select h-8 w-auto" wire:model="redirect_rows.{{ $index }}.code" aria-label="Redirect type">
                                         @foreach (\App\Support\Redirects::CODES as $code => $label)
                                             <option value="{{ $code }}">{{ $label }}</option>
                                         @endforeach
                                     </select>
                                     @if (str_starts_with((string) ($row['from'] ?? ''), '/'))
-                                        <select class="input w-auto" wire:model="redirect_rows.{{ $index }}.match" data-native aria-label="Match">
+                                        <select class="select h-8 w-auto" wire:model="redirect_rows.{{ $index }}.match" aria-label="Match">
                                             <option value="exact">Only this exact page</option>
                                             <option value="prefix">This folder and everything under it</option>
                                         </select>
                                     @else
-                                        <select class="input w-auto" wire:model="redirect_rows.{{ $index }}.via" data-native aria-label="How the domain reaches this server">
+                                        <select class="select h-8 w-auto" wire:model="redirect_rows.{{ $index }}.via" aria-label="How the domain reaches this server">
                                             @foreach (\App\Support\Redirects::VIA as $via => $label)
                                                 <option value="{{ $via }}">{{ $label }}</option>
                                             @endforeach

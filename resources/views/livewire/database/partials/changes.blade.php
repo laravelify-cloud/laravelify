@@ -60,10 +60,13 @@
 <x-modal-frame class="modal-medium" open="$wire.undoConflict !== null" close="$wire.set('undoConflict', null)">
     <div class="grid gap-4">
         <div class="modal-head">
-            <h2>The row changed since</h2>
+            <div class="min-w-0">
+                <p class="text-[12px] text-muted">Undo</p>
+                <h2 class="mt-1">This row changed again</h2>
+            </div>
             <button class="icon-btn" type="button" wire:click="$set('undoConflict', null)" aria-label="Close"><x-menu-icon name="close" /></button>
         </div>
-        <p class="text-[13.5px]">{{ $undoConflict['message'] ?? '' }}</p>
+        <p class="text-[13.5px]">{{ $undoConflict['message'] ?? 'Someone wrote to this row after the change you want to undo.' }}</p>
         <div class="flex justify-end gap-2">
             <button class="btn" type="button" wire:click="$set('undoConflict', null)">Keep it as it is</button>
             <button class="btn btn-danger" type="button" wire:click="undoAnyway">Undo anyway</button>

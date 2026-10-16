@@ -69,11 +69,30 @@ class Table extends PanelComponent
 
     public bool $backupFirst = false;
 
+    public bool $exportOpen = false;
+
+    public bool $exportSingle = true;
+
+    public string $exportDatabase = '';
+
+    /** @var list<string> */
+    public array $exportTables = [];
+
+    public function openExport(): void
+    {
+        $this->exportDatabase = $this->database;
+        $this->exportTables = [$this->table];
+        $this->exportSingle = true;
+        $this->exportOpen = true;
+    }
+
     public function mount(string $database, string $table): void
     {
         abort_unless(DatabaseBrowser::validDatabase($database) && DatabaseBrowser::validTable($table), 404);
         $this->database = $database;
         $this->table = $table;
+        $this->exportDatabase = $database;
+        $this->exportTables = [$table];
         $this->perPage = in_array($this->perPage, [25, 50, 100, 250, 500], true) ? $this->perPage : 25;
 
         $keys = json_decode($this->rowParam, true);

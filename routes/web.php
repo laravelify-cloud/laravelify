@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DatabaseExportController;
 use App\Http\Controllers\GithubAppHookController;
 use App\Http\Controllers\GithubAppManifestController;
 use App\Http\Controllers\GithubHookController;
@@ -90,6 +91,7 @@ Route::get('/files/download', [WebsiteFileController::class, 'global'])->name('f
 Route::get('/tasks/{panelTask}/download', [PanelTaskController::class, 'download'])->name('tasks.download');
 Route::get('/terminal', ToolsTerminal::class)->name('terminal.index');
 Route::get('/database', DatabaseIndex::class)->name('database.index');
+Route::post('/database/export', DatabaseExportController::class)->name('database.export');
 Route::get('/database/{database}', DatabaseShow::class)->where('database', '[A-Za-z0-9_-]+')->name('database.show');
 Route::get('/database/{database}/{table}', DatabaseTable::class)->where(['database' => '[A-Za-z0-9_-]+', 'table' => '[A-Za-z0-9_$-]+'])->name('database.table');
 Route::get('/tools/phpmyadmin', PhpMyAdminController::class)->name('tools.phpmyadmin');

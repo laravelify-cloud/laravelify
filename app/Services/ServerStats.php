@@ -149,6 +149,26 @@ class ServerStats
     }
 
     /**
+     * Several units from one `systemctl show`, in the order they were asked.
+     * A blank line separates each unit.
+     *
+     * @return list<array{loaded: bool, state: string}>
+     */
+    public static function parseUnits(string $output, int $count): array
+    {
+        if ($count < 1) {
+            return [];
+        }
+
+        $blocks = trim($output) === '' ? [] : (preg_split("/\R\s*\R/", trim($output)) ?: []);
+
+        return array_map(
+            fn (int $index): array => self::parseUnit($blocks[$index] ?? ''),
+            range(0, $count - 1),
+        );
+    }
+
+    /**
      * `ps -eo pid,user,pcpu,pmem,comm` rows.
      *
      * @return list<array{pid: int, user: string, cpu: float, memory: float, name: string}>
@@ -363,27 +383,30 @@ class ServerStats
      */
     public function services(): array
     {
-        return Cache::remember('server:services', 50, function (): array {
+        return Cache::remember('server:services', 120, function (): array {
             $units = ['nginx' => 'nginx', 'MySQL' => 'mysql', 'Redis' => 'redis-server', 'Supervisor' => 'supervisor', 'Cloudflare tunnel' => 'cloudflared'];
 
             foreach (config('laravelify.php_versions', []) as $version) {
                 $units['PHP '.$version.' FPM'] = 'php'.$version.'-fpm';
             }
 
+            // One systemctl for every unit. A separate call per unit waits out the
+            // command runner's poll and made this page take several seconds.
+            $result = $this->runner->run(['systemctl', 'show', ...array_values($units), '--property=LoadState', '--property=ActiveState', '--no-pager']);
+
+            if ($result->skipped || ! $result->ok) {
+                return [];
+            }
+
             $services = [];
 
-            foreach ($units as $name => $unit) {
-                $result = $this->runner->run(['systemctl', 'show', $unit, '--property=LoadState', '--property=ActiveState']);
-
-                if ($result->skipped || ! $result->ok) {
+            foreach (self::parseUnits($result->output, count($units)) as $index => $parsed) {
+                if (! $parsed['loaded']) {
                     continue;
                 }
 
-                $parsed = self::parseUnit($result->output);
-
-                if ($parsed['loaded']) {
-                    $services[] = ['name' => $name, 'unit' => $unit, 'state' => $parsed['state']];
-                }
+                $name = array_keys($units)[$index];
+                $services[] = ['name' => $name, 'unit' => array_values($units)[$index], 'state' => $parsed['state']];
             }
 
             return $services;

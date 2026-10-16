@@ -385,6 +385,10 @@ class MonitoringTest extends TestCase
 
         $this->assertSame(['loaded' => true, 'state' => 'running'], ServerStats::parseUnit("LoadState=loaded\nActiveState=active\n"));
         $this->assertFalse(ServerStats::parseUnit("LoadState=not-found\nActiveState=inactive\n")['loaded']);
+        $this->assertSame(
+            [['loaded' => true, 'state' => 'running'], ['loaded' => false, 'state' => 'inactive']],
+            ServerStats::parseUnits("LoadState=loaded\nActiveState=active\n\nLoadState=not-found\nActiveState=inactive\n", 2),
+        );
 
         $processes = ServerStats::parseProcesses("  PID USER      %CPU %MEM COMMAND\n 1234 www-data  12.5  3.1 php-fpm8.4\n    1 root       0.0  0.1 systemd\n");
         $this->assertSame([1234, 'www-data', 12.5, 3.1, 'php-fpm8.4'], array_values($processes[0]));

@@ -21,11 +21,14 @@
             <p class="page-summary">{{ number_format($data['total']) }} {{ $data['total'] === 1 ? 'row' : 'rows' }}{{ $search !== '' || $filters !== [] ? ' match' : '' }}{{ $canChange ? ' · key: '.implode(', ', $keyColumns) : ' · no primary or unique key, so rows are read-only here' }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-1.5">
+            <button class="btn" type="button" wire:click="openExport"><x-menu-icon name="download" /> Export SQL</button>
             @if ($canChange)
                 <button class="btn btn-primary" type="button" wire:click="newRow"><x-menu-icon name="plus" /> Add row</button>
             @endif
         </div>
     </div>
+
+    @include('livewire.database.partials.export')
 
     <div class="segmented self-start" role="tablist">
         <button type="button" wire:click="$set('tab', 'browse')" aria-pressed="{{ $tab === 'browse' ? 'true' : 'false' }}">Rows</button>
@@ -61,7 +64,7 @@
             <x-slot:actions>
                 <input class="input h-8 w-56" type="search" wire:model.live.debounce.400ms="search" placeholder="Search every column" aria-label="Search every column">
                 <button class="btn btn-sm" type="button" wire:click="addFilter"><x-menu-icon name="plus" class="size-4" /> Filter</button>
-                <select class="input h-8 w-auto" wire:model.live="perPage" data-native aria-label="Rows per page">
+                <select class="select h-8 w-auto" wire:model.live="perPage" aria-label="Rows per page">
                     @foreach ([25, 50, 100, 250, 500] as $count)
                         <option value="{{ $count }}">{{ $count }} per page</option>
                     @endforeach
@@ -69,22 +72,33 @@
             </x-slot:actions>
 
             @if ($filters !== [])
-                <div class="flex flex-col gap-2 border-b border-line p-3">
+                <div class="flex flex-col gap-3 border-b border-line p-3">
                     @foreach ($filters as $index => $filter)
-                        <div class="flex flex-wrap items-center gap-2" wire:key="filter-{{ $index }}">
-                            <select class="input h-8 w-auto font-mono text-[12.5px]" wire:model.live="filters.{{ $index }}.column" data-native aria-label="Column">
-                                <option value="">Column…</option>
-                                @foreach ($columns as $column)
-                                    <option value="{{ $column['name'] }}">{{ $column['name'] }}</option>
-                                @endforeach
-                            </select>
-                            <select class="input h-8 w-auto" wire:model.live="filters.{{ $index }}.operator" data-native aria-label="Operator">
-                                @foreach ($operators as $value => $label)
-                                    <option value="{{ $value }}">{{ $label }}</option>
-                                @endforeach
-                            </select>
+                        <div class="flex flex-wrap items-end gap-2" wire:key="filter-{{ $index }}">
+                            <label class="field w-56">
+                                <span class="label">Column</span>
+                                <select class="select font-mono text-[12.5px]" wire:model.live="filters.{{ $index }}.column" aria-label="Column">
+                                    <option value="">Choose a column</option>
+                                    @foreach ($columns as $column)
+                                        <option value="{{ $column['name'] }}">{{ $column['name'] }}</option>
+                                    @endforeach
+                                </select>
+                            </label>
+                            <label class="field w-48">
+                                <span class="label">Match</span>
+                                <select class="select" wire:model.live="filters.{{ $index }}.operator" aria-label="How it matches">
+                                    @foreach ($operators as $value => $label)
+                                        <option value="{{ $value }}">{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </label>
                             @unless (in_array($filter['operator'] ?? '', ['null', 'not_null'], true))
-                                <input class="input h-8 w-56 font-mono text-[12.5px]" wire:model.live.debounce.400ms="filters.{{ $index }}.value" placeholder="value" aria-label="Value">
+                                <label class="field min-w-0 flex-1">
+                                    <span class="label">Value</span>
+                                    <input class="input font-mono text-[12.5px]" wire:model.live.debounce.400ms="filters.{{ $index }}.value" placeholder="What to match" aria-label="Value">
+                                </label>
+                            @else
+                                <span></span>
                             @endunless
                             <button class="icon-btn" type="button" wire:click="removeFilter({{ $index }})" aria-label="Remove filter"><x-menu-icon name="close" class="size-4" /></button>
                         </div>
@@ -163,37 +177,45 @@
     {{-- One record --}}
     <x-modal-frame class="modal-wide" open="$wire.rowOpen" close="$wire.closeRow()">
         @if ($rowOpen)
+            @php($columnMeta = collect($columns)->keyBy('name'))
             <div class="grid gap-4">
                 <div class="modal-head">
-                    <div>
-                        <h2>{{ $creating ? 'New row' : ($editing ? 'Edit row' : 'Row') }} <span class="font-mono text-muted">{{ $table }}</span></h2>
+                    <div class="min-w-0">
+                        <p class="text-[12px] text-muted">{{ $creating ? 'New row' : ($editing ? 'Edit row' : 'Record') }}</p>
+                        <h2 class="mt-1 truncate font-mono">{{ $table }}</h2>
                         @unless ($creating)
-                            <p class="font-mono text-[12px] text-muted">{{ collect($rowKeys)->map(fn ($value, $column) => $column.' = '.$value)->implode(', ') }}</p>
+                            <p class="mt-1 font-mono text-[12px] text-muted">{{ collect($rowKeys)->map(fn ($value, $column) => $column.' = '.$value)->implode(' · ') }}</p>
                         @endunless
                     </div>
                     <button class="icon-btn" type="button" wire:click="closeRow" aria-label="Close"><x-menu-icon name="close" /></button>
                 </div>
 
                 @if ($editing)
-                    <form class="grid max-h-[60vh] gap-3 overflow-auto pr-1" wire:submit="saveRow" id="row-form">
-                        @foreach ($columns as $column)
-                            @php($binary = str_starts_with((string) ($form[$column['name']]['value'] ?? ''), '[binary, '))
-                            <div class="grid gap-1" wire:key="field-{{ $column['name'] }}">
-                                <label class="flex items-center justify-between gap-2 text-[12.5px]">
-                                    <span><span class="font-mono font-medium">{{ $column['name'] }}</span> <span class="text-muted">{{ $column['type'] }}{{ str_contains($column['extra'], 'auto_increment') ? ' · auto' : '' }}</span></span>
-                                    @if ($column['nullable'])
-                                        <span class="flex items-center gap-1 text-muted"><input type="checkbox" wire:model.live="form.{{ $column['name'] }}.null"> NULL</span>
-                                    @endif
-                                </label>
-                                @if ($binary)
-                                    <input class="input font-mono text-[12.5px]" value="{{ $form[$column['name']]['value'] }}" disabled>
-                                @elseif (in_array($column['data_type'], ['text', 'mediumtext', 'longtext', 'json'], true) || mb_strlen((string) ($form[$column['name']]['value'] ?? '')) > 80)
-                                    <textarea class="textarea min-h-24 font-mono text-[12.5px]" wire:model="form.{{ $column['name'] }}.value" @disabled(! empty($form[$column['name']]['null'])) spellcheck="false"></textarea>
-                                @else
-                                    <input class="input font-mono text-[12.5px]" wire:model="form.{{ $column['name'] }}.value" @disabled(! empty($form[$column['name']]['null'])) placeholder="{{ $creating && (str_contains($column['extra'], 'auto_increment') || $column['default'] !== null) ? 'blank = '.(str_contains($column['extra'], 'auto_increment') ? 'next number' : 'default') : '' }}">
-                                @endif
-                            </div>
-                        @endforeach
+                    <form class="max-h-[60vh] overflow-auto rounded-lg border border-line" wire:submit="saveRow" id="row-form">
+                        <div class="divide-y divide-line">
+                            @foreach ($columns as $column)
+                                @php($binary = str_starts_with((string) ($form[$column['name']]['value'] ?? ''), '[binary, '))
+                                @php($long = in_array($column['data_type'], ['text', 'mediumtext', 'longtext', 'json'], true) || mb_strlen((string) ($form[$column['name']]['value'] ?? '')) > 80)
+                                <div class="flex items-start gap-4 px-4 py-3" wire:key="field-{{ $column['name'] }}">
+                                    <div class="w-40 shrink-0 pt-1">
+                                        <p class="truncate font-mono text-[13px] font-medium">{{ $column['name'] }}</p>
+                                        <p class="mt-1 font-mono text-[11px] text-muted">{{ $column['type'] }}{{ str_contains($column['extra'], 'auto_increment') ? ' · auto' : '' }}{{ $column['key'] === 'PRI' ? ' · key' : '' }}</p>
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        @if ($binary)
+                                            <input class="input font-mono text-[13px]" value="{{ $form[$column['name']]['value'] }}" disabled>
+                                        @elseif ($long)
+                                            <textarea class="textarea min-h-24 font-mono text-[13px]" wire:model="form.{{ $column['name'] }}.value" @disabled(! empty($form[$column['name']]['null'])) spellcheck="false" aria-label="{{ $column['name'] }}"></textarea>
+                                        @else
+                                            <input class="input font-mono text-[13px]" wire:model="form.{{ $column['name'] }}.value" @disabled(! empty($form[$column['name']]['null'])) aria-label="{{ $column['name'] }}" placeholder="{{ $creating && (str_contains($column['extra'], 'auto_increment') || $column['default'] !== null) ? 'Leave blank for '.(str_contains($column['extra'], 'auto_increment') ? 'the next number' : 'the default') : '' }}">
+                                        @endif
+                                        @if ($column['nullable'])
+                                            <label class="mt-1 flex items-center gap-2 text-[12px] text-muted"><input type="checkbox" wire:model.live="form.{{ $column['name'] }}.null"> Set to empty (NULL)</label>
+                                        @endif
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
                     </form>
                     @error('form') <p class="error">{{ $message }}</p> @enderror
                     <div class="flex justify-end gap-2 border-t border-line pt-4">
@@ -202,16 +224,28 @@
                     </div>
                 @else
                     <div class="max-h-[60vh] overflow-auto rounded-lg border border-line">
-                        <table class="table">
-                            <tbody>
-                                @foreach ($rowData as $column => $value)
-                                    <tr wire:key="value-{{ $column }}">
-                                        <td class="w-48 align-top font-mono text-[12.5px] text-muted">{{ $column }}</td>
-                                        <td class="font-mono text-[12.5px] whitespace-pre-wrap break-all">@if ($value === null)<span class="text-muted italic">NULL</span>@else{{ $value }}@endif</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
+                        <dl class="divide-y divide-line">
+                            @foreach ($rowData as $column => $value)
+                                @php($meta = $columnMeta->get($column, []))
+                                <div class="flex items-start gap-4 px-4 py-3" wire:key="value-{{ $column }}">
+                                    <dt class="m-0 w-40 shrink-0">
+                                        <span class="block truncate font-mono text-[13px] font-medium">{{ $column }}</span>
+                                        @if ($meta !== [])
+                                            <span class="mt-1 block font-mono text-[11px] text-muted">{{ $meta['type'] }}{{ ($meta['key'] ?? '') === 'PRI' ? ' · key' : '' }}</span>
+                                        @endif
+                                    </dt>
+                                    <dd class="m-0 min-w-0 flex-1 font-mono text-[13px] break-words">
+                                        @if ($value === null)
+                                            <span class="italic text-muted">NULL</span>
+                                        @elseif ($value === '')
+                                            <span class="italic text-muted">empty</span>
+                                        @else
+                                            <span class="whitespace-pre-wrap break-words">{{ $value }}</span>
+                                        @endif
+                                    </dd>
+                                </div>
+                            @endforeach
+                        </dl>
                     </div>
                     <div class="flex justify-between gap-2 border-t border-line pt-4">
                         @if ($canChange)
@@ -228,7 +262,10 @@
     <x-modal-frame class="modal-medium modal-root-top" open="$wire.deleteOpen" close="$wire.set('deleteOpen', false)">
         <div class="grid gap-4">
             <div class="modal-head">
-                <h2>Delete {{ count($deleteKeys) }} {{ count($deleteKeys) === 1 ? 'row' : 'rows' }}?</h2>
+                <div class="min-w-0">
+                    <p class="text-[12px] text-muted">{{ $table }}</p>
+                    <h2 class="mt-1">Delete {{ count($deleteKeys) }} {{ count($deleteKeys) === 1 ? 'row' : 'rows' }}?</h2>
+                </div>
                 <button class="icon-btn" type="button" wire:click="$set('deleteOpen', false)" aria-label="Close"><x-menu-icon name="close" /></button>
             </div>
             <p class="text-[13px] text-muted">Each deleted row is kept in the change log, so it can be put back on its own later, even when other rows changed meanwhile.</p>

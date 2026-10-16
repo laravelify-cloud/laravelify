@@ -24,16 +24,16 @@ class DatabaseBrowser
     public const OBJECT_TYPES = ['trigger', 'event', 'procedure', 'function'];
 
     public const OPERATORS = [
-        'contains' => 'contains',
-        'equals' => '=',
-        'not_equals' => '≠',
-        'starts' => 'starts with',
-        'ends' => 'ends with',
-        'regex' => 'matches regex',
-        'gt' => '>',
-        'lt' => '<',
-        'null' => 'is empty (NULL)',
-        'not_null' => 'is not NULL',
+        'contains' => 'Contains',
+        'equals' => 'Is exactly',
+        'not_equals' => 'Is not',
+        'starts' => 'Starts with',
+        'ends' => 'Ends with',
+        'regex' => 'Matches a pattern',
+        'gt' => 'Greater than',
+        'lt' => 'Less than',
+        'null' => 'Is empty',
+        'not_null' => 'Is not empty',
     ];
 
     /** Longest value shown in lists; the row dialog shows the whole value. */

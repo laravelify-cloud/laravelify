@@ -75,7 +75,7 @@
 
     <x-layer-card title="Error log" helper="The last lines of /var/log/nginx/error.log.">
         <x-slot:actions>
-            <select class="input w-auto" wire:model="lines" data-native aria-label="Lines">
+            <select class="select h-8 w-auto" wire:model="lines" aria-label="Lines">
                 @foreach ([100, 200, 500, 1000] as $count)
                     <option value="{{ $count }}">{{ $count }} lines</option>
                 @endforeach

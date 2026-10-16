@@ -28,6 +28,40 @@ class DatabaseDumper
         return $panel !== '' && strcasecmp($name, $panel) === 0;
     }
 
+    /**
+     * Databases the SQL console and the browser never touch: MySQL's own, phpMyAdmin's, and this panel's.
+     *
+     * @return list<string>
+     */
+    public static function hiddenDatabases(): array
+    {
+        $panel = (string) config('database.connections.mysql.database');
+
+        return array_values(array_filter([...self::SYSTEM, $panel], fn (string $name): bool => $name !== ''));
+    }
+
+    /**
+     * Flags for a plain .sql dump. Routines, triggers, and events are included only for a whole database.
+     *
+     * @return list<string>
+     */
+    public static function exportFlags(string $contents, bool $routines): array
+    {
+        $flags = ['--single-transaction', '--quick', '--no-tablespaces', '--default-character-set=utf8mb4'];
+
+        if ($contents === 'data') {
+            return [...$flags, '--no-create-info', '--skip-triggers', '--skip-routines', '--skip-events'];
+        }
+
+        if ($contents === 'structure') {
+            $flags[] = '--no-data';
+        }
+
+        return $routines
+            ? [...$flags, '--routines', '--events']
+            : [...$flags, '--skip-triggers', '--skip-routines', '--skip-events'];
+    }
+
     public static function validName(string $name): bool
     {
         return preg_match('/^[A-Za-z0-9_-]{1,64}$/', $name) === 1;
@@ -111,6 +145,39 @@ class DatabaseDumper
         if (! $result->ok) {
             @unlink($file);
             throw new RuntimeException('mysqldump failed: '.$result->output);
+        }
+    }
+
+    /**
+     * A plain .sql file (no gzip) of one database, or of the named tables.
+     *
+     * @param  list<string>  $tables  Empty means the whole database.
+     */
+    public function exportSql(string $database, string $file, array $tables = [], string $contents = 'both', bool $routines = true): void
+    {
+        $this->assertName($database);
+
+        if (! in_array($contents, ['both', 'structure', 'data'], true)) {
+            throw new RuntimeException('Choose structure, data, or both.');
+        }
+
+        $tables = array_values(array_filter($tables, fn (string $table): bool => preg_match('/^[A-Za-z0-9_$-]{1,64}$/', $table) === 1));
+        $flags = implode(' ', self::exportFlags($contents, $routines && $tables === []));
+        $dir = dirname($file);
+
+        if (! is_dir($dir) && ! mkdir($dir, 0750, true) && ! is_dir($dir)) {
+            throw new RuntimeException('Could not prepare the export file.');
+        }
+
+        $result = $this->withDefaults(fn (string $defaults) => $this->runner->run([
+            'bash', '-c',
+            'set -o pipefail; mysqldump --defaults-extra-file="$1" '.$flags.' "$2" "${@:4}" > "$3"',
+            '_', $defaults, $database, $file, ...$tables,
+        ]));
+
+        if ($result->skipped || ! $result->ok) {
+            @unlink($file);
+            throw new RuntimeException($result->skipped ? 'This server cannot run mysqldump.' : 'mysqldump failed: '.$result->output);
         }
     }
 
