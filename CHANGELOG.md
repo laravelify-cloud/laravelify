@@ -2,6 +2,15 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.46] - unreleased
+
+- **Database tool: mark a column encrypted.** Pick a column's encryption method once, from **⋮ → Encrypted with… ▸** on its header or in the **Structure** tab. The panel then handles that column everywhere:
+  - The grid shows its values decrypted, with a lock in the header. **Show as stored** shows the stored values.
+  - The header filter lists and searches the decrypted values. **Is exactly** and **Is not** encrypt the value first.
+  - The table search and the Database page search also find the encrypted value, without picking a method.
+  - The record shows the value decrypted, and the row form edits it decrypted and saves it encrypted.
+  - Only the setting is saved. The data is not changed, and decrypted values are never stored.
+
 ## [0.3.0-beta.45] - 2026-10-16
 
 - **Database tool: the grid reads rows from the server as you scroll.** No more pages: blocks of 100 rows load while you scroll, sorted and filtered in MySQL, so any table size works.

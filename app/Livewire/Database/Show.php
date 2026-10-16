@@ -126,7 +126,7 @@ class Show extends PanelComponent
                 $this->searchedFor = $term;
             }
 
-            $this->found = $browser->search($term, ['mode' => $this->mode, 'match' => $this->match, 'column' => $this->column, 'databases' => [$this->database]]);
+            $this->found = $browser->search($term, ['mode' => $this->mode, 'match' => $this->match, 'column' => $this->column, 'databases' => [$this->database], 'encrypted' => $method === null && $this->mode === 'data' ? $crypto->termsForEncryptedColumns($this->query, [$this->database]) : []]);
         } catch (Throwable $exception) {
             $this->searchError = $exception->getMessage();
         }

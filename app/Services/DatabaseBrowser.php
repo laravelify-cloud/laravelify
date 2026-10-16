@@ -301,7 +301,7 @@ class DatabaseBrowser
     {
         $columns = array_column($this->columns($database, $table), 'name');
         $perPage = max(10, min(500, (int) ($options['per_page'] ?? 25)));
-        [$where, $bindings] = $this->where($columns, (string) ($options['search'] ?? ''), (array) ($options['filters'] ?? []));
+        [$where, $bindings] = $this->where($columns, (string) ($options['search'] ?? ''), (array) ($options['filters'] ?? []), (array) ($options['search_exact'] ?? []));
         $from = $this->qualified($database, $table);
 
         $total = (int) ($this->connection()->selectOne('SELECT COUNT(*) AS c FROM '.$from.$where, $bindings)->c ?? 0);
@@ -342,9 +342,10 @@ class DatabaseBrowser
      * list shows what this column's own filter can choose from.
      *
      * @param  list<array{column: string, operator: string, value?: mixed}>  $filters
+     * @param  array<string, string>  $searchExact
      * @return array{values: list<array{value: ?string, count: int}>, more: bool}
      */
-    public function distinctValues(string $database, string $table, string $column, string $search = '', array $filters = [], string $find = '', int $limit = 200): array
+    public function distinctValues(string $database, string $table, string $column, string $search = '', array $filters = [], string $find = '', int $limit = 200, array $searchExact = []): array
     {
         $columns = array_column($this->columns($database, $table), 'name');
 
@@ -353,7 +354,7 @@ class DatabaseBrowser
         }
 
         $others = array_values(array_filter($filters, fn (array $filter): bool => ($filter['column'] ?? '') !== $column));
-        [$where, $bindings] = $this->where($columns, $search, $others);
+        [$where, $bindings] = $this->where($columns, $search, $others, $searchExact);
         $quoted = $this->quote($column);
 
         if (trim($find) !== '') {
@@ -687,7 +688,7 @@ class DatabaseBrowser
     /**
      * Search table names, column names, or the data itself, in some databases or all of them.
      *
-     * @param  array{mode?: string, match?: string, column?: string, databases?: list<string>, limit?: int}  $options
+     * @param  array{mode?: string, match?: string, column?: string, databases?: list<string>, limit?: int, encrypted?: array<string, string>}  $options
      * @return array{results: list<array<string, mixed>>, searched: int, skipped: list<string>, truncated: bool}
      */
     public function search(string $term, array $options = []): array
@@ -711,7 +712,7 @@ class DatabaseBrowser
             return $this->searchNames($mode, $term, $match, $scope, $limit);
         }
 
-        return $this->searchData($term, $match, trim((string) ($options['column'] ?? '')), $scope, $limit);
+        return $this->searchData($term, $match, trim((string) ($options['column'] ?? '')), $scope, $limit, (array) ($options['encrypted'] ?? []));
     }
 
     /**
@@ -741,9 +742,10 @@ class DatabaseBrowser
 
     /**
      * @param  list<string>  $scope
+     * @param  array<string, string>  $encrypted  Encrypted columns ("database.table.column"): the term encrypted for each, matched exactly.
      * @return array{results: list<array<string, mixed>>, searched: int, skipped: list<string>, truncated: bool}
      */
-    private function searchData(string $term, string $match, string $columnFilter, array $scope, int $limit): array
+    private function searchData(string $term, string $match, string $columnFilter, array $scope, int $limit, array $encrypted = []): array
     {
         if ($term === '') {
             throw new RuntimeException('Type what to look for.');
@@ -795,6 +797,11 @@ class DatabaseBrowser
                     [$condition, $binding] = $this->condition('CAST('.$this->quote($column).' AS CHAR)', $match, $term);
                     $conditions[] = $condition;
                     array_push($bindings, ...$binding);
+
+                    if (isset($encrypted[$name.'.'.$column])) {
+                        $conditions[] = $this->quote($column).' = ?';
+                        $bindings[] = $encrypted[$name.'.'.$column];
+                    }
                 }
 
                 $select = implode(', ', array_map($this->quote(...), array_values(array_unique([...$keys, ...$tableColumns]))));
@@ -813,7 +820,9 @@ class DatabaseBrowser
                 $found = [];
 
                 foreach ($tableColumns as $column) {
-                    if ($this->matches($row[$column] ?? null, $match, $term)) {
+                    $exact = $encrypted[$name.'.'.$column] ?? null;
+
+                    if ($this->matches($row[$column] ?? null, $match, $term) || ($exact !== null && (string) ($row[$column] ?? '') === $exact)) {
                         $found[$column] = $this->preview($row[$column]);
                     }
                 }
@@ -875,17 +884,27 @@ class DatabaseBrowser
      *
      * @param  list<string>  $columns
      * @param  list<array{column: string, operator: string, value?: ?string}>  $filters
+     * @param  array<string, string>  $searchExact  Encrypted columns: the search text encrypted for each, matched exactly.
      * @return array{0: string, 1: list<mixed>}
      */
-    private function where(array $columns, string $search, array $filters): array
+    private function where(array $columns, string $search, array $filters, array $searchExact = []): array
     {
         $parts = [];
         $bindings = [];
         $search = trim($search);
 
         if ($search !== '' && $columns !== []) {
-            $parts[] = '('.implode(' OR ', array_map(fn (string $column): string => 'CAST('.$this->quote($column).' AS CHAR) LIKE ?', $columns)).')';
+            $any = array_map(fn (string $column): string => 'CAST('.$this->quote($column).' AS CHAR) LIKE ?', $columns);
             array_push($bindings, ...array_fill(0, count($columns), '%'.$this->like($search).'%'));
+
+            foreach ($searchExact as $column => $encrypted) {
+                if (in_array($column, $columns, true)) {
+                    $any[] = $this->quote((string) $column).' = ?';
+                    $bindings[] = (string) $encrypted;
+                }
+            }
+
+            $parts[] = '('.implode(' OR ', $any).')';
         }
 
         foreach ($filters as $filter) {

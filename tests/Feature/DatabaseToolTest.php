@@ -453,20 +453,7 @@ class DatabaseToolTest extends TestCase
         $this->browser->connection()->unprepared('ALTER TABLE `'.self::DB.'`.`people` ADD secret_passport VARCHAR(200) NULL');
         $this->browser->connection()->update('UPDATE `'.self::DB.'`.`people` SET secret_passport = ? WHERE id = 1', [$encrypted]);
 
-        $this->mock(SiteCommand::class, function ($mock): void {
-            $mock->shouldReceive('run')->andReturnUsing(function ($website, string $command) {
-                $process = Process::fromShellCommandline((string) preg_replace('/^php[0-9.]*/', escapeshellarg(PHP_BINARY), $command));
-                $process->run();
-
-                return new CommandResult(true, false, [$command], $process->getOutput(), 0);
-            });
-        });
-        $method = CryptoMethod::factory()->create([
-            'website_id' => Website::factory()->create(['type' => 'laravel'])->id,
-            'boot_laravel' => false,
-            'encrypt_code' => "return openssl_encrypt(\$text, 'AES-256-CBC', 'site-secret', 0, substr(hash('sha256', 'site-secret'), 0, 16));",
-            'decrypt_code' => "return openssl_decrypt(\$text, 'AES-256-CBC', 'site-secret', 0, substr(hash('sha256', 'site-secret'), 0, 16));",
-        ]);
+        $method = $this->encryptionMethod();
 
         Livewire::test(DatabaseIndex::class)
             ->set('tab', 'search')
@@ -489,6 +476,81 @@ class DatabaseToolTest extends TestCase
             ->set('decryptWith', (string) $method->id)
             ->call('decryptRow')
             ->assertSet('decrypted', ['secret_passport' => 'AZE1234567']);
+    }
+
+    /**
+     * A method like a site's own (AES with a fixed IV, so equal texts encrypt alike), run locally.
+     */
+    private function encryptionMethod(): CryptoMethod
+    {
+        $this->mock(SiteCommand::class, function ($mock): void {
+            $mock->shouldReceive('run')->andReturnUsing(function ($website, string $command) {
+                $process = Process::fromShellCommandline((string) preg_replace('/^php[0-9.]*/', escapeshellarg(PHP_BINARY), $command));
+                $process->run();
+
+                return new CommandResult(true, false, [$command], $process->getOutput(), 0);
+            });
+        });
+
+        return CryptoMethod::factory()->create([
+            'website_id' => Website::factory()->create(['type' => 'laravel'])->id,
+            'boot_laravel' => false,
+            'encrypt_code' => "return openssl_encrypt(\$text, 'AES-256-CBC', 'site-secret', 0, substr(hash('sha256', 'site-secret'), 0, 16));",
+            'decrypt_code' => "return openssl_decrypt(\$text, 'AES-256-CBC', 'site-secret', 0, substr(hash('sha256', 'site-secret'), 0, 16));",
+        ]);
+    }
+
+    public function test_a_column_marked_encrypted_is_shown_filtered_searched_and_saved_decrypted(): void
+    {
+        $encrypt = fn (string $text): string => openssl_encrypt($text, 'AES-256-CBC', 'site-secret', 0, substr(hash('sha256', 'site-secret'), 0, 16));
+        $db = $this->browser->connection();
+        $db->unprepared('ALTER TABLE `'.self::DB.'`.`people` ADD secret_passport VARCHAR(200) NULL');
+        $db->update('UPDATE `'.self::DB.'`.`people` SET secret_passport = ? WHERE id = 1', [$encrypt('AZE1234567')]);
+        $db->update('UPDATE `'.self::DB.'`.`people` SET secret_passport = ? WHERE id = 2', [$encrypt('AZE7654321')]);
+        $method = $this->encryptionMethod();
+
+        $page = Livewire::test(DatabaseTable::class, ['database' => self::DB, 'table' => 'people'])
+            ->call('setColumnEncryption', 'secret_passport', $method->id);
+        $this->assertDatabaseHas('encrypted_columns', ['database' => self::DB, 'table' => 'people', 'column' => 'secret_passport', 'crypto_method_id' => $method->id]);
+        $this->assertSame(['AZE1234567', 'AZE7654321', null], array_column($page->instance()->fetchRows($this->browser, 0, 100)['rows'], 'secret_passport'));
+
+        $values = collect($page->instance()->columnValues($this->browser, 'secret_passport', '7654')['values']);
+        $this->assertSame([['value' => $encrypt('AZE7654321'), 'count' => 1, 'label' => 'AZE7654321']], $values->all(), 'The value list shows decrypted labels and searches them.');
+
+        // "Is exactly" and the search encrypt the text first; the column's own method is used.
+        $page->call('setColumnFilter', 'secret_passport', ['mode' => 'condition', 'operator' => 'equals', 'value' => 'AZE7654321'])
+            ->assertSee('1 row match')
+            ->call('setColumnFilter', 'secret_passport', ['mode' => 'none'])
+            ->set('search', 'AZE1234567')
+            ->assertSee('1 row match')
+            ->set('search', '');
+
+        // Shown as stored on request.
+        $page->call('toggleRawColumn', 'secret_passport');
+        $this->assertSame($encrypt('AZE1234567'), $page->instance()->fetchRows($this->browser, 0, 1)['rows'][0]['secret_passport']);
+        $page->call('toggleRawColumn', 'secret_passport');
+
+        // The record and the form show it decrypted; a changed value is saved encrypted.
+        $page->call('openRow', ['id' => 2])
+            ->assertSet('decrypted', ['secret_passport' => 'AZE7654321'])
+            ->call('editRow')
+            ->assertSet('form.secret_passport.value', 'AZE7654321')
+            ->set('form.secret_passport.value', 'AZE0000001')
+            ->call('saveRow')
+            ->assertHasNoErrors();
+        $this->assertSame($encrypt('AZE0000001'), $db->selectOne('SELECT secret_passport AS v FROM `'.self::DB.'`.`people` WHERE id = 2')->v);
+
+        // The search on the databases page finds it without choosing a method.
+        Livewire::test(DatabaseIndex::class)
+            ->set('tab', 'search')
+            ->set('query', 'AZE0000001')
+            ->set('scope', [self::DB])
+            ->call('runSearch')
+            ->assertSee('secret_passport:');
+
+        $page->call('setColumnEncryption', 'secret_passport', '');
+        $this->assertDatabaseMissing('encrypted_columns', ['column' => 'secret_passport']);
+        $this->assertSame($encrypt('AZE1234567'), $page->instance()->fetchRows($this->browser, 0, 1)['rows'][0]['secret_passport']);
     }
 
     public function test_the_header_filter_lists_values_with_counts_and_filters_by_them(): void

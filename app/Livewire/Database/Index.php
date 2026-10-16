@@ -95,6 +95,7 @@ class Index extends PanelComponent
                 'match' => $this->match,
                 'column' => $this->column,
                 'databases' => $this->scope,
+                'encrypted' => $method === null && $this->mode === 'data' ? $crypto->termsForEncryptedColumns($this->query, $this->scope) : [],
             ]);
         } catch (Throwable $exception) {
             $this->searchError = $exception->getMessage();

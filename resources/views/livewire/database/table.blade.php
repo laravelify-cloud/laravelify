@@ -43,10 +43,10 @@
     @if ($tab === 'sql')
         @include('livewire.database.partials.sql', ['sqlTarget' => $database])
     @elseif ($tab === 'structure')
-        <x-layer-card title="Columns" flush>
+        <x-layer-card title="Columns" :helper="$cryptoMethods->isNotEmpty() ? 'Encrypted with: the Rows grid, filters, search, and the row form show that column decrypted with the method, and save it encrypted. Only the setting is kept; the data is not changed.' : null" flush>
             <div class="overflow-x-auto">
                 <table class="table">
-                    <thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>Extra</th></tr></thead>
+                    <thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>Extra</th>@if ($cryptoMethods->isNotEmpty())<th>Encrypted with</th>@endif</tr></thead>
                     <tbody>
                         @foreach ($columns as $column)
                             <tr wire:key="col-{{ $column['name'] }}">
@@ -56,6 +56,16 @@
                                 <td class="text-muted">{{ $column['key'] }}</td>
                                 <td class="font-mono text-[12.5px] text-muted">{{ $column['default'] ?? ($column['nullable'] ? 'NULL' : '—') }}</td>
                                 <td class="text-muted">{{ $column['extra'] }}</td>
+                                @if ($cryptoMethods->isNotEmpty())
+                                    <td>
+                                        <select class="select h-8 w-48" wire:change="setColumnEncryption(@js($column['name']), $event.target.value)" aria-label="{{ $column['name'] }} is encrypted with">
+                                            <option value="" @selected(! isset($encryptedColumns[$column['name']]))>Not encrypted</option>
+                                            @foreach ($cryptoMethods as $method)
+                                                <option value="{{ $method->id }}" @selected(($encryptedColumns[$column['name']] ?? null)?->id === $method->id)>{{ $method->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </td>
+                                @endif
                             </tr>
                         @endforeach
                     </tbody>
@@ -114,7 +124,7 @@
                                 <label class="field w-48">
                                     <span class="label">Encrypted with</span>
                                     <select class="select" wire:model.live="filters.{{ $index }}.crypto" aria-label="The column is encrypted with">
-                                        <option value="">Not encrypted</option>
+                                        <option value="">{{ isset($encryptedColumns[$filter['column'] ?? '']) && ! in_array($filter['column'], $rawColumns, true) && in_array($filter['operator'] ?? '', ['equals', 'not_equals'], true) ? $encryptedColumns[$filter['column']]->name.' (column setting)' : 'Not encrypted' }}</option>
                                         @foreach ($cryptoMethods as $method)
                                             <option value="{{ $method->id }}">{{ $method->name }}</option>
                                         @endforeach
@@ -149,9 +159,12 @@
                         'numeric' => in_array($column['data_type'], ['tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint', 'decimal', 'float', 'double', 'year'], true),
                         'out' => $relations['out'][$column['name']] ?? null,
                         'in' => $relations['in'][$column['name']] ?? [],
+                        'encrypted' => isset($encryptedColumns[$column['name']]) ? ['id' => $encryptedColumns[$column['name']]->id, 'name' => $encryptedColumns[$column['name']]->name, 'decrypts' => $encryptedColumns[$column['name']]->canDecrypt() && ! in_array($column['name'], $keyColumns, true)] : null,
+                        'raw' => in_array($column['name'], $rawColumns, true),
                     ])->values()->all(),
+                    'methods' => $cryptoMethods->map(fn ($method) => ['id' => $method->id, 'name' => $method->name])->values()->all(),
                     'total' => $data['total'],
-                    'version' => md5(json_encode([$search, $filters, $encryptedValues])),
+                    'version' => md5(json_encode([$search, $filters, $encryptedValues, $rawColumns])),
                     'filtered' => collect($filters)->pluck('column')->filter()->unique()->values()->all(),
                     'columnFilters' => (object) collect($filters)->filter(fn ($filter) => ($filter['column'] ?? '') !== '')->keyBy('column')->all(),
                     'operators' => $operators,
@@ -206,6 +219,7 @@
                                     <span class="flex flex-wrap gap-1">
                                         @if ($column['key'] === 'PRI') <span class="pill">key</span> @endif
                                         @if ($auto) <span class="pill">auto</span> @endif
+                                        @if (isset($encryptedColumns[$name]) && ($creating || array_key_exists($name, $formPlain))) <span class="pill" title="Shown decrypted; saved encrypted with {{ $encryptedColumns[$name]->name }}">encrypted · {{ $encryptedColumns[$name]->name }}</span> @endif
                                     </span>
                                 </div>
                                 <div class="min-w-0 flex-1">
@@ -272,7 +286,7 @@
                                     </dt>
                                     <dd class="m-0 min-w-0 flex-1 font-mono text-[13px] break-words">
                                         @isset($decrypted[$column])
-                                            <span class="mb-1 flex items-start gap-2 rounded-md px-2 py-1" style="background: color-mix(in srgb, var(--color-success) 10%, transparent)"><span class="shrink-0 text-[11px] text-muted">decrypted</span> <span class="whitespace-pre-wrap break-words">{{ $decrypted[$column] }}</span></span>
+                                            <span class="mb-1 flex items-start gap-2 rounded-md px-2 py-1" style="background: color-mix(in srgb, var(--color-success) 10%, transparent)"><span class="shrink-0 text-[11px] text-muted">decrypted{{ isset($encryptedColumns[$column]) ? ' · '.$encryptedColumns[$column]->name : '' }}</span> <span class="whitespace-pre-wrap break-words">{{ $decrypted[$column] }}</span></span>
                                         @endisset
                                         @if ($value === null)
                                             <span class="italic text-muted">NULL</span>
@@ -283,7 +297,7 @@
                                             <a class="db-grid-link" href="{{ route('database.table', [$to['database'], $to['table']]).'?'.http_build_query(['where' => [$to['column'] => (string) $value]]) }}" wire:navigate>{{ $value }}</a>
                                             <span class="ml-1 text-[11.5px] text-muted">→ {{ $to['table'] }}.{{ $to['column'] }}</span>
                                         @else
-                                            <span class="whitespace-pre-wrap break-words">{{ $value }}</span>
+                                            <span @class(['whitespace-pre-wrap break-words', 'text-[11.5px] text-muted' => isset($decrypted[$column])])>{{ $value }}</span>
                                         @endif
                                     </dd>
                                 </div>

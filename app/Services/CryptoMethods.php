@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\CryptoMethod;
+use App\Models\EncryptedColumn;
 use RuntimeException;
+use Throwable;
 
 /**
  * Runs a website's encryption method: its PHP code, in the website's folder, as the website's user
@@ -26,6 +28,43 @@ class CryptoMethods
         }
 
         return $result;
+    }
+
+    /**
+     * A search term encrypted for every column marked encrypted in these databases, by
+     * "database.table.column", so a search finds the stored (encrypted) values. One run per method;
+     * a method that fails is left out.
+     *
+     * @param  list<string>  $databases
+     * @return array<string, string>
+     */
+    public function termsForEncryptedColumns(string $term, array $databases): array
+    {
+        $term = trim($term);
+
+        if ($term === '') {
+            return [];
+        }
+
+        $columns = EncryptedColumn::query()->with('method.website')
+            ->when($databases !== [], fn ($query) => $query->whereIn('database', $databases))
+            ->get()
+            ->filter(fn (EncryptedColumn $column): bool => $column->method !== null);
+        $encrypted = [];
+
+        foreach ($columns->groupBy('crypto_method_id') as $sameMethod) {
+            try {
+                $value = $this->encrypt($sameMethod->first()->method, $term);
+            } catch (Throwable) {
+                continue;
+            }
+
+            foreach ($sameMethod as $column) {
+                $encrypted[$column->getAttribute('database').'.'.$column->getAttribute('table').'.'.$column->getAttribute('column')] = $value;
+            }
+        }
+
+        return $encrypted;
     }
 
     /**

@@ -5,7 +5,8 @@
  * Row Model: blocks of 100, sorted and filtered there), the funnel on a header lists the column's
  * values from the server (with counts, like a spreadsheet filter) or takes a condition, and the ⋮
  * menu sorts, pins, sizes, hides, and shows columns. Column widths, order, pins, and hidden columns
- * are kept per table in the browser.
+ * are kept per table in the browser. A column marked encrypted (with a website's encryption method)
+ * comes from the server decrypted, and the ⋮ menu marks it or shows it as stored.
  */
 import { AllCommunityModule, ModuleRegistry, createGrid, themeQuartz } from 'ag-grid-community';
 
@@ -51,7 +52,7 @@ function widthFor(column) {
     else if (type === 'enum') width = 150;
 
     // The name, its badges, and the two buttons (funnel and menu) always fit.
-    const badges = (column.key ? 1 : 0) + (column.out ? 1 : 0) + (column.in.length ? 1 : 0);
+    const badges = (column.key ? 1 : 0) + (column.out ? 1 : 0) + (column.in.length ? 1 : 0) + (column.encrypted ? 1 : 0);
 
     return Math.max(width, Math.ceil(column.name.length * 7.6) + 70 + badges * 26);
 }
@@ -282,7 +283,7 @@ function filterPopup(anchor, column, grid) {
         }
 
         values.forEach((item) => {
-            list.appendChild(row(item.value === '' ? '(blank text)' : item.value, everything || ticked.has(item.value), (on) => {
+            list.appendChild(row(item.value === '' ? '(blank text)' : (item.label ?? item.value), everything || ticked.has(item.value), (on) => {
                 if (everything) { everything = false; values.forEach((other) => ticked.add(other.value)); blanks = hasNull; }
                 on ? ticked.add(item.value) : ticked.delete(item.value);
                 draw();
@@ -306,7 +307,9 @@ function filterPopup(anchor, column, grid) {
     // Condition
     const operator = el('select', 'select h-8');
     operator.name = 'db-filter-operator';
-    Object.entries(grid.payload.operators).forEach(([value, label]) => {
+    // An encrypted column can only be matched whole: the value is encrypted, then compared.
+    const decrypts = column.encrypted && column.encrypted.decrypts && !column.raw;
+    Object.entries(grid.payload.operators).filter(([value]) => !decrypts || ['equals', 'not_equals', 'null', 'not_null'].includes(value)).forEach(([value, label]) => {
         const option = el('option', null, label);
         option.value = value;
         operator.appendChild(option);
@@ -314,6 +317,7 @@ function filterPopup(anchor, column, grid) {
     const value = el('input', 'input h-8 font-mono text-[12.5px]');
     value.name = 'db-filter-value';
     value.placeholder = 'Value';
+    if (decrypts) value.placeholder = 'Whole value (decrypted)';
     if (current && current.operator !== 'in') {
         operator.value = current.operator;
         value.value = current.value || '';
@@ -381,11 +385,37 @@ function columnMenu(anchor, column, grid) {
     item('Fit this column to its content', () => api.autoSizeColumns([column.name]));
     item('Fit all columns to their content', () => api.autoSizeAllColumns());
     line();
+    if (grid.payload.methods.length) {
+        item('🔒  Encrypted with…' + (column.encrypted ? '  (' + column.encrypted.name + ')' : '') + '  ▸', () => encryptionMenu(anchor, column, grid), !!column.encrypted);
+        if (column.encrypted && column.encrypted.decrypts) item(column.raw ? '    Show decrypted' : '    Show as stored (encrypted)', () => grid.wire.toggleRawColumn(column.name));
+        line();
+    }
     item('Hide this column', () => api.setColumnsVisible([column.name], false));
     item('Choose columns…', () => chooseColumns(anchor, grid));
     item('Reset columns', () => grid.resetColumns());
 
     openPopup(anchor, menu, 240);
+}
+
+/** The methods a column can be marked encrypted with: its values are then shown and searched decrypted. */
+function encryptionMenu(anchor, column, grid) {
+    const menu = el('div', 'db-menu');
+    menu.appendChild(el('p', 'db-rel-title', column.name + ' is encrypted with'));
+    const choose = (label, id, active) => {
+        const button = el('button', 'db-menu-item' + (active ? ' is-active' : ''), (active ? '✓  ' : '    ') + label);
+        button.type = 'button';
+        button.addEventListener('click', () => {
+            closePopup();
+            grid.wire.setColumnEncryption(column.name, id);
+        });
+        menu.appendChild(button);
+    };
+
+    grid.payload.methods.forEach((method) => choose(method.name, method.id, column.encrypted && column.encrypted.id === method.id));
+    menu.appendChild(el('hr', 'db-menu-line'));
+    choose('Not encrypted', null, !column.encrypted);
+    menu.appendChild(el('p', 'db-menu-note', 'Only this setting is saved. The data stays as it is.'));
+    openPopup(anchor, menu, 260);
 }
 
 function chooseColumns(anchor, grid) {
@@ -422,6 +452,7 @@ function headerComponent(grid) {
             };
             if (column.key) badge('is-key', 'PK', 'Key column');
             if (column.out) badge('is-link', '→', 'Points at ' + column.out.table + '.' + column.out.column);
+            if (column.encrypted) badge('is-enc', '🔒', (column.raw ? 'Shown as stored; encrypted with ' : (column.encrypted.decrypts ? 'Shown decrypted with ' : 'Encrypted with ')) + column.encrypted.name);
             if (column.in.length) badge('is-link', '←' + column.in.length, 'Used by ' + column.in.map((relation) => relation.table + '.' + relation.column).join(', '));
             this.arrow = el('span', 'db-head-sort');
             label.append(this.arrow);

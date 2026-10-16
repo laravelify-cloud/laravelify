@@ -5,6 +5,7 @@ namespace App\Livewire\Database;
 use App\Livewire\Concerns\RunsSql;
 use App\Livewire\PanelComponent;
 use App\Models\CryptoMethod;
+use App\Models\EncryptedColumn;
 use App\Services\BackupManager;
 use App\Services\CryptoMethods;
 use App\Services\DatabaseBrowser;
@@ -55,6 +56,15 @@ class Table extends PanelComponent
 
     /** @var array<string, string> Decrypted values of the open record, by column. */
     public array $decrypted = [];
+
+    /** @var list<string> Encrypted columns the grid shows as stored instead of decrypted. */
+    public array $rawColumns = [];
+
+    /** @var array<string, string> Encrypted columns of the form shown decrypted: the decrypted value they started with. */
+    public array $formPlain = [];
+
+    /** @var array<string, CryptoMethod>|null */
+    private ?array $encryptedColumnsCache = null;
 
     /** A record to open (from a search result): its keys as JSON. */
     #[Url(as: 'row')]
@@ -117,6 +127,10 @@ class Table extends PanelComponent
             }
         }
 
+        if ($this->filters !== [] || $this->search !== '') {
+            $this->encryptFilterValues(app(CryptoMethods::class));
+        }
+
         $keys = json_decode($this->rowParam, true);
 
         if (is_array($keys) && $keys !== []) {
@@ -139,6 +153,7 @@ class Table extends PanelComponent
     public function updatedSearch(): void
     {
         $this->page = 1;
+        $this->encryptFilterValues(app(CryptoMethods::class));
     }
 
     public function updatedPerPage(): void
@@ -153,22 +168,35 @@ class Table extends PanelComponent
     }
 
     /**
-     * A filter with "encrypted with" looks for the encrypted value: encrypt each new value once.
+     * A filter with "encrypted with", an "is exactly" filter on an encrypted column, and the search
+     * (for the encrypted columns) look for encrypted values: encrypt each new value once.
      */
     private function encryptFilterValues(CryptoMethods $crypto): void
     {
         $this->resetErrorBag('filters');
+        $wanted = [];
 
         foreach ($this->filters as $filter) {
-            $methodId = (int) ($filter['crypto'] ?? 0);
+            $methodId = $this->filterMethodId($filter);
             $value = (string) ($filter['value'] ?? '');
-            $key = $methodId.'|'.$value;
 
-            if ($methodId === 0 || $value === '' || isset($this->encryptedValues[$key])) {
+            if ($methodId !== 0 && $value !== '') {
+                $wanted[$methodId.'|'.$value] = [$methodId, $value, true];
+            }
+        }
+
+        if (trim($this->search) !== '') {
+            foreach ($this->searchedColumns() as $method) {
+                $wanted[$method->id.'|'.trim($this->search)] ??= [$method->id, trim($this->search), false];
+            }
+        }
+
+        foreach ($wanted as $key => [$methodId, $value, $reportErrors]) {
+            if (isset($this->encryptedValues[$key])) {
                 continue;
             }
 
-            $method = CryptoMethod::query()->find($methodId);
+            $method = CryptoMethod::query()->with('website')->find($methodId);
 
             if (! $method) {
                 continue;
@@ -177,9 +205,31 @@ class Table extends PanelComponent
             try {
                 $this->encryptedValues[$key] = $crypto->encrypt($method, $value);
             } catch (Throwable $exception) {
-                $this->addError('filters', $exception->getMessage());
+                if ($reportErrors) {
+                    $this->addError('filters', $exception->getMessage());
+                }
             }
         }
+    }
+
+    /**
+     * The method a filter's value is encrypted with: the one chosen on the filter, or the column's
+     * own for "is exactly" and "is not" on a column shown decrypted.
+     *
+     * @param  array<string, mixed>  $filter
+     */
+    private function filterMethodId(array $filter): int
+    {
+        $chosen = (int) ($filter['crypto'] ?? 0);
+
+        if ($chosen !== 0) {
+            return $chosen;
+        }
+
+        $column = (string) ($filter['column'] ?? '');
+        $method = $this->encryptedColumns()[$column] ?? null;
+
+        return $method && ! in_array($column, $this->rawColumns, true) && in_array($filter['operator'] ?? '', ['equals', 'not_equals'], true) ? $method->id : 0;
     }
 
     /**
@@ -190,7 +240,7 @@ class Table extends PanelComponent
     private function filtersForQuery(): array
     {
         return array_values(array_filter(array_map(function (array $filter): ?array {
-            $methodId = (int) ($filter['crypto'] ?? 0);
+            $methodId = $this->filterMethodId($filter);
 
             if ($methodId === 0 || (string) ($filter['value'] ?? '') === '') {
                 return $filter;
@@ -200,6 +250,171 @@ class Table extends PanelComponent
 
             return $encrypted === null ? null : [...$filter, 'value' => $encrypted];
         }, $this->filters)));
+    }
+
+    /**
+     * The search text encrypted for each encrypted column, so the search finds those values too.
+     *
+     * @return array<string, string>
+     */
+    private function searchExact(): array
+    {
+        $term = trim($this->search);
+
+        if ($term === '') {
+            return [];
+        }
+
+        $exact = [];
+
+        foreach ($this->searchedColumns() as $column => $method) {
+            if (isset($this->encryptedValues[$method->id.'|'.$term])) {
+                $exact[$column] = $this->encryptedValues[$method->id.'|'.$term];
+            }
+        }
+
+        return $exact;
+    }
+
+    /**
+     * Columns this table keeps encrypted, with the method of each.
+     *
+     * @return array<string, CryptoMethod>
+     */
+    private function encryptedColumns(): array
+    {
+        return $this->encryptedColumnsCache ??= EncryptedColumn::forTable($this->database, $this->table);
+    }
+
+    /**
+     * Encrypted columns the search looks in (not those shown as stored).
+     *
+     * @return array<string, CryptoMethod>
+     */
+    private function searchedColumns(): array
+    {
+        return array_filter($this->encryptedColumns(), fn (CryptoMethod $method, string $column): bool => ! in_array($column, $this->rawColumns, true), ARRAY_FILTER_USE_BOTH);
+    }
+
+    /**
+     * Encrypted columns the grid shows decrypted: not key columns (rows are found by their stored
+     * keys), not those shown as stored, and only with a method that can decrypt.
+     *
+     * @param  list<string>  $keyColumns
+     * @return array<string, CryptoMethod>
+     */
+    private function decryptedColumns(array $keyColumns): array
+    {
+        return array_filter($this->searchedColumns(), fn (CryptoMethod $method, string $column): bool => $method->canDecrypt() && ! in_array($column, $keyColumns, true), ARRAY_FILTER_USE_BOTH);
+    }
+
+    /**
+     * Rows with their encrypted columns decrypted, one run per method. A value that does not decrypt
+     * stays as stored.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @param  array<string, CryptoMethod>  $columns
+     * @return list<array<string, mixed>>
+     */
+    private function decryptRows(array $rows, array $columns, ?string &$error = null): array
+    {
+        $byMethod = [];
+
+        foreach ($columns as $column => $method) {
+            $byMethod[$method->id]['method'] = $method;
+            $byMethod[$method->id]['columns'][] = $column;
+        }
+
+        foreach ($byMethod as ['method' => $method, 'columns' => $methodColumns]) {
+            $values = [];
+
+            foreach ($rows as $row) {
+                foreach ($methodColumns as $column) {
+                    $value = $row[$column] ?? null;
+
+                    if (is_string($value) && $value !== '' && ! str_starts_with($value, '[binary, ')) {
+                        $values[$value] = $value;
+                    }
+                }
+            }
+
+            if ($values === []) {
+                continue;
+            }
+
+            $values = array_values($values);
+
+            try {
+                $plain = app(CryptoMethods::class)->decrypt($method, $values);
+            } catch (Throwable $exception) {
+                $error = $exception->getMessage();
+
+                continue;
+            }
+
+            $decrypted = [];
+
+            foreach ($values as $index => $value) {
+                $result = $plain[$index] ?? null;
+
+                if ($result !== null && $result !== '' && mb_check_encoding($result, 'UTF-8')) {
+                    $decrypted[$value] = $result;
+                }
+            }
+
+            foreach ($rows as $index => $row) {
+                foreach ($methodColumns as $column) {
+                    $value = $row[$column] ?? null;
+
+                    if (is_string($value) && isset($decrypted[$value])) {
+                        $rows[$index][$column] = $decrypted[$value];
+                    }
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Keep a column encrypted with a method (the grid, filters, search, and the row form then show
+     * and take its values decrypted), or stop. Only the setting is saved; the data stays as it is.
+     */
+    public function setColumnEncryption(DatabaseBrowser $browser, string $column, int|string|null $methodId = null): void
+    {
+        if (! in_array($column, array_column($browser->columns($this->database, $this->table), 'name'), true)) {
+            return;
+        }
+
+        $method = (int) $methodId === 0 ? null : CryptoMethod::query()->find((int) $methodId);
+
+        if ($method === null) {
+            EncryptedColumn::query()->where(['database' => $this->database, 'table' => $this->table, 'column' => $column])->delete();
+            $this->toast($column.' is shown as stored.');
+        } else {
+            EncryptedColumn::query()->updateOrCreate(
+                ['database' => $this->database, 'table' => $this->table, 'column' => $column],
+                ['crypto_method_id' => $method->id],
+            );
+            $this->toast(in_array($column, $browser->keyColumns($this->database, $this->table), true)
+                ? $column.' is marked encrypted with '.$method->name.'. As a key column the grid keeps it as stored; the record shows it decrypted.'
+                : $column.' is shown decrypted with '.$method->name.'.');
+        }
+
+        $this->encryptedColumnsCache = null;
+        $this->rawColumns = array_values(array_diff($this->rawColumns, [$column]));
+        $this->encryptFilterValues(app(CryptoMethods::class));
+    }
+
+    /**
+     * Show an encrypted column's values as stored in the grid, or decrypted again.
+     */
+    public function toggleRawColumn(string $column): void
+    {
+        $this->rawColumns = in_array($column, $this->rawColumns, true)
+            ? array_values(array_diff($this->rawColumns, [$column]))
+            : [...$this->rawColumns, $column];
+        $this->encryptFilterValues(app(CryptoMethods::class));
     }
 
     /**
@@ -261,28 +476,60 @@ class Table extends PanelComponent
                 'sort' => $this->sort,
                 'direction' => $this->direction,
                 'search' => $this->search,
+                'search_exact' => $this->searchExact(),
                 'filters' => $this->filtersForQuery(),
             ]);
+            $columns = $this->decryptedColumns($browser->keyColumns($this->database, $this->table));
         } catch (Throwable $exception) {
             return ['rows' => [], 'total' => 0, 'error' => $this->message($exception)];
         }
 
-        return ['rows' => $data['rows'], 'total' => $data['total']];
+        $error = null;
+        $rows = $this->decryptRows($data['rows'], $columns, $error);
+
+        return ['rows' => $rows, 'total' => $data['total'], ...($error === null ? [] : ['error' => $error])];
     }
 
     /**
      * The values of one column with their counts, for the header filter's list.
      *
-     * @return array{values: list<array{value: ?string, count: int}>, more: bool, error?: string}
+     * An encrypted column lists its stored values with the decrypted text as the label, and the
+     * search looks in the decrypted text.
+     *
+     * @return array{values: list<array{value: ?string, count: int, label?: string}>, more: bool, error?: string}
      */
     #[Renderless]
     public function columnValues(DatabaseBrowser $browser, string $column, string $find = ''): array
     {
         try {
-            return $browser->distinctValues($this->database, $this->table, $column, $this->search, $this->filtersForQuery(), $find);
+            $method = $this->decryptedColumns($browser->keyColumns($this->database, $this->table))[$column] ?? null;
+
+            if ($method === null) {
+                return $browser->distinctValues($this->database, $this->table, $column, $this->search, $this->filtersForQuery(), $find, 200, $this->searchExact());
+            }
+
+            $find = trim($find);
+            $list = $browser->distinctValues($this->database, $this->table, $column, $this->search, $this->filtersForQuery(), '', $find === '' ? 200 : 1000, $this->searchExact());
         } catch (Throwable $exception) {
             return ['values' => [], 'more' => false, 'error' => $this->message($exception)];
         }
+
+        $error = null;
+        $rows = array_map(fn (array $item): array => [$column => $item['value']], $list['values']);
+        $plain = $this->decryptRows($rows, [$column => $method], $error);
+        $values = [];
+
+        foreach ($list['values'] as $index => $item) {
+            $label = $plain[$index][$column];
+
+            if ($find !== '' && ($label === null || ! str_contains(mb_strtolower((string) $label), mb_strtolower($find)))) {
+                continue;
+            }
+
+            $values[] = $label !== $item['value'] && $label !== null ? [...$item, 'label' => (string) $label] : $item;
+        }
+
+        return ['values' => array_slice($values, 0, 200), 'more' => $list['more'] || count($values) > 200, ...($error === null ? [] : ['error' => $error])];
     }
 
     /**
@@ -359,11 +606,39 @@ class Table extends PanelComponent
 
         $this->rowKeys = $keys;
         $this->rowData = $row;
-        $this->decrypted = [];
+        $this->decrypted = $this->decryptedRecord($row);
         $this->rowParam = (string) json_encode($keys);
         $this->editing = false;
         $this->creating = false;
         $this->rowOpen = true;
+    }
+
+    /**
+     * The open record's encrypted columns, decrypted (every one, key columns too).
+     *
+     * @param  array<string, mixed>  $row
+     * @return array<string, string>
+     */
+    private function decryptedRecord(array $row): array
+    {
+        $columns = array_filter($this->encryptedColumns(), fn (CryptoMethod $method): bool => $method->canDecrypt());
+
+        if ($columns === []) {
+            return [];
+        }
+
+        $error = null;
+        $plain = $this->decryptRows([$row], $columns, $error)[0];
+
+        if ($error !== null) {
+            $this->toast($error, 'error');
+        }
+
+        return array_filter(
+            array_map(fn ($value): ?string => is_string($value) ? $value : null, array_intersect_key($plain, $columns)),
+            fn (?string $value, string $column): bool => $value !== null && $value !== $row[$column],
+            ARRAY_FILTER_USE_BOTH,
+        );
     }
 
     public function closeRow(): void
@@ -378,11 +653,20 @@ class Table extends PanelComponent
     public function editRow(DatabaseBrowser $browser): void
     {
         $this->form = [];
+        $this->formPlain = [];
         $columns = collect($browser->columns($this->database, $this->table))->keyBy('name');
 
         foreach ($this->rowData as $column => $value) {
             $info = $columns->get($column);
             $shown = $value === null ? '' : (string) $value;
+
+            // An encrypted column is edited decrypted, and encrypted again when saved.
+            if (isset($this->decrypted[$column], $this->encryptedColumns()[$column])) {
+                $this->formPlain[$column] = $this->decrypted[$column];
+                $this->form[$column] = ['value' => $this->decrypted[$column], 'null' => false];
+
+                continue;
+            }
             $this->form[$column] = ['value' => $info ? DatabaseBrowser::toInput($info, $shown) : $shown, 'null' => $value === null];
         }
 
@@ -392,6 +676,7 @@ class Table extends PanelComponent
     public function newRow(DatabaseBrowser $browser): void
     {
         $this->form = [];
+        $this->formPlain = [];
 
         foreach ($browser->columns($this->database, $this->table) as $column) {
             $this->form[$column['name']] = ['value' => $column['default'] !== null && ! str_contains($column['extra'], 'DEFAULT_GENERATED') ? (string) $column['default'] : '', 'null' => false];
@@ -404,7 +689,7 @@ class Table extends PanelComponent
         $this->rowOpen = true;
     }
 
-    public function saveRow(DatabaseBrowser $browser): void
+    public function saveRow(DatabaseBrowser $browser, CryptoMethods $crypto): void
     {
         $this->resetErrorBag();
         $columns = collect($browser->columns($this->database, $this->table))->keyBy('name');
@@ -424,7 +709,34 @@ class Table extends PanelComponent
                 continue;
             }
 
+            $method = $this->encryptedColumns()[$column] ?? null;
+            $encrypt = $method !== null && empty($field['null']) && ! $empty && ($this->creating || array_key_exists($column, $this->formPlain));
+
+            // An encrypted column left as it was keeps its stored value.
+            if (! $this->creating && array_key_exists($column, $this->formPlain) && empty($field['null']) && (string) ($field['value'] ?? '') === $this->formPlain[$column]) {
+                continue;
+            }
+
+            if ($encrypt) {
+                try {
+                    $values[$column] = $crypto->encrypt($method, (string) $field['value']);
+                } catch (Throwable $exception) {
+                    $this->addError('form', $column.': '.$exception->getMessage());
+
+                    return;
+                }
+
+                continue;
+            }
+
             $values[$column] = ! empty($field['null']) ? null : DatabaseBrowser::fromInput($info, (string) ($field['value'] ?? ''));
+        }
+
+        if (! $this->creating && $values === []) {
+            $this->toast('Nothing changed.');
+            $this->openRow($browser, $this->rowKeys);
+
+            return;
         }
 
         try {
@@ -523,6 +835,7 @@ class Table extends PanelComponent
                     'sort' => $this->sort,
                     'direction' => $this->direction,
                     'search' => $this->search,
+                    'search_exact' => $this->searchExact(),
                     'filters' => $this->filtersForQuery(),
                 ]);
                 $this->page = $data['page'];
@@ -543,6 +856,7 @@ class Table extends PanelComponent
             'error' => $error,
             'operators' => DatabaseBrowser::OPERATORS,
             'cryptoMethods' => CryptoMethod::query()->orderBy('name')->get(['id', 'name', 'decrypt_code']),
+            'encryptedColumns' => $this->encryptedColumns(),
         ])->layout('layouts.app')->title($this->database.'.'.$this->table);
     }
 }
