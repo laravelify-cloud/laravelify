@@ -2071,6 +2071,38 @@ html:has(.modal-root:not([x-cloak]):not([style*="display: none"])) {
 .db-ag-grid .db-ag-num { color: var(--color-muted); font-size: 11px; text-align: right; }
 .db-ag-grid .ag-header-cell-text { text-overflow: ellipsis; }
 
+/* Database tool grid: header (name, badges, sort, funnel, menu) and its floating panels. */
+.db-ag-grid .ag-header-cell { padding: 0 4px 0 10px; }
+.db-head { display: flex; width: 100%; min-width: 0; align-items: center; gap: 2px; }
+.db-head-label { display: flex; min-width: 0; flex: 1; align-items: center; gap: 5px; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.db-head-name { flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-head .db-grid-badge { flex: none; }
+.db-head-sort { color: var(--color-accent); font-size: 12px; }
+.db-head-btn { display: grid; width: 24px; height: 24px; flex: none; place-items: center; border-radius: 6px; color: var(--color-muted); }
+.db-head-btn svg { width: 16px; height: 16px; }
+.db-head-btn:hover { background: color-mix(in srgb, var(--color-ink) 8%, transparent); color: var(--color-ink); }
+.db-head-btn.is-active { color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
+.db-grid-loading { color: var(--color-muted); }
+.db-pop { position: fixed; z-index: 130; max-height: min(70vh, 480px); overflow: auto; border-radius: 10px; border: 1px solid var(--color-line); background: var(--color-recessed); box-shadow: var(--shadow-dropdown); color: var(--color-ink); font-size: 13px; }
+.db-cell-pop { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.db-pop-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.db-cell-value { max-height: 16rem; overflow: auto; margin: 0; border-radius: 6px; background: var(--color-canvas); padding: 8px 10px; font-family: var(--font-mono); font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.db-pop-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.db-filter { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.db-filter-tabs { align-self: flex-start; }
+.db-filter-pane { display: flex; flex-direction: column; gap: 8px; }
+.db-filter-pane[hidden] { display: none; }
+.db-filter-list { max-height: 15rem; overflow: auto; border-radius: 6px; border: 1px solid var(--color-line); padding: 4px; }
+.db-filter-row { display: flex; align-items: center; gap: 8px; border-radius: 5px; padding: 4px 6px; cursor: pointer; }
+.db-filter-row:hover { background: color-mix(in srgb, var(--color-ink) 5%, transparent); }
+.db-filter-value { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 12.5px; }
+.db-filter-count { color: var(--color-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.db-menu { display: flex; flex-direction: column; padding: 5px; }
+.db-menu-item { border-radius: 6px; padding: 7px 10px; text-align: left; white-space: pre; }
+.db-menu-item:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+.db-menu-item.is-active { color: var(--color-accent); }
+.db-menu-line { margin: 4px 2px; border: 0; border-top: 1px solid var(--color-line); }
+
 /* Database tool: rows as a spreadsheet grid (only here: dense, ruled cells, sticky header). */
 .db-grid-wrap { max-height: 70vh; overflow: auto; }
 .db-grid { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-family: var(--font-mono); font-size: 12.5px; }

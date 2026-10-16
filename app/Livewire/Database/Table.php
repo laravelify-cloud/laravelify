@@ -8,6 +8,7 @@ use App\Models\CryptoMethod;
 use App\Services\BackupManager;
 use App\Services\CryptoMethods;
 use App\Services\DatabaseBrowser;
+use Livewire\Attributes\Renderless;
 use Livewire\Attributes\Url;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
@@ -242,6 +243,73 @@ class Table extends PanelComponent
     }
 
     /**
+     * A block of rows for the grid as it scrolls (rows start to end, in the grid's sort order), with
+     * the search and filters applied in MySQL. The page is not drawn again.
+     *
+     * @return array{rows: list<array<string, mixed>>, total: int, error?: string}
+     */
+    #[Renderless]
+    public function fetchRows(DatabaseBrowser $browser, int $start, int $end, ?string $sort = null, string $direction = 'asc'): array
+    {
+        $this->sort = $sort !== null && $sort !== '' ? $sort : null;
+        $this->direction = $direction === 'desc' ? 'desc' : 'asc';
+
+        try {
+            $data = $browser->rows($this->database, $this->table, [
+                'offset' => max(0, $start),
+                'limit' => max(1, min(500, $end - $start)),
+                'sort' => $this->sort,
+                'direction' => $this->direction,
+                'search' => $this->search,
+                'filters' => $this->filtersForQuery(),
+            ]);
+        } catch (Throwable $exception) {
+            return ['rows' => [], 'total' => 0, 'error' => $this->message($exception)];
+        }
+
+        return ['rows' => $data['rows'], 'total' => $data['total']];
+    }
+
+    /**
+     * The values of one column with their counts, for the header filter's list.
+     *
+     * @return array{values: list<array{value: ?string, count: int}>, more: bool, error?: string}
+     */
+    #[Renderless]
+    public function columnValues(DatabaseBrowser $browser, string $column, string $find = ''): array
+    {
+        try {
+            return $browser->distinctValues($this->database, $this->table, $column, $this->search, $this->filtersForQuery(), $find);
+        } catch (Throwable $exception) {
+            return ['values' => [], 'more' => false, 'error' => $this->message($exception)];
+        }
+    }
+
+    /**
+     * The header filter of one column: a list of values to show (and NULLs), a condition, or none.
+     *
+     * @param  array{mode?: string, values?: list<mixed>, blanks?: bool, operator?: string, value?: string}  $filter
+     */
+    public function setColumnFilter(string $column, array $filter): void
+    {
+        $this->filters = array_values(array_filter($this->filters, fn (array $existing): bool => ($existing['column'] ?? '') !== $column));
+
+        if (($filter['mode'] ?? '') === 'values') {
+            $this->filters[] = [
+                'column' => $column,
+                'operator' => 'in',
+                'values' => array_values(array_map('strval', array_filter((array) ($filter['values'] ?? []), 'is_scalar'))),
+                'blanks' => (bool) ($filter['blanks'] ?? false),
+                'value' => '',
+            ];
+        } elseif (($filter['mode'] ?? '') === 'condition' && array_key_exists((string) ($filter['operator'] ?? ''), DatabaseBrowser::OPERATORS)) {
+            $this->filters[] = ['column' => $column, 'operator' => (string) $filter['operator'], 'value' => (string) ($filter['value'] ?? '')];
+        }
+
+        $this->updatedFilters();
+    }
+
+    /**
      * Sort as the grid asks: a column and a direction, or no column for the table's own order.
      */
     public function sortTo(?string $column, string $direction = 'asc'): void
@@ -448,9 +516,10 @@ class Table extends PanelComponent
             $relations = $browser->relations($this->database, $this->table);
 
             if ($this->tab === 'browse') {
+                // The grid fetches its rows as it scrolls (fetchRows); the page only needs the total.
                 $data = $browser->rows($this->database, $this->table, [
-                    'page' => $this->page,
-                    'per_page' => $this->perPage,
+                    'offset' => 0,
+                    'limit' => 1,
                     'sort' => $this->sort,
                     'direction' => $this->direction,
                     'search' => $this->search,

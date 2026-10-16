@@ -63,15 +63,10 @@
             </div>
         </x-layer-card>
     @else
-        <x-layer-card title="Rows" helper="Click a row to see all of it. Click a column name to sort." flush>
+        <x-layer-card title="Rows" helper="Scroll for more rows. Hover or click a cell to see it whole; double-click a row to open it. The funnel on a header filters by its values, the ⋮ sorts, pins, and hides columns." flush>
             <x-slot:actions>
                 <input class="input h-8 w-56" type="search" wire:model.live.debounce.400ms="search" placeholder="Search every column" aria-label="Search every column">
                 <button class="btn btn-sm" type="button" wire:click="addFilter"><x-menu-icon name="plus" class="size-4" /> Filter</button>
-                <select class="select h-8 w-auto" wire:model.live="perPage" aria-label="Rows per page">
-                    @foreach ([25, 50, 100, 250, 500] as $count)
-                        <option value="{{ $count }}">{{ $count }} per page</option>
-                    @endforeach
-                </select>
             </x-slot:actions>
 
             @if ($filters !== [])
@@ -87,6 +82,16 @@
                                     @endforeach
                                 </select>
                             </label>
+                            @if (($filter['operator'] ?? '') === 'in')
+                                @php
+                                    $chosen = (array) ($filter['values'] ?? []);
+                                    $summary = collect($chosen)->take(4)->implode(', ').(count($chosen) > 4 ? ' and '.(count($chosen) - 4).' more' : '');
+                                @endphp
+                                <div class="field min-w-0 flex-1">
+                                    <span class="label">Is one of</span>
+                                    <p class="input flex items-center truncate font-mono text-[12.5px]">{{ $summary !== '' ? $summary : '' }}{{ ! empty($filter['blanks']) ? ($summary !== '' ? ', ' : '').'(empty)' : '' }}{{ $summary === '' && empty($filter['blanks']) ? 'nothing (no row matches)' : '' }}</p>
+                                </div>
+                            @else
                             <label class="field w-48">
                                 <span class="label">Match</span>
                                 <select class="select" wire:model.live="filters.{{ $index }}.operator" aria-label="How it matches">
@@ -95,15 +100,17 @@
                                     @endforeach
                                 </select>
                             </label>
-                            @unless (in_array($filter['operator'] ?? '', ['null', 'not_null'], true))
+                            @endif
+                            @if (($filter['operator'] ?? '') === 'in')
+                            @elseif (! in_array($filter['operator'] ?? '', ['null', 'not_null'], true))
                                 <label class="field min-w-0 flex-1">
                                     <span class="label">Value</span>
                                     <input class="input font-mono text-[12.5px]" wire:model.live.debounce.400ms="filters.{{ $index }}.value" placeholder="What to match" aria-label="Value">
                                 </label>
                             @else
                                 <span></span>
-                            @endunless
-                            @if ($cryptoMethods->isNotEmpty() && ! in_array($filter['operator'] ?? '', ['null', 'not_null'], true))
+                            @endif
+                            @if ($cryptoMethods->isNotEmpty() && ! in_array($filter['operator'] ?? '', ['null', 'not_null', 'in'], true))
                                 <label class="field w-48">
                                     <span class="label">Encrypted with</span>
                                     <select class="select" wire:model.live="filters.{{ $index }}.crypto" aria-label="The column is encrypted with">
@@ -137,18 +144,22 @@
                     'columns' => collect($columns)->map(fn ($column) => [
                         'name' => $column['name'],
                         'type' => $column['type'],
+                        'dataType' => $column['data_type'],
                         'key' => in_array($column['name'], $keyColumns, true),
                         'numeric' => in_array($column['data_type'], ['tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint', 'decimal', 'float', 'double', 'year'], true),
                         'out' => $relations['out'][$column['name']] ?? null,
                         'in' => $relations['in'][$column['name']] ?? [],
                     ])->values()->all(),
-                    'rows' => $data['rows'],
+                    'total' => $data['total'],
+                    'version' => md5(json_encode([$search, $filters, $encryptedValues])),
+                    'filtered' => collect($filters)->pluck('column')->filter()->unique()->values()->all(),
+                    'columnFilters' => (object) collect($filters)->filter(fn ($filter) => ($filter['column'] ?? '') !== '')->keyBy('column')->all(),
+                    'operators' => $operators,
                     'keyColumns' => $keyColumns,
                     'canChange' => $canChange,
                     'sort' => $sort,
                     'direction' => $direction,
-                    'offset' => ($data['page'] - 1) * $data['per_page'],
-                    'filtered' => $search !== '' || $filters !== [],
+                    'anyFilter' => $search !== '' || $filters !== [],
                 ];
                 $gridJson = json_encode($gridPayload, JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR);
             @endphp
@@ -158,18 +169,6 @@
                 <div x-ref="grid" class="db-ag-grid"></div>
             </div>
 
-            @if ($data['pages'] > 1)
-                <div class="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2.5 text-[12.5px] text-muted">
-                    <span>Page {{ $data['page'] }} of {{ number_format($data['pages']) }} · rows {{ number_format(($data['page'] - 1) * $data['per_page'] + 1) }}–{{ number_format(min($data['total'], $data['page'] * $data['per_page'])) }} of {{ number_format($data['total']) }}</span>
-                    <div class="flex items-center gap-1">
-                        <button class="btn btn-sm" type="button" wire:click="goTo(1)" @disabled($data['page'] <= 1)>First</button>
-                        <button class="btn btn-sm" type="button" wire:click="goTo({{ $data['page'] - 1 }})" @disabled($data['page'] <= 1)>Previous</button>
-                        <input class="input h-8 w-20 text-center" type="number" min="1" max="{{ $data['pages'] }}" value="{{ $data['page'] }}" @change="$wire.goTo(parseInt($event.target.value) || 1)" aria-label="Page">
-                        <button class="btn btn-sm" type="button" wire:click="goTo({{ $data['page'] + 1 }})" @disabled($data['page'] >= $data['pages'])>Next</button>
-                        <button class="btn btn-sm" type="button" wire:click="goTo({{ $data['pages'] }})" @disabled($data['page'] >= $data['pages'])>Last</button>
-                    </div>
-                </div>
-            @endif
         </x-layer-card>
     @endif
 

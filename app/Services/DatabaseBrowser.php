@@ -307,6 +307,13 @@ class DatabaseBrowser
         $total = (int) ($this->connection()->selectOne('SELECT COUNT(*) AS c FROM '.$from.$where, $bindings)->c ?? 0);
         $pages = max(1, (int) ceil($total / $perPage));
         $page = max(1, min($pages, (int) ($options['page'] ?? 1)));
+        $offset = ($page - 1) * $perPage;
+
+        // A block of rows by position (the grid scrolling through the table) instead of a page.
+        if (isset($options['offset'])) {
+            $offset = max(0, (int) $options['offset']);
+            $perPage = max(1, min(500, (int) ($options['limit'] ?? 100)));
+        }
 
         $order = '';
         $sort = $options['sort'] ?? null;
@@ -316,7 +323,7 @@ class DatabaseBrowser
         }
 
         $rows = $this->connection()->select(
-            'SELECT /*+ MAX_EXECUTION_TIME(15000) */ * FROM '.$from.$where.$order.' LIMIT '.$perPage.' OFFSET '.(($page - 1) * $perPage),
+            'SELECT /*+ MAX_EXECUTION_TIME(15000) */ * FROM '.$from.$where.$order.' LIMIT '.$perPage.' OFFSET '.$offset,
             $bindings,
         );
 
@@ -326,6 +333,43 @@ class DatabaseBrowser
             'page' => $page,
             'per_page' => $perPage,
             'pages' => $pages,
+        ];
+    }
+
+    /**
+     * The different values of a column with how many rows have each, most common first, for the
+     * grid's header filter (like a spreadsheet's value list). Only the other filters apply, so the
+     * list shows what this column's own filter can choose from.
+     *
+     * @param  list<array{column: string, operator: string, value?: mixed}>  $filters
+     * @return array{values: list<array{value: ?string, count: int}>, more: bool}
+     */
+    public function distinctValues(string $database, string $table, string $column, string $search = '', array $filters = [], string $find = '', int $limit = 200): array
+    {
+        $columns = array_column($this->columns($database, $table), 'name');
+
+        if (! in_array($column, $columns, true)) {
+            throw new RuntimeException('That column is not in the table.');
+        }
+
+        $others = array_values(array_filter($filters, fn (array $filter): bool => ($filter['column'] ?? '') !== $column));
+        [$where, $bindings] = $this->where($columns, $search, $others);
+        $quoted = $this->quote($column);
+
+        if (trim($find) !== '') {
+            $where .= ($where === '' ? ' WHERE ' : ' AND ').'CAST('.$quoted.' AS CHAR) LIKE ?';
+            $bindings[] = '%'.$this->like(trim($find)).'%';
+        }
+
+        $limit = max(10, min(1000, $limit));
+        $rows = $this->connection()->select(
+            'SELECT /*+ MAX_EXECUTION_TIME(8000) */ '.$quoted.' AS v, COUNT(*) AS c FROM '.$this->qualified($database, $table).$where.' GROUP BY '.$quoted.' ORDER BY c DESC, v ASC LIMIT '.($limit + 1),
+            $bindings,
+        );
+
+        return [
+            'values' => array_map(fn (object $row): array => ['value' => $row->v === null ? null : (string) $this->preview($row->v), 'count' => (int) $row->c], array_slice($rows, 0, $limit)),
+            'more' => count($rows) > $limit,
         ];
     }
 
@@ -849,7 +893,29 @@ class DatabaseBrowser
             $operator = (string) ($filter['operator'] ?? 'contains');
             $value = (string) ($filter['value'] ?? '');
 
-            if (! in_array($column, $columns, true) || ! array_key_exists($operator, self::OPERATORS)) {
+            // "in" (is one of) comes from the grid's value list, not from the operator list.
+            if (! in_array($column, $columns, true) || (! array_key_exists($operator, self::OPERATORS) && $operator !== 'in')) {
+                continue;
+            }
+
+            if ($operator === 'in') {
+                $values = array_values(array_filter((array) ($filter['values'] ?? []), 'is_scalar'));
+                $blanks = (bool) ($filter['blanks'] ?? false);
+                $quoted = $this->quote($column);
+                $any = [];
+
+                if ($values !== []) {
+                    $any[] = $quoted.' IN ('.implode(', ', array_fill(0, count($values), '?')).')';
+                    array_push($bindings, ...array_map('strval', $values));
+                }
+
+                if ($blanks) {
+                    $any[] = $quoted.' IS NULL';
+                }
+
+                // Nothing ticked: no row can match.
+                $parts[] = $any === [] ? '1 = 0' : '('.implode(' OR ', $any).')';
+
                 continue;
             }
 

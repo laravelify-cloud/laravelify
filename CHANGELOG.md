@@ -2,6 +2,13 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.45] - unreleased
+
+- **Database tool: the grid reads rows from the server as you scroll.** No more pages: blocks of 100 rows load while you scroll, sorted and filtered in MySQL, so any table size works.
+- **Filter from a column header, like a spreadsheet.** The funnel on a header lists the column's values from the database with how many rows have each (search them, tick some, **(Empty)** for NULL), or takes a condition (contains, is exactly, starts with, a pattern, empty…). The active filter shows on the funnel and in the filters above the grid.
+- **A ⋮ menu on every header:** sort ascending or descending, pin left or right, fit this or all columns to their content, hide the column, choose the columns to show, and reset the columns. These are built on the free AG Grid Community.
+- **Fixed column widths:** numbers fit 7 digits, dates and times their format, text 220px; a column is never too narrow for its name. Hovering a cut value shows it whole, clicking a cell opens it (with **Copy** and **Open record**), and a double click opens the record.
+
 ## [0.3.0-beta.44] - 2026-10-16
 
 - **Database tool: rows in AG Grid.** The rows of a table are an AG Grid (Community edition, MIT: free, no watermark) in the panel's colours: resize, move, and pin columns (kept per table in your browser), tick rows to delete them, row numbers, tooltips with each column's type. Sorting, paging, the search, and filters still run in MySQL; a click on a header sorts there. Foreign-key values are links to the row they point at, and a value other tables point at opens a list of them (like DataGrip). The grid loads only on table pages.

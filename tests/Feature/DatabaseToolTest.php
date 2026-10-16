@@ -199,11 +199,13 @@ class DatabaseToolTest extends TestCase
             ->assertSee('people')
             ->assertSee('logs');
 
+        $page = Livewire::test(DatabaseTable::class, ['database' => self::DB, 'table' => 'people'])->assertSee('3 rows');
+        $this->assertSame(['Arshad', 'Leyla', 'Murad'], array_column($page->instance()->fetchRows($this->browser, 0, 100)['rows'], 'firstname'));
+        $this->assertSame(['Murad'], array_column($page->instance()->fetchRows($this->browser, 0, 1, 'firstname', 'desc')['rows'], 'firstname'), 'The grid asks for blocks, sorted on the server.');
+
         Livewire::test(DatabaseTable::class, ['database' => self::DB, 'table' => 'people'])
-            ->assertSee('AZE1234567')
             ->set('search', 'Leyla')
-            ->assertSee('AZE7654321')
-            ->assertDontSee('AZE1234567')
+            ->assertSee('1 row match')
             ->call('openRow', ['id' => 2])
             ->assertSet('rowOpen', true)
             ->call('editRow')
@@ -487,5 +489,26 @@ class DatabaseToolTest extends TestCase
             ->set('decryptWith', (string) $method->id)
             ->call('decryptRow')
             ->assertSet('decrypted', ['secret_passport' => 'AZE1234567']);
+    }
+
+    public function test_the_header_filter_lists_values_with_counts_and_filters_by_them(): void
+    {
+        $this->browser->connection()->insert('INSERT INTO `'.self::DB.'`.`people` (firstname, city) VALUES (?, ?)', ['Nigar', 'Baku']);
+
+        $values = $this->browser->distinctValues(self::DB, 'people', 'city');
+        $this->assertSame([['value' => 'Baku', 'count' => 2], ['value' => null, 'count' => 1], ['value' => 'Ganja', 'count' => 1]], $values['values']);
+        $this->assertSame([['value' => 'Ganja', 'count' => 1]], $this->browser->distinctValues(self::DB, 'people', 'city', '', [], 'gan')['values']);
+
+        $page = Livewire::test(DatabaseTable::class, ['database' => self::DB, 'table' => 'people'])
+            ->call('setColumnFilter', 'city', ['mode' => 'values', 'values' => ['Ganja'], 'blanks' => true])
+            ->assertSee('2 rows match')
+            ->assertSee('(empty)');
+        $this->assertSame(['Leyla', 'Murad'], array_column($page->instance()->fetchRows($this->browser, 0, 100)['rows'], 'firstname'));
+        $this->assertSame(['Baku', 'Ganja'], array_column(array_filter($page->instance()->columnValues($this->browser, 'city')['values'], fn ($row) => $row['value'] !== null), 'value'), 'The list ignores the column’s own filter.');
+
+        $page->call('setColumnFilter', 'city', ['mode' => 'condition', 'operator' => 'starts', 'value' => 'Ba'])
+            ->assertSee('2 rows match')
+            ->call('setColumnFilter', 'city', ['mode' => 'none'])
+            ->assertSet('filters', []);
     }
 }
