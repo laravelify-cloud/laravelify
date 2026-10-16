@@ -293,8 +293,15 @@ node_site_ready() {
 
 pm2_start_site() {
   local slug="$1"
+  local output
   pm2_leave_root "${slug}"
-  site_pm2 startOrReload "${PM2_APPS}/${slug}.config.cjs" --update-env
+  # PM2 prints its whole process table; keep only what went wrong.
+  if output="$(site_pm2 startOrReload "${PM2_APPS}/${slug}.config.cjs" --update-env 2>&1)"; then
+    echo "PM2: ${slug} started as ${SITE_USER}."
+  else
+    echo "${output}" | grep -vE '[│┌├└]' >&2
+    die "PM2 could not start ${slug}"
+  fi
   pm2_persist
 }
 
