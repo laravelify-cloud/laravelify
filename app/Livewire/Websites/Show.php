@@ -320,17 +320,23 @@ class Show extends PanelComponent
     {
         $this->validate(['process_config' => ['required', 'string']]);
         $this->website->update(['process_config' => $this->process_config]);
+        $typed = $this->process_config;
 
         try {
             $hostWriter->writeWebsite($this->website);
-            $this->toast($this->website->isLaravel()
-                ? 'Supervisor file saved and applied.'
-                : 'PM2 file saved and applied.');
+            $this->toast(match (true) {
+                ! $this->website->isLaravel() => 'PM2 file saved and applied.',
+                trim((string) $this->website->process_config) !== trim($typed) => 'Supervisor file saved and applied. Program names now start with the site name, and each runs as the site user with its log in the site log folder.',
+                default => 'Supervisor file saved and applied.',
+            });
             $this->saved();
         } catch (Throwable $exception) {
             $this->addError('process_config', $exception->getMessage());
             $this->toast($exception->getMessage(), 'error');
         }
+
+        // What was applied: program names, user, and log paths may have been brought up to date.
+        $this->process_config = (string) $this->website->fresh()?->process_config;
     }
 
     public function regenerate(ConfigRenderer $renderer, HostWriter $hostWriter): void

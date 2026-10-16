@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\Websites\Show as WebsiteShow;
 use App\Models\ServerService;
 use App\Models\TrashItem;
+use App\Models\User;
 use App\Models\Website;
 use App\Services\CommandResult;
 use App\Services\CommandRunner;
@@ -11,8 +13,10 @@ use App\Services\ConfigRenderer;
 use App\Services\HostWriter;
 use App\Services\SiteLogs;
 use App\Services\SiteUser;
+use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
@@ -154,6 +158,24 @@ CONF;
         $website->refresh();
         $this->assertStringContainsString('stdout_logfile=/var/log/laravelify/sites/shop/queue.log', $website->process_config);
         $this->assertSame($website->process_config, File::get(storage_path('app/rendered/sites/shop/process.conf')));
+    }
+
+    public function test_saving_processes_renames_older_programs_and_shows_what_was_applied(): void
+    {
+        config(['laravelify.host_commands' => false]);
+        $this->actingAs(User::factory()->create([
+            'two_factor_secret' => app(TwoFactor::class)->generateSecret(),
+            'two_factor_confirmed_at' => now(),
+        ]));
+        $website = Website::factory()->create(['type' => 'laravel', 'slug' => 'shop']);
+
+        Livewire::test(WebsiteShow::class, ['website' => $website])
+            ->set('process_config', "[program:balances-listen]\ncommand=php artisan balances:listen\n")
+            ->call('saveProcess')
+            ->assertHasNoErrors()
+            ->assertSet('process_config', fn (string $config): bool => str_contains($config, '[program:shop-balances-listen]') && str_contains($config, 'user='));
+
+        $this->assertStringContainsString('[program:shop-balances-listen]', File::get(storage_path('app/rendered/sites/shop/process.conf')));
     }
 
     public function test_the_logs_tab_reads_worker_logs_from_the_site_log_folder(): void

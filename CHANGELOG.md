@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.41] - 2026-10-16
+
+- **Older worker names are renamed by themselves.** Since beta.40 every Supervisor program of a site must start with the site name (so one site cannot replace another site's workers), and the update left a site with names like `[program:balances-listen]` running as before with "is not allowed". Now the update, the re-apply (`LARAVELIFY_REAPPLY=1 privileges.sh`), and **Save** on the Processes tab rename such programs to `<site>-balances-listen` (and `[group:...]` with its `programs=` list), apply them, and show the saved file. Names that already fit are left as they are; if a new name is taken, `-2` is added.
+
 ## [0.3.0-beta.40] - 2026-10-16
 
 Security: website code can no longer reach the panel, other websites, or root. Before, the panel, every website's PHP, and the Laravel workers all ran as `www-data`, and Node apps ran as root, so a hacked upload in any site could read the panel's `.env` (MySQL root password, app key), rewrite every other site, and become root through the panel's sudo rule.

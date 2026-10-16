@@ -347,6 +347,7 @@ NGINX;
      */
     public static function secureSupervisor(string $config, string $slug, ?string $user = null, ?string $home = null): string
     {
+        $config = self::prefixPrograms($config, $slug);
         $logs = self::supervisorLogDirectory($slug);
         $user ??= (string) (config('laravelify.site_user') ?: 'www-data');
         $home ??= '/var/www';
@@ -419,6 +420,73 @@ NGINX;
         $closeProgram();
 
         return implode("\n", $output);
+    }
+
+    /**
+     * Every [program:...] and [group:...] of a site starts with its slug (host-apply.sh refuses
+     * anything else, so one site cannot replace another site's programs). Older configs with names
+     * like [program:balances-listen] become [program:<slug>-balances-listen], and the programs= list
+     * of a group follows. Names that already fit are left exactly as they are.
+     */
+    public static function prefixPrograms(string $config, string $slug): string
+    {
+        $lines = preg_split('/\R/', $config) ?: [];
+        $fits = fn (string $name): bool => $name === $slug || preg_match('/^'.preg_quote($slug, '/').'-[A-Za-z0-9_.-]+$/', $name) === 1;
+        $taken = [];
+        $renames = ['program' => [], 'group' => []];
+
+        foreach ($lines as $line) {
+            if (preg_match('/^\s*\[(program|group):([^\]]+)\]\s*$/', $line, $match) === 1 && $fits(trim($match[2]))) {
+                $taken[$match[1]][trim($match[2])] = true;
+            }
+        }
+
+        foreach ($lines as $line) {
+            if (preg_match('/^\s*\[(program|group):([^\]]+)\]\s*$/', $line, $match) !== 1 || $fits(trim($match[2]))) {
+                continue;
+            }
+
+            [$kind, $name] = [$match[1], trim($match[2])];
+            $clean = trim((string) preg_replace('/[^A-Za-z0-9_.-]+/', '-', $name), '-.');
+            $new = $clean === '' ? $slug.'-'.$kind : (str_starts_with($clean, $slug.'-') ? $clean : $slug.'-'.$clean);
+            $candidate = $new;
+
+            for ($number = 2; isset($taken[$kind][$candidate]); $number++) {
+                $candidate = $new.'-'.$number;
+            }
+
+            $taken[$kind][$candidate] = true;
+            $renames[$kind][$name] = $candidate;
+        }
+
+        if ($renames['program'] === [] && $renames['group'] === []) {
+            return $config;
+        }
+
+        $section = null;
+
+        foreach ($lines as $index => $line) {
+            if (preg_match('/^(\s*\[)(program|group):([^\]]+)(\]\s*)$/', $line, $match) === 1) {
+                $section = $match[2];
+                $name = trim($match[3]);
+                $lines[$index] = $match[1].$match[2].':'.($renames[$section][$name] ?? $name).$match[4];
+
+                continue;
+            }
+
+            if (preg_match('/^\s*\[/', $line) === 1) {
+                $section = null;
+
+                continue;
+            }
+
+            if ($section === 'group' && preg_match('/^(\s*programs\s*[=:]\s*)(.*?)(\s*)$/i', $line, $match) === 1) {
+                $names = array_map(fn (string $name): string => $renames['program'][trim($name)] ?? trim($name), explode(',', $match[2]));
+                $lines[$index] = $match[1].implode(',', $names).$match[3];
+            }
+        }
+
+        return implode("\n", $lines);
     }
 
     /**
