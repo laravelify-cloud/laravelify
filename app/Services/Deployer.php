@@ -21,6 +21,7 @@ class Deployer
         private DeploymentNotifier $notifier,
         private SiteFiles $files,
         private SiteUser $site,
+        private ExampleRepositories $examples,
     ) {}
 
     public function run(Deployment $deployment): void
@@ -130,11 +131,16 @@ class Deployer
     private function checkout(Website $website, DeploymentLogger $log): void
     {
         $path = $website->deploy_path;
-        $repository = $this->authenticatedRepository($website);
 
         $log->line($this->hostWriter->prepareSiteDirectory($website));
         // A new site's folder (and its own user) exists only now.
         $this->actAsSiteOf($website);
+
+        if (($made = $this->examples->ensure($website, $this->site)) !== null) {
+            $log->line($made);
+        }
+
+        $repository = $this->authenticatedRepository($website);
 
         if (is_dir($path.'/.git')) {
             // Never trust the stored origin: it may hold an expired GitHub App token from

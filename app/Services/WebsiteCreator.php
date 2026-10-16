@@ -27,6 +27,7 @@ class WebsiteCreator
         private PortAllocator $ports,
         private WebsiteDomains $domains,
         private CloudflareRoutes $cloudflare,
+        private ExampleRepositories $examples,
     ) {}
 
     /**
@@ -109,7 +110,7 @@ class WebsiteCreator
             'domain' => $domain,
             'aliases' => $aliases === [] ? null : $aliases,
             'http_port' => $httpPort,
-            'repository' => $useExample ? Examples::prepare($validated['type'], $slug) : ($input['repository'] !== '' ? $input['repository'] : null),
+            'repository' => $useExample ? $this->examples->pathFor($slug) : ($input['repository'] !== '' ? $input['repository'] : null),
             'branch' => $useExample ? 'main' : $input['branch'],
             'php_version' => $isPhp ? $input['php_version'] : null,
             'node_version' => $usesNode ? $input['node_version'] : null,

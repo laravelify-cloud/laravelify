@@ -11,6 +11,7 @@ use App\Services\CommandResult;
 use App\Services\CommandRunner;
 use App\Services\ConfigRenderer;
 use App\Services\Deployer;
+use App\Services\ExampleRepositories;
 use App\Services\TwoFactor;
 use App\Support\BuildOutput;
 use App\Support\Examples;
@@ -67,12 +68,11 @@ class SiteTypesTest extends TestCase
 
         $website = Website::query()->where('type', 'express')->sole();
 
+        // The repository is made by the deploy, as the user that deploys the site, never in the panel's storage.
         $this->assertSame('main', $website->branch);
-        $this->assertSame(storage_path('app/examples/'.$website->slug), $website->repository);
-        $this->assertDirectoryExists($website->repository.'/.git');
-        $this->assertFileExists($website->repository.'/server.js');
-
-        File::deleteDirectory($website->repository);
+        $this->assertSame(app(ExampleRepositories::class)->pathFor($website->slug), $website->repository);
+        $this->assertStringNotContainsString('app/examples', str_replace('\\', '/', $website->repository));
+        $this->assertTrue(app(ExampleRepositories::class)->isExample($website));
     }
 
     public function test_the_catalog_groups_backend_frontend_and_full_stack(): void
