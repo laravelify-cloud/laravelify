@@ -63,8 +63,10 @@ class BackupManager
     /**
      * @param  list<string>|null  $skipTables  For databases: tables to leave out ("db.table", "*.table"),
      *                                         kept on the schedule for the next full backup. Null keeps the saved list.
+     * @param  list<string>|null  $skipDatabases  For databases: whole databases to leave out, kept the same way.
+     *                                            Databases added later are backed up.
      */
-    public function fullBackup(string $kind, ?array $skipTables = null): BackupSchedule
+    public function fullBackup(string $kind, ?array $skipTables = null, ?array $skipDatabases = null): BackupSchedule
     {
         $isDatabase = $kind === BackupSchedule::KIND_DATABASE;
         $schedule = BackupSchedule::query()->where('kind', $kind)->where('name', 'Full backup')->first();
@@ -89,6 +91,12 @@ class BackupManager
 
         if ($isDatabase && $skipTables !== null) {
             $schedule->targets = [...($schedule->targets ?? []), 'skip_tables' => SkippedTables::normalize($skipTables)];
+            $schedule->save();
+        }
+
+        if ($isDatabase && $skipDatabases !== null) {
+            $skip = array_values(array_unique(array_filter($skipDatabases, fn ($name): bool => is_string($name) && DatabaseDumper::validName($name))));
+            $schedule->targets = [...($schedule->targets ?? []), 'skip_databases' => $skip];
             $schedule->save();
         }
 
@@ -254,6 +262,7 @@ class BackupManager
 
         if ($schedule->isDatabase()) {
             $names = ! empty($targets['all']) ? $this->databases->databases() : array_values($targets['databases'] ?? []);
+            $names = array_values(array_diff($names, (array) ($targets['skip_databases'] ?? [])));
 
             return array_map(fn (string $name) => ['label' => $name, 'database' => $name, 'skip' => SkippedTables::forDatabase($schedule->skippedTables(), $name)], $names);
         }

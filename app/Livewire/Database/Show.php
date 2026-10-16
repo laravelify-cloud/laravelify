@@ -3,13 +3,12 @@
 namespace App\Livewire\Database;
 
 use App\Livewire\Concerns\ManagesDatabaseChanges;
+use App\Livewire\Concerns\RunsSql;
 use App\Livewire\PanelComponent;
 use App\Models\DatabaseChange;
 use App\Services\BackupManager;
 use App\Services\DatabaseBrowser;
-use App\Services\DatabaseSql;
 use Livewire\Attributes\Url;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 /**
@@ -19,6 +18,7 @@ use Throwable;
 class Show extends PanelComponent
 {
     use ManagesDatabaseChanges;
+    use RunsSql;
 
     public string $database = '';
 
@@ -49,13 +49,6 @@ class Show extends PanelComponent
     public ?array $found = null;
 
     public ?string $searchError = null;
-
-    public string $sql = '';
-
-    public ?string $sqlError = null;
-
-    /** @var list<array<string, mixed>> */
-    public array $sqlResults = [];
 
     public bool $exportOpen = false;
 
@@ -99,29 +92,9 @@ class Show extends PanelComponent
         $this->exportOpen = true;
     }
 
-    public function runSql(DatabaseSql $runner, string $selection = '', string $sql = ''): void
+    protected function sqlDatabase(): string
     {
-        if ($sql !== '') {
-            $this->sql = $sql;
-        }
-
-        $ran = $runner->run($this->database, trim($selection) !== '' ? $selection : $this->sql);
-        $this->sqlResults = $ran['results'];
-        $this->sqlError = $ran['error'];
-    }
-
-    public function downloadInserts(DatabaseSql $runner, int $index): StreamedResponse
-    {
-        $result = $this->sqlResults[$index] ?? null;
-        abort_unless(is_array($result) && ($result['kind'] ?? '') === 'rows' && ($result['rows'] ?? []) !== [], 404);
-
-        $table = (string) ($result['table'] ?: 'rows');
-        $body = $runner->inserts($table, $result['columns'], $result['rows']);
-        $name = $this->database.'-'.$table.'-inserts.sql';
-
-        return response()->streamDownload(function () use ($body): void {
-            echo $body;
-        }, $name, ['Content-Type' => 'application/sql; charset=UTF-8']);
+        return $this->database;
     }
 
     public function sortBy(string $column): void

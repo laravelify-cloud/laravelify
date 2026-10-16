@@ -75,6 +75,87 @@ class DatabaseBrowser
         return preg_match('/^[A-Za-z0-9_$-]{1,64}$/', $name) === 1;
     }
 
+    // The row form
+
+    /**
+     * Which field the row form shows for a column: a date or time picker, a list of enum
+     * values, a number, a big text box, or a plain line. A value a picker cannot hold (a zero
+     * date, fractions of a second, a time over 24 hours) keeps a plain line.
+     *
+     * @param  array{data_type: string, type: string}  $column
+     */
+    public static function inputKind(array $column, string $value): string
+    {
+        $type = strtolower($column['data_type']);
+
+        return match (true) {
+            str_starts_with($value, '[binary, ') => 'binary',
+            in_array($type, ['datetime', 'timestamp'], true) => $value === '' || preg_match('/^(?!0000)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/', $value) === 1 ? 'datetime' : 'plain',
+            $type === 'date' => $value === '' || preg_match('/^(?!0000)\d{4}-\d{2}-\d{2}$/', $value) === 1 ? 'date' : 'plain',
+            $type === 'time' => $value === '' || preg_match('/^([01]\d|2[0-3]):\d{2}(:\d{2})?$/', $value) === 1 ? 'time' : 'plain',
+            $type === 'enum' => 'enum',
+            $type === 'year' => 'year',
+            in_array($type, ['tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint', 'decimal', 'float', 'double'], true) => 'number',
+            in_array($type, ['text', 'mediumtext', 'longtext', 'json', 'tinytext'], true) || mb_strlen($value) > 80 => 'long',
+            default => 'plain',
+        };
+    }
+
+    /**
+     * The values of an enum column, from its type: enum('new','processing') → [new, processing].
+     *
+     * @return list<string>
+     */
+    public static function enumOptions(string $type): array
+    {
+        if (preg_match('/^enum\((.*)\)$/is', trim($type), $match) !== 1) {
+            return [];
+        }
+
+        preg_match_all("/'((?:[^'\\\\]|''|\\\\.)*)'/", $match[1], $values);
+
+        return array_map(fn (string $value): string => str_replace(["''", "\\'"], "'", $value), $values[1]);
+    }
+
+    /**
+     * A stored value as the form field shows it: datetime "2025-02-23 17:59:37" becomes the
+     * picker's "2025-02-23T17:59:37".
+     *
+     * @param  array{data_type: string}  $column
+     */
+    public static function toInput(array $column, ?string $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        if (in_array(strtolower($column['data_type']), ['datetime', 'timestamp'], true) && preg_match('/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/', $value, $match) === 1) {
+            return $match[1].'T'.$match[2];
+        }
+
+        return $value;
+    }
+
+    /**
+     * A form value as MySQL stores it: the picker's "2025-02-23T17:59" becomes "2025-02-23 17:59:00".
+     *
+     * @param  array{data_type: string}  $column
+     */
+    public static function fromInput(array $column, string $value): string
+    {
+        $type = strtolower($column['data_type']);
+
+        if (in_array($type, ['datetime', 'timestamp'], true) && preg_match('/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(:\d{2})?$/', $value, $match) === 1) {
+            return $match[1].' '.$match[2].(($match[3] ?? '') !== '' ? $match[3] : ':00');
+        }
+
+        if ($type === 'time' && preg_match('/^\d{2}:\d{2}$/', $value) === 1) {
+            return $value.':00';
+        }
+
+        return $value;
+    }
+
     // Reading
 
     /**
@@ -140,6 +221,39 @@ class DatabaseBrowser
              FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION',
             [$database, $table],
         ));
+    }
+
+    /**
+     * The table's foreign keys both ways. "out": a column here that points at a row elsewhere
+     * (orders.customer_id → customers.id). "in": columns of other tables that point at a column
+     * here (customers.currency_id → currencies.id), by the column they point at.
+     *
+     * @return array{out: array<string, array{database: string, table: string, column: string, name: string}>, in: array<string, list<array{database: string, table: string, column: string, name: string}>>}
+     */
+    public function relations(string $database, string $table): array
+    {
+        $this->assertTable($database, $table);
+        $relations = ['out' => [], 'in' => []];
+
+        foreach ($this->connection()->select(
+            'SELECT TABLE_SCHEMA AS from_db, TABLE_NAME AS from_table, COLUMN_NAME AS from_column, CONSTRAINT_NAME AS name,
+                    REFERENCED_TABLE_SCHEMA AS to_db, REFERENCED_TABLE_NAME AS to_table, REFERENCED_COLUMN_NAME AS to_column
+             FROM information_schema.KEY_COLUMN_USAGE
+             WHERE REFERENCED_TABLE_NAME IS NOT NULL
+               AND ((TABLE_SCHEMA = ? AND TABLE_NAME = ?) OR (REFERENCED_TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME = ?))
+             ORDER BY TABLE_NAME, COLUMN_NAME',
+            [$database, $table, $database, $table],
+        ) as $row) {
+            if ($row->from_db === $database && $row->from_table === $table) {
+                $relations['out'][(string) $row->from_column] = ['database' => (string) $row->to_db, 'table' => (string) $row->to_table, 'column' => (string) $row->to_column, 'name' => (string) $row->name];
+            }
+
+            if ($row->to_db === $database && $row->to_table === $table && self::validDatabase((string) $row->from_db)) {
+                $relations['in'][(string) $row->to_column][] = ['database' => (string) $row->from_db, 'table' => (string) $row->from_table, 'column' => (string) $row->from_column, 'name' => (string) $row->name];
+            }
+        }
+
+        return $relations;
     }
 
     /**

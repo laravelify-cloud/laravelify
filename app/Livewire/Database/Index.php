@@ -3,6 +3,7 @@
 namespace App\Livewire\Database;
 
 use App\Livewire\Concerns\ManagesDatabaseChanges;
+use App\Livewire\Concerns\RunsSql;
 use App\Livewire\PanelComponent;
 use App\Models\DatabaseChange;
 use App\Services\BackupManager;
@@ -17,6 +18,11 @@ use Throwable;
 class Index extends PanelComponent
 {
     use ManagesDatabaseChanges;
+    use RunsSql;
+
+    /** The database the SQL tab runs in. */
+    #[Url(as: 'db')]
+    public string $sqlIn = '';
 
     #[Url]
     public string $tab = 'databases';
@@ -75,6 +81,11 @@ class Index extends PanelComponent
         } catch (Throwable $exception) {
             $this->searchError = $exception->getMessage();
         }
+    }
+
+    protected function sqlDatabase(): string
+    {
+        return DatabaseBrowser::validDatabase($this->sqlIn) ? $this->sqlIn : '';
     }
 
     public function sortBy(string $column): void

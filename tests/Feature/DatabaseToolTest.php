@@ -361,4 +361,76 @@ class DatabaseToolTest extends TestCase
         $this->assertStringContainsString('people', (string) $response->headers->get('content-disposition'));
         $this->assertStringContainsString('CREATE TABLE', $content);
     }
+
+    public function test_foreign_keys_link_rows_both_ways_and_open_the_related_rows(): void
+    {
+        $db = $this->browser->connection();
+        $db->unprepared('CREATE TABLE `'.self::DB.'`.`orders` (id INT AUTO_INCREMENT PRIMARY KEY, person_id INT NULL, status ENUM(\'new\',\'done\') NOT NULL DEFAULT \'new\', placed_at DATETIME NULL, CONSTRAINT orders_person FOREIGN KEY (person_id) REFERENCES people(id))');
+        $db->insert('INSERT INTO `'.self::DB.'`.`orders` (person_id, placed_at) VALUES (1, ?), (2, ?), (1, NULL)', ['2025-02-23 17:59:37', '2025-03-01 08:00:00']);
+
+        $orders = $this->browser->relations(self::DB, 'orders');
+        $this->assertSame(['database' => self::DB, 'table' => 'people', 'column' => 'id', 'name' => 'orders_person'], $orders['out']['person_id']);
+        $this->assertSame('orders', $this->browser->relations(self::DB, 'people')['in']['id'][0]['table']);
+
+        // From a person: the orders that point at them only.
+        $this->get(route('database.table', [self::DB, 'orders']).'?where[person_id]=1')->assertOk();
+        Livewire::withQueryParams(['where' => ['person_id' => '1']])
+            ->test(DatabaseTable::class, ['database' => self::DB, 'table' => 'orders'])
+            ->assertSet('filters', [['column' => 'person_id', 'operator' => 'equals', 'value' => '1']])
+            ->assertSee('2 rows match')
+            ->assertSee('?where%5Bid%5D=1', false);
+
+        Livewire::test(DatabaseTable::class, ['database' => self::DB, 'table' => 'people'])
+            ->assertSee('Rows that point at id = 1')
+            ->assertSee('where%5Bperson_id%5D=1', false);
+    }
+
+    public function test_the_row_form_uses_pickers_and_stores_mysql_formats(): void
+    {
+        $this->browser->connection()->unprepared('CREATE TABLE `'.self::DB.'`.`events` (id INT AUTO_INCREMENT PRIMARY KEY, kind ENUM(\'new\',\'it\'\'s done\') NOT NULL, starts_at DATETIME NULL, day DATE NULL, at TIME NULL)');
+        $this->browser->connection()->insert('INSERT INTO `'.self::DB.'`.`events` (kind, starts_at, day, at) VALUES (?, ?, ?, ?)', ['new', '2025-02-23 17:59:37', '2025-02-23', '08:30:00']);
+        $columns = collect($this->browser->columns(self::DB, 'events'))->keyBy('name');
+
+        $this->assertSame(['new', "it's done"], DatabaseBrowser::enumOptions($columns['kind']['type']));
+        $this->assertSame('2025-02-23T17:59:37', DatabaseBrowser::toInput($columns['starts_at'], '2025-02-23 17:59:37'));
+        $this->assertSame('datetime', DatabaseBrowser::inputKind($columns['starts_at'], '2025-02-23T17:59:37'));
+        $this->assertSame('plain', DatabaseBrowser::inputKind($columns['starts_at'], '0000-00-00 00:00:00'));
+        $this->assertSame('2025-02-23 18:00:00', DatabaseBrowser::fromInput($columns['starts_at'], '2025-02-23T18:00'));
+        $this->assertSame('09:15:00', DatabaseBrowser::fromInput($columns['at'], '09:15'));
+
+        Livewire::test(DatabaseTable::class, ['database' => self::DB, 'table' => 'events'])
+            ->call('openRow', ['id' => 1])
+            ->call('editRow')
+            ->assertSet('form.starts_at.value', '2025-02-23T17:59:37')
+            ->assertSeeHtml('type="datetime-local"')
+            ->assertSeeHtml('type="date"')
+            ->assertSeeHtml('type="time"')
+            ->set('form.starts_at.value', '2025-03-10T09:30')
+            ->set('form.kind.value', "it's done")
+            ->call('saveRow')
+            ->assertHasNoErrors();
+
+        $row = $this->browser->row(self::DB, 'events', ['id' => 1]);
+        $this->assertSame('2025-03-10 09:30:00', $row['starts_at']);
+        $this->assertSame("it's done", $row['kind']);
+        $this->assertSame('08:30:00', $row['at'], 'An unchanged field is not written.');
+    }
+
+    public function test_sql_runs_from_the_database_page_and_a_table_page(): void
+    {
+        Livewire::test(DatabaseIndex::class)
+            ->set('tab', 'sql')
+            ->call('runSql', '', 'SELECT 1 AS one')
+            ->assertSet('sqlError', 'Choose a database to run it in.')
+            ->set('sqlIn', self::DB)
+            ->call('runSql', '', 'SELECT COUNT(*) AS people FROM people')
+            ->assertSet('sqlError', null)
+            ->assertSee('people');
+
+        Livewire::test(DatabaseTable::class, ['database' => self::DB, 'table' => 'people'])
+            ->set('tab', 'sql')
+            ->assertSet('sql', 'SELECT * FROM `people` LIMIT 100;')
+            ->call('runSql')
+            ->assertSee('AZE1234567');
+    }
 }

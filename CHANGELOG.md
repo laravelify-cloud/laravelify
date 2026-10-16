@@ -2,6 +2,14 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.43] - unreleased
+
+- **Full backup: tick or untick whole databases.** Each database in the dialog has its own tick box next to its tables. Unticked databases are skipped and stay unticked for the next full backup; databases added later are backed up.
+- **Database tool, row form:** each column gets a field that fits it. Date, datetime, and time columns use the browser's date and time pickers (with **Now** and **Clear**), enum columns a list of their values, long text a text box; the type never runs over the field any more, and **NULL** sits on the right. Values go back to MySQL's own format (`2025-02-23 17:59:37`). Zero dates and fractions of a second keep a plain field.
+- **Database tool, SQL everywhere:** besides a database's own SQL tab, the Database page has an **SQL** tab with a database picker and every table has one that starts with `SELECT * FROM table LIMIT 100`. **Ctrl+Enter** runs.
+- **Database tool, related rows:** a column that points at another table (a foreign key) shows `→ table` in its header and its values are links that open that table showing only the row it points at. A column other tables point at shows `← N`; clicking a value lists those tables (like `customers (currency_id)`) and opens one showing only the rows that point at it. The record dialog has the same links and a **Related rows** list.
+- **Database tool, rows as a grid:** a dense, ruled grid with a sticky header, row numbers, right-aligned numbers, and key and link badges, only in the Database tool.
+
 ## [0.3.0-beta.42] - 2026-10-16
 
 - **Fixed: the Logs tab listed each worker log twice.** Since beta.40 worker logs are written to `/var/log/laravelify/sites/<site>/` (under **Supervisor**), and the old files of the same name in the site's `storage/logs` (written before the update) also showed under **Other logs**. The old copies are no longer listed; they stay on disk and the File manager still opens them.

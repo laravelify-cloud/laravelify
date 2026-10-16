@@ -1,9 +1,20 @@
-<div class="grid gap-4" x-data="{}">
-    <x-layer-card title="SQL" helper="Runs in {{ $database }}. A selection runs on its own; otherwise the whole box runs. At most 200 rows come back.">
-        <textarea x-ref="sql" class="textarea min-h-40 font-mono text-[12.5px]" wire:model="sql" spellcheck="false" aria-label="SQL" placeholder="SELECT * FROM table_name"></textarea>
+{{-- The SQL box. $sqlTarget: the database it runs in; $sqlChoices (optional): databases to pick from. --}}
+<div class="grid gap-4" x-data="{ run() { const box = $refs.sql; $wire.runSql(box.value.slice(box.selectionStart, box.selectionEnd), box.value); } }">
+    <x-layer-card title="SQL" helper="{{ $sqlTarget !== '' ? 'Runs in '.$sqlTarget.'.' : 'Choose the database it runs in.' }} A selection runs on its own; otherwise the whole box runs. Ctrl+Enter runs. At most 200 rows come back.">
+        @isset($sqlChoices)
+            <x-slot:actions>
+                <select class="select h-8 w-auto font-mono text-[12.5px]" wire:model.live="sqlIn" aria-label="Database">
+                    <option value="">Choose a database</option>
+                    @foreach ($sqlChoices as $choice)
+                        <option value="{{ $choice }}">{{ $choice }}</option>
+                    @endforeach
+                </select>
+            </x-slot:actions>
+        @endisset
+        <textarea x-ref="sql" class="textarea min-h-40 font-mono text-[12.5px]" wire:model="sql" spellcheck="false" aria-label="SQL" placeholder="SELECT * FROM table_name" @keydown.ctrl.enter.prevent="run()" @keydown.meta.enter.prevent="run()"></textarea>
         <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
             <p class="text-[12.5px] text-muted">SQL you type here is not added to the change log, so it cannot be undone. Edits from the row dialog still can.</p>
-            <button class="btn btn-primary" type="button" wire:loading.attr="disabled" wire:target="runSql" @click="const box = $refs.sql; $wire.runSql(box.value.slice(box.selectionStart, box.selectionEnd), box.value)"><x-menu-icon name="play" /> Run</button>
+            <button class="btn btn-primary" type="button" wire:loading.attr="disabled" wire:target="runSql" @click="run()"><x-menu-icon name="play" /> Run</button>
         </div>
     </x-layer-card>
 

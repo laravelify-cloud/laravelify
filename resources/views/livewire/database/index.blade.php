@@ -9,6 +9,7 @@
 
     <div class="segmented self-start" role="tablist">
         <button type="button" wire:click="$set('tab', 'databases')" aria-pressed="{{ $tab === 'databases' ? 'true' : 'false' }}">Databases</button>
+        <button type="button" wire:click="$set('tab', 'sql')" aria-pressed="{{ $tab === 'sql' ? 'true' : 'false' }}">SQL</button>
         <button type="button" wire:click="$set('tab', 'search')" aria-pressed="{{ $tab === 'search' ? 'true' : 'false' }}">Search everywhere</button>
         <button type="button" wire:click="$set('tab', 'changes')" aria-pressed="{{ $tab === 'changes' ? 'true' : 'false' }}">Changes</button>
     </div>
@@ -57,6 +58,8 @@
                 </table>
             </div>
         </x-layer-card>
+    @elseif ($tab === 'sql')
+        @include('livewire.database.partials.sql', ['sqlTarget' => $sqlIn, 'sqlChoices' => $allDatabases])
     @elseif ($tab === 'search')
         @include('livewire.database.partials.search', ['scopeChoices' => $allDatabases])
     @else

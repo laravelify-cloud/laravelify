@@ -102,7 +102,7 @@
             </x-layer-card>
         @endforeach
     @elseif ($tab === 'sql')
-        @include('livewire.database.partials.sql')
+        @include('livewire.database.partials.sql', ['sqlTarget' => $database])
     @elseif ($tab === 'search')
         @include('livewire.database.partials.search', ['scopeChoices' => [$database], 'fixedScope' => true])
     @else

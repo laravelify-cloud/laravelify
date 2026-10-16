@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Database;
 
+use App\Livewire\Concerns\RunsSql;
 use App\Livewire\PanelComponent;
 use App\Services\BackupManager;
 use App\Services\DatabaseBrowser;
@@ -16,6 +17,8 @@ use Throwable;
  */
 class Table extends PanelComponent
 {
+    use RunsSql;
+
     public string $database = '';
 
     public string $table = '';
@@ -95,10 +98,29 @@ class Table extends PanelComponent
         $this->exportTables = [$table];
         $this->perPage = in_array($this->perPage, [25, 50, 100, 250, 500], true) ? $this->perPage : 25;
 
+        // From a related row: ?where[currency_id]=5 shows only the rows that point at it.
+        foreach ((array) request()->query('where', []) as $column => $value) {
+            if (is_string($column) && is_scalar($value) && preg_match('/^[A-Za-z0-9_$ -]{1,64}$/', $column) === 1) {
+                $this->filters[] = ['column' => $column, 'operator' => 'equals', 'value' => (string) $value];
+            }
+        }
+
         $keys = json_decode($this->rowParam, true);
 
         if (is_array($keys) && $keys !== []) {
             $this->openRow(app(DatabaseBrowser::class), $keys);
+        }
+    }
+
+    protected function sqlDatabase(): string
+    {
+        return $this->database;
+    }
+
+    public function updatedTab(string $tab): void
+    {
+        if ($tab === 'sql' && trim($this->sql) === '') {
+            $this->sql = 'SELECT * FROM `'.$this->table.'` LIMIT 100;';
         }
     }
 
@@ -179,12 +201,15 @@ class Table extends PanelComponent
         $this->resetErrorBag();
     }
 
-    public function editRow(): void
+    public function editRow(DatabaseBrowser $browser): void
     {
         $this->form = [];
+        $columns = collect($browser->columns($this->database, $this->table))->keyBy('name');
 
         foreach ($this->rowData as $column => $value) {
-            $this->form[$column] = ['value' => $value === null ? '' : (string) $value, 'null' => $value === null];
+            $info = $columns->get($column);
+            $shown = $value === null ? '' : (string) $value;
+            $this->form[$column] = ['value' => $info ? DatabaseBrowser::toInput($info, $shown) : $shown, 'null' => $value === null];
         }
 
         $this->editing = true;
@@ -225,7 +250,7 @@ class Table extends PanelComponent
                 continue;
             }
 
-            $values[$column] = ! empty($field['null']) ? null : (string) ($field['value'] ?? '');
+            $values[$column] = ! empty($field['null']) ? null : DatabaseBrowser::fromInput($info, (string) ($field['value'] ?? ''));
         }
 
         try {
@@ -302,6 +327,7 @@ class Table extends PanelComponent
     {
         $columns = [];
         $keys = [];
+        $relations = ['out' => [], 'in' => []];
         $data = ['rows' => [], 'total' => 0, 'page' => 1, 'per_page' => $this->perPage, 'pages' => 1];
         $error = null;
 
@@ -312,6 +338,8 @@ class Table extends PanelComponent
             if ($columns === []) {
                 abort(404);
             }
+
+            $relations = $browser->relations($this->database, $this->table);
 
             if ($this->tab === 'browse') {
                 $data = $browser->rows($this->database, $this->table, [
@@ -335,6 +363,7 @@ class Table extends PanelComponent
         return view('livewire.database.table', [
             'columns' => $columns,
             'keyColumns' => $keys,
+            'relations' => $relations,
             'data' => $data,
             'error' => $error,
             'operators' => DatabaseBrowser::OPERATORS,

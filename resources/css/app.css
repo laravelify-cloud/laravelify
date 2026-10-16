@@ -2065,6 +2065,45 @@ html:has(.modal-root:not([x-cloak]):not([style*="display: none"])) {
 /* Wide dialogs (restore, view, download). Outside a layer, like .modal-panel itself. */
 .modal-wide .modal-panel { width: min(100%, 56rem); }
 
+/* Database tool: rows as a spreadsheet grid (only here: dense, ruled cells, sticky header). */
+.db-grid-wrap { max-height: 70vh; overflow: auto; }
+.db-grid { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-family: var(--font-mono); font-size: 12.5px; }
+.db-grid th, .db-grid td { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-right: 1px solid var(--color-line); border-bottom: 1px solid var(--color-line); padding: 5px 10px; text-align: left; vertical-align: middle; }
+.db-grid th { position: sticky; top: 0; z-index: 2; background: var(--color-recessed); padding: 0; font-weight: 600; }
+.db-grid th:last-child, .db-grid td:last-child { border-right: 0; }
+.db-grid tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--color-ink) 2%, transparent); }
+.db-grid tbody tr:hover td { background: color-mix(in srgb, var(--color-accent) 7%, transparent); }
+.db-grid tbody tr.is-selected td { background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
+.db-grid td.is-number { text-align: right; font-variant-numeric: tabular-nums; }
+.db-grid .db-grid-num { position: sticky; left: 0; z-index: 1; width: 3.5rem; min-width: 3.5rem; background: var(--color-recessed); color: var(--color-muted); text-align: right; font-size: 11px; padding: 5px 8px; }
+.db-grid th.db-grid-num { z-index: 3; padding: 5px 8px; }
+.db-grid .db-grid-check { width: 2.25rem; text-align: center; padding: 5px 8px; }
+.db-grid-head { display: flex; width: 100%; align-items: center; gap: 6px; padding: 7px 10px; font: inherit; color: inherit; text-align: left; }
+.db-grid-head:hover { color: var(--color-accent); }
+.db-grid-badge { border-radius: 4px; padding: 0 5px; font-size: 10.5px; font-weight: 500; line-height: 16px; white-space: nowrap; background: color-mix(in srgb, var(--color-ink) 8%, transparent); color: var(--color-muted); }
+.db-grid-badge.is-key { background: color-mix(in srgb, var(--color-accent) 18%, transparent); color: var(--color-accent); }
+.db-grid-badge.is-link { background: color-mix(in srgb, var(--color-info) 16%, transparent); color: var(--color-info); }
+.db-grid-null { color: var(--color-muted); font-style: italic; }
+.db-grid-link { color: var(--color-info); text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; font: inherit; }
+.db-grid-link:hover { text-decoration-style: solid; }
+.db-rel-menu { position: fixed; z-index: 120; width: 18rem; max-height: 18rem; overflow: auto; border-radius: 10px; border: 1px solid var(--color-line); background: var(--color-recessed); box-shadow: var(--shadow-dropdown); padding: 6px; font-size: 13px; }
+.db-rel-title { padding: 4px 8px 6px; font-size: 11.5px; color: var(--color-muted); }
+.db-rel-item { display: flex; align-items: center; gap: 8px; border-radius: 6px; padding: 6px 8px; }
+.db-rel-item:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+
+/* Database tool: the row form (name and type on the left, a field that fits the type, NULL on the right). */
+.db-form-row { display: grid; grid-template-columns: 13rem minmax(0, 1fr) 4.5rem; align-items: start; gap: 14px; border-bottom: 1px solid var(--color-line); padding: 11px 16px; }
+.db-form-row:last-child { border-bottom: 0; }
+.db-form-label { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding-top: 6px; }
+.db-form-type { font-family: var(--font-mono); font-size: 11px; color: var(--color-muted); overflow-wrap: anywhere; }
+.db-form-null { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-top: 8px; font-size: 12px; color: var(--color-muted); white-space: nowrap; }
+.db-date::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.75; }
+.db-date::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+@media (max-width: 640px) {
+    .db-form-row { grid-template-columns: 1fr; gap: 6px; }
+    .db-form-null { justify-content: flex-start; padding-top: 0; }
+}
+
 /* Database tool: column headers that sort. */
 .sort-header { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font: inherit; color: inherit; }
 .sort-header:hover, .sort-header.is-active { color: var(--color-ink); }
@@ -2077,6 +2116,7 @@ html:has(.modal-root:not([x-cloak]):not([style*="display: none"])) {
 .table-picker-db { display: flex; width: 100%; align-items: center; gap: 8px; border-radius: 7px; padding: 7px 8px; text-align: left; }
 .table-picker-db:hover { background: color-mix(in srgb, var(--color-ink) 5%, transparent); }
 .table-picker-db.is-active { background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
+.table-picker-db.is-skipped .font-mono { color: var(--color-muted); text-decoration: line-through; }
 .table-picker-tables { display: flex; min-width: 0; flex-direction: column; }
 .table-picker-list { overflow: auto; max-height: 21rem; padding: 4px; }
 .table-picker-row { display: flex; align-items: center; gap: 10px; border-radius: 6px; padding: 6px 8px; cursor: pointer; }

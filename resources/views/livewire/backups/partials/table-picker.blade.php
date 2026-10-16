@@ -1,12 +1,17 @@
 {{--
     Pick the tables a database backup leaves out. $databases: the databases to browse. $model: the Livewire
-    property (a list of "database.table" or "*.table") the picker reads and writes.
+    property (a list of "database.table" or "*.table") the picker reads and writes. $dbModel (optional): a
+    property listing whole databases to leave out; each database then gets its own tick box.
 --}}
 <div
     class="table-picker"
     x-data="{
         databases: @js(array_values($databases)),
         skip: $wire.entangle(@js($model)),
+        skipDatabases: @if (isset($dbModel)) $wire.entangle(@js($dbModel)) @else [] @endif,
+        toggleDatabase(database) {
+            this.skipDatabases = this.skipDatabases.includes(database) ? this.skipDatabases.filter((item) => item !== database) : [...this.skipDatabases, database];
+        },
         current: null,
         tables: [],
         loading: false,
@@ -80,11 +85,17 @@
     <div class="table-picker-grid">
         <div class="table-picker-dbs">
             <template x-for="database in databases" :key="database">
-                <button type="button" class="table-picker-db" :class="current === database && 'is-active'" @click="open(database)">
-                    <x-menu-icon name="database" class="size-4 shrink-0 text-muted" />
-                    <span class="min-w-0 flex-1 truncate font-mono text-[12.5px]" x-text="database"></span>
-                    <span class="pill" x-show="count(database) > 0" x-text="count(database) + ' skipped'"></span>
-                </button>
+                <div class="table-picker-db" :class="[current === database && 'is-active', skipDatabases.includes(database) && 'is-skipped']">
+                    @isset($dbModel)
+                        <input type="checkbox" class="shrink-0" :checked="!skipDatabases.includes(database)" @change="toggleDatabase(database)" :aria-label="'Back up ' + database">
+                    @endisset
+                    <button type="button" class="flex min-w-0 flex-1 items-center gap-2 text-left" @click="open(database)">
+                        <x-menu-icon name="database" class="size-4 shrink-0 text-muted" />
+                        <span class="min-w-0 flex-1 truncate font-mono text-[12.5px]" x-text="database"></span>
+                        <span class="pill" x-show="skipDatabases.includes(database)">Not backed up</span>
+                        <span class="pill" x-show="!skipDatabases.includes(database) && count(database) > 0" x-text="count(database) + ' skipped'"></span>
+                    </button>
+                </div>
             </template>
             <p class="px-2 py-3 text-[12.5px] text-muted" x-show="databases.length === 0">No databases found.</p>
         </div>

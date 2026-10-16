@@ -31,6 +31,9 @@ class Index extends PanelComponent
     /** @var list<string> */
     public array $fullDatabases = [];
 
+    /** @var list<string> Databases the full backup leaves out (unticked in the dialog). */
+    public array $fullSkipDatabases = [];
+
     public const TABLES_PER_PAGE = 25;
 
     public const TASK_SCOPE = 'backups';
@@ -151,6 +154,7 @@ class Index extends PanelComponent
 
             $saved = BackupSchedule::query()->where('kind', $this->kind)->where('name', 'Full backup')->first();
             $this->fullSkip = $saved ? $saved->skippedTables() : [];
+            $this->fullSkipDatabases = array_values(array_intersect((array) ($saved?->targets['skip_databases'] ?? []), $this->fullDatabases));
             $this->fullOpen = true;
 
             return;
@@ -161,17 +165,26 @@ class Index extends PanelComponent
 
     public function startFullBackup(BackupManager $backups): void
     {
-        $this->startFull($backups, SkippedTables::normalize($this->fullSkip));
+        $skipDatabases = array_values(array_intersect($this->fullSkipDatabases, $this->fullDatabases));
+
+        if (count($skipDatabases) >= count($this->fullDatabases)) {
+            $this->toast('Tick at least one database to back up.', 'error');
+
+            return;
+        }
+
+        $this->startFull($backups, SkippedTables::normalize($this->fullSkip), $skipDatabases);
         $this->fullOpen = false;
     }
 
     /**
      * @param  list<string>|null  $skipTables
+     * @param  list<string>|null  $skipDatabases
      */
-    private function startFull(BackupManager $backups, ?array $skipTables): void
+    private function startFull(BackupManager $backups, ?array $skipTables, ?array $skipDatabases = null): void
     {
         try {
-            $schedule = $backups->fullBackup($this->kind, $skipTables);
+            $schedule = $backups->fullBackup($this->kind, $skipTables, $skipDatabases);
             $names = $schedule->runs()->where('status', BackupRun::QUEUED)->orderBy('id')->pluck('target');
             $this->toast('Full backup started, one file each: '.$names->implode(', ').'. Progress shows in the list below.');
         } catch (Throwable $exception) {

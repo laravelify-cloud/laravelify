@@ -33,13 +33,16 @@
     <div class="segmented self-start" role="tablist">
         <button type="button" wire:click="$set('tab', 'browse')" aria-pressed="{{ $tab === 'browse' ? 'true' : 'false' }}">Rows</button>
         <button type="button" wire:click="$set('tab', 'structure')" aria-pressed="{{ $tab === 'structure' ? 'true' : 'false' }}">Structure</button>
+        <button type="button" wire:click="$set('tab', 'sql')" aria-pressed="{{ $tab === 'sql' ? 'true' : 'false' }}">SQL</button>
     </div>
 
     @if ($error)
         <div class="callout"><x-menu-icon name="danger" class="size-4 shrink-0 text-warning" /><p class="min-w-0 flex-1">{{ $error }}</p></div>
     @endif
 
-    @if ($tab === 'structure')
+    @if ($tab === 'sql')
+        @include('livewire.database.partials.sql', ['sqlTarget' => $database])
+    @elseif ($tab === 'structure')
         <x-layer-card title="Columns" flush>
             <div class="overflow-x-auto">
                 <table class="table">
@@ -114,19 +117,29 @@
                 <button class="btn btn-sm btn-danger" type="button" @click="$wire.askDelete(selected.map((key) => JSON.parse(key)))"><x-menu-icon name="trash" /> Delete</button>
             </div>
 
-            <div class="overflow-x-auto">
-                <table class="table db-rows">
+            @php
+                $relatedLink = fn (array $to, $value) => route('database.table', [$to['database'], $to['table']]).'?'.http_build_query(['where' => [$to['column'] => (string) $value]]);
+            @endphp
+            <div class="db-grid-wrap">
+                <table class="db-grid">
                     <thead>
                         <tr>
+                            <th class="db-grid-num">#</th>
                             @if ($canChange)
-                                <th class="w-10"></th>
+                                <th class="db-grid-check"></th>
                             @endif
                             @foreach ($columns as $column)
-                                <th>
-                                    <button class="flex items-center gap-1 font-mono text-[12px] whitespace-nowrap" type="button" wire:click="sortBy('{{ $column['name'] }}')" title="{{ $column['type'] }}">
-                                        {{ $column['name'] }}
-                                        @if (in_array($column['name'], $keyColumns, true)) <span class="text-accent">•</span> @endif
-                                        @if ($sort === $column['name']) <span>{{ $direction === 'asc' ? '↑' : '↓' }}</span> @endif
+                                @php
+                                    $out = $relations['out'][$column['name']] ?? null;
+                                    $in = $relations['in'][$column['name']] ?? [];
+                                @endphp
+                                <th title="{{ $column['type'] }}{{ $out ? ' · points at '.$out['table'].'.'.$out['column'] : '' }}{{ $in !== [] ? ' · used by '.collect($in)->map(fn ($r) => $r['table'].'.'.$r['column'])->implode(', ') : '' }}">
+                                    <button class="db-grid-head" type="button" wire:click="sortBy('{{ $column['name'] }}')">
+                                        <span class="truncate">{{ $column['name'] }}</span>
+                                        @if (in_array($column['name'], $keyColumns, true)) <span class="db-grid-badge is-key">key</span> @endif
+                                        @if ($out) <span class="db-grid-badge is-link">→ {{ $out['table'] }}</span> @endif
+                                        @if ($in !== []) <span class="db-grid-badge is-link">← {{ count($in) }}</span> @endif
+                                        <span class="ml-auto text-[11px] {{ $sort === $column['name'] ? 'text-accent' : 'opacity-40' }}">{{ $sort === $column['name'] ? ($direction === 'asc' ? '↑' : '↓') : '↕' }}</span>
                                     </button>
                                 </th>
                             @endforeach
@@ -134,18 +147,43 @@
                     </thead>
                     <tbody>
                         @forelse ($data['rows'] as $index => $row)
-                            @php($key = json_encode($keyOf($row)))
-                            <tr wire:key="row-{{ $data['page'] }}-{{ $index }}-{{ md5($key) }}" class="cursor-pointer" :class="selected.includes(@js($key)) && 'is-selected'" @if ($canChange) wire:click="openRow(@js($keyOf($row)))" @endif>
+                            @php $key = json_encode($keyOf($row)); @endphp
+                            <tr wire:key="row-{{ $data['page'] }}-{{ $index }}-{{ md5($key) }}" class="{{ $canChange ? 'cursor-pointer' : '' }}" :class="selected.includes(@js($key)) && 'is-selected'" @if ($canChange) wire:click="openRow(@js($keyOf($row)))" @endif>
+                                <td class="db-grid-num">{{ ($data['page'] - 1) * $data['per_page'] + $index + 1 }}</td>
                                 @if ($canChange)
-                                    <td @click.stop>
+                                    <td class="db-grid-check" @click.stop>
                                         <input type="checkbox" aria-label="Select row" :checked="selected.includes(@js($key))" @change="selected = $event.target.checked ? [...selected, @js($key)] : selected.filter((item) => item !== @js($key))">
                                     </td>
                                 @endif
                                 @foreach ($columns as $column)
-                                    @php($value = $cell($row[$column['name']] ?? null))
-                                    <td class="max-w-[22rem] truncate font-mono text-[12.5px]">
+                                    @php
+                                        $raw = $row[$column['name']] ?? null;
+                                        $value = $cell($raw);
+                                        $out = $relations['out'][$column['name']] ?? null;
+                                        $in = $relations['in'][$column['name']] ?? [];
+                                    @endphp
+                                    <td class="{{ is_numeric($raw) ? 'is-number' : '' }}">
                                         @if ($value === null)
-                                            <span class="text-muted italic">NULL</span>
+                                            <span class="db-grid-null">NULL</span>
+                                        @elseif ($out)
+                                            <a class="db-grid-link" href="{{ $relatedLink($out, $raw) }}" wire:navigate @click.stop title="Open the {{ $out['table'] }} row with {{ $out['column'] }} = {{ $value }}">{{ $value }}</a>
+                                        @elseif ($in !== [])
+                                            <span class="db-grid-related" x-data="{ open: false, x: 0, y: 0 }" @click.stop>
+                                                <button class="db-grid-link" type="button" title="Rows in other tables that point at this one"
+                                                    @click="const box = $el.getBoundingClientRect(); x = Math.min(box.left, window.innerWidth - 300); y = box.bottom + 4; open = ! open">{{ $value }}</button>
+                                                <template x-teleport="body">
+                                                    <div class="db-rel-menu" x-show="open" x-cloak @click.outside="open = false" @keydown.escape.window="open = false" :style="`left: ${x}px; top: ${y}px`">
+                                                        <p class="db-rel-title">Rows that point at {{ $column['name'] }} = {{ $value }}</p>
+                                                        @foreach ($in as $relation)
+                                                            <a class="db-rel-item" href="{{ $relatedLink($relation, $raw) }}" wire:navigate>
+                                                                <x-menu-icon name="table" class="size-4 shrink-0 text-muted" />
+                                                                <span class="font-mono">{{ $relation['database'] !== $database ? $relation['database'].'.' : '' }}{{ $relation['table'] }}</span>
+                                                                <span class="font-mono text-muted">({{ $relation['column'] }})</span>
+                                                            </a>
+                                                        @endforeach
+                                                    </div>
+                                                </template>
+                                            </span>
                                         @else
                                             {{ $value }}
                                         @endif
@@ -153,7 +191,7 @@
                                 @endforeach
                             </tr>
                         @empty
-                            <tr><td colspan="{{ count($columns) + 1 }}" class="table-empty">{{ $search !== '' || $filters !== [] ? 'No rows match.' : 'This table is empty.' }}</td></tr>
+                            <tr><td colspan="{{ count($columns) + 2 }}" class="table-empty">{{ $search !== '' || $filters !== [] ? 'No rows match.' : 'This table is empty.' }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -177,7 +215,7 @@
     {{-- One record --}}
     <x-modal-frame class="modal-wide" open="$wire.rowOpen" close="$wire.closeRow()">
         @if ($rowOpen)
-            @php($columnMeta = collect($columns)->keyBy('name'))
+            @php $columnMeta = collect($columns)->keyBy('name'); @endphp
             <div class="grid gap-4">
                 <div class="modal-head">
                     <div class="min-w-0">
@@ -191,31 +229,57 @@
                 </div>
 
                 @if ($editing)
-                    <form class="max-h-[60vh] overflow-auto rounded-lg border border-line" wire:submit="saveRow" id="row-form">
-                        <div class="divide-y divide-line">
-                            @foreach ($columns as $column)
-                                @php($binary = str_starts_with((string) ($form[$column['name']]['value'] ?? ''), '[binary, '))
-                                @php($long = in_array($column['data_type'], ['text', 'mediumtext', 'longtext', 'json'], true) || mb_strlen((string) ($form[$column['name']]['value'] ?? '')) > 80)
-                                <div class="flex items-start gap-4 px-4 py-3" wire:key="field-{{ $column['name'] }}">
-                                    <div class="w-40 shrink-0 pt-1">
-                                        <p class="truncate font-mono text-[13px] font-medium">{{ $column['name'] }}</p>
-                                        <p class="mt-1 font-mono text-[11px] text-muted">{{ $column['type'] }}{{ str_contains($column['extra'], 'auto_increment') ? ' · auto' : '' }}{{ $column['key'] === 'PRI' ? ' · key' : '' }}</p>
-                                    </div>
-                                    <div class="min-w-0 flex-1">
-                                        @if ($binary)
-                                            <input class="input font-mono text-[13px]" value="{{ $form[$column['name']]['value'] }}" disabled>
-                                        @elseif ($long)
-                                            <textarea class="textarea min-h-24 font-mono text-[13px]" wire:model="form.{{ $column['name'] }}.value" @disabled(! empty($form[$column['name']]['null'])) spellcheck="false" aria-label="{{ $column['name'] }}"></textarea>
-                                        @else
-                                            <input class="input font-mono text-[13px]" wire:model="form.{{ $column['name'] }}.value" @disabled(! empty($form[$column['name']]['null'])) aria-label="{{ $column['name'] }}" placeholder="{{ $creating && (str_contains($column['extra'], 'auto_increment') || $column['default'] !== null) ? 'Leave blank for '.(str_contains($column['extra'], 'auto_increment') ? 'the next number' : 'the default') : '' }}">
-                                        @endif
-                                        @if ($column['nullable'])
-                                            <label class="mt-1 flex items-center gap-2 text-[12px] text-muted"><input type="checkbox" wire:model.live="form.{{ $column['name'] }}.null"> Set to empty (NULL)</label>
-                                        @endif
-                                    </div>
+                    <form class="db-form max-h-[62vh] overflow-auto rounded-lg border border-line" wire:submit="saveRow" id="row-form">
+                        @foreach ($columns as $column)
+                            @php
+                                $name = $column['name'];
+                                $value = (string) ($form[$name]['value'] ?? '');
+                                $isNull = ! empty($form[$name]['null']);
+                                $kind = \App\Services\DatabaseBrowser::inputKind($column, $value);
+                                $auto = str_contains($column['extra'], 'auto_increment');
+                                $hint = $creating && ($auto || $column['default'] !== null) ? 'Leave blank for '.($auto ? 'the next number' : 'the default') : '';
+                            @endphp
+                            <div class="db-form-row" wire:key="field-{{ $name }}">
+                                <div class="db-form-label">
+                                    <span class="font-mono text-[13px] font-medium break-all">{{ $name }}</span>
+                                    <span class="db-form-type" title="{{ $column['type'] }}">{{ \Illuminate\Support\Str::limit($column['type'], 40) }}</span>
+                                    <span class="flex flex-wrap gap-1">
+                                        @if ($column['key'] === 'PRI') <span class="pill">key</span> @endif
+                                        @if ($auto) <span class="pill">auto</span> @endif
+                                    </span>
                                 </div>
-                            @endforeach
-                        </div>
+                                <div class="min-w-0 flex-1">
+                                    @if ($kind === 'binary')
+                                        <input class="input font-mono text-[13px]" value="{{ $value }}" disabled>
+                                    @elseif ($kind === 'enum')
+                                        <select class="select font-mono text-[13px]" wire:model="form.{{ $name }}.value" @disabled($isNull) aria-label="{{ $name }}">
+                                            @if ($creating || $value === '') <option value="">{{ $hint !== '' ? $hint : 'Choose…' }}</option> @endif
+                                            @foreach (\App\Services\DatabaseBrowser::enumOptions($column['type']) as $option)
+                                                <option value="{{ $option }}">{{ $option }}</option>
+                                            @endforeach
+                                        </select>
+                                    @elseif (in_array($kind, ['datetime', 'date', 'time'], true))
+                                        <div class="flex flex-wrap items-center gap-2" x-data="{ set(value) { $wire.set('form.{{ $name }}.value', value) } }">
+                                            <input class="input db-date min-w-0 flex-1 font-mono text-[13px]" type="{{ $kind === 'datetime' ? 'datetime-local' : $kind }}" step="1" wire:model="form.{{ $name }}.value" @disabled($isNull) aria-label="{{ $name }}">
+                                            <button class="btn btn-sm" type="button" @disabled($isNull)
+                                                @click="const d = new Date(), p = (n) => String(n).padStart(2, '0'), day = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()), time = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); set(@js($kind) === 'date' ? day : (@js($kind) === 'time' ? time : day + 'T' + time))">Now</button>
+                                            <button class="btn btn-sm" type="button" @disabled($isNull) @click="set('')">Clear</button>
+                                        </div>
+                                    @elseif ($kind === 'long')
+                                        <textarea class="textarea min-h-24 font-mono text-[13px]" wire:model="form.{{ $name }}.value" @disabled($isNull) spellcheck="false" aria-label="{{ $name }}" placeholder="{{ $hint }}"></textarea>
+                                    @else
+                                        <input class="input font-mono text-[13px]" wire:model="form.{{ $name }}.value" @disabled($isNull) aria-label="{{ $name }}" placeholder="{{ $hint }}" @if (in_array($kind, ['number', 'year'], true)) inputmode="decimal" @endif>
+                                    @endif
+                                </div>
+                                @if ($column['nullable'])
+                                    <label class="db-form-null" title="Store NULL (no value)">
+                                        <input type="checkbox" wire:model.live="form.{{ $name }}.null"> NULL
+                                    </label>
+                                @else
+                                    <span class="db-form-null"></span>
+                                @endif
+                            </div>
+                        @endforeach
                     </form>
                     @error('form') <p class="error">{{ $message }}</p> @enderror
                     <div class="flex justify-end gap-2 border-t border-line pt-4">
@@ -226,7 +290,7 @@
                     <div class="max-h-[60vh] overflow-auto rounded-lg border border-line">
                         <dl class="divide-y divide-line">
                             @foreach ($rowData as $column => $value)
-                                @php($meta = $columnMeta->get($column, []))
+                                @php $meta = $columnMeta->get($column, []); @endphp
                                 <div class="flex items-start gap-4 px-4 py-3" wire:key="value-{{ $column }}">
                                     <dt class="m-0 w-40 shrink-0">
                                         <span class="block truncate font-mono text-[13px] font-medium">{{ $column }}</span>
@@ -239,6 +303,10 @@
                                             <span class="italic text-muted">NULL</span>
                                         @elseif ($value === '')
                                             <span class="italic text-muted">empty</span>
+                                        @elseif (isset($relations['out'][$column]))
+                                            @php $to = $relations['out'][$column]; @endphp
+                                            <a class="db-grid-link" href="{{ route('database.table', [$to['database'], $to['table']]).'?'.http_build_query(['where' => [$to['column'] => (string) $value]]) }}" wire:navigate>{{ $value }}</a>
+                                            <span class="ml-1 text-[11.5px] text-muted">→ {{ $to['table'] }}.{{ $to['column'] }}</span>
                                         @else
                                             <span class="whitespace-pre-wrap break-words">{{ $value }}</span>
                                         @endif
@@ -246,6 +314,21 @@
                                 </div>
                             @endforeach
                         </dl>
+                        @php $incoming = collect($relations['in'])->filter(fn ($list, $column) => ($rowData[$column] ?? null) !== null); @endphp
+                        @if ($incoming->isNotEmpty())
+                            <div class="border-t border-line px-4 py-3">
+                                <p class="mb-2 text-[12px] font-medium text-muted">Related rows</p>
+                                <div class="flex flex-wrap gap-2">
+                                    @foreach ($incoming as $column => $list)
+                                        @foreach ($list as $relation)
+                                            <a class="btn btn-sm" href="{{ route('database.table', [$relation['database'], $relation['table']]).'?'.http_build_query(['where' => [$relation['column'] => (string) $rowData[$column]]]) }}" wire:navigate>
+                                                <x-menu-icon name="table" class="size-4" /> <span class="font-mono">{{ $relation['table'] }}</span> <span class="font-mono text-muted">({{ $relation['column'] }})</span>
+                                            </a>
+                                        @endforeach
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
                     </div>
                     <div class="flex justify-between gap-2 border-t border-line pt-4">
                         @if ($canChange)

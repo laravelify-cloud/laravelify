@@ -305,4 +305,35 @@ class FullBackupTest extends TestCase
         $this->assertTrue($telegram->enabled('backup_failed'));
         $this->assertFalse($telegram->enabled('backup_succeeded'), 'Once saved with it unticked, it stays off.');
     }
+
+    public function test_full_backup_leaves_out_unticked_databases_and_remembers_them(): void
+    {
+        $this->signIn();
+        Queue::fake();
+        BackupStorage::factory()->default()->create();
+        $this->mock(DatabaseDumper::class, fn (MockInterface $mock) => $mock->shouldReceive('databases')->andReturn(['app_db', 'shop_db', 'blog_db']));
+
+        Livewire::test(BackupsIndex::class, ['kind' => 'database'])
+            ->call('fullBackup')
+            ->set('fullSkipDatabases', ['app_db', 'shop_db', 'blog_db'])
+            ->call('startFullBackup')
+            ->assertSet('fullOpen', true);
+
+        $this->assertSame(0, BackupRun::query()->count(), 'Nothing starts with every database unticked.');
+
+        Livewire::test(BackupsIndex::class, ['kind' => 'database'])
+            ->call('fullBackup')
+            ->set('fullSkipDatabases', ['shop_db'])
+            ->call('startFullBackup')
+            ->assertSet('fullOpen', false);
+
+        $this->assertSame(['app_db', 'blog_db'], BackupRun::query()->orderBy('id')->pluck('target')->all());
+        $this->assertSame(['shop_db'], BackupSchedule::query()->sole()->targets['skip_databases']);
+
+        BackupRun::query()->update(['status' => BackupRun::SUCCESS]);
+
+        Livewire::test(BackupsIndex::class, ['kind' => 'database'])
+            ->call('fullBackup')
+            ->assertSet('fullSkipDatabases', ['shop_db']);
+    }
 }
