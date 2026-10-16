@@ -84,6 +84,32 @@ class PrivilegeSeparationTest extends TestCase
         $this->assertSame(['composer', 'install'], $result->command);
     }
 
+    public function test_only_the_panel_user_writes_through_sudo(): void
+    {
+        config(['laravelify.host_commands' => true]);
+
+        $as = function (?string $user): SiteUser {
+            return new class(new CommandRunner, $user) extends SiteUser
+            {
+                public function __construct(CommandRunner $runner, private ?string $user)
+                {
+                    parent::__construct($runner);
+                }
+
+                protected function currentUser(): ?string
+                {
+                    return $this->user;
+                }
+            };
+        };
+
+        $this->assertFalse($as('runner')->separate());
+        $this->assertFalse($as('www-data')->separate());
+        $this->assertFalse($as(null)->separate());
+        $this->assertTrue($as('laravelify')->separate());
+        $this->assertTrue($as('root')->separate());
+    }
+
     public function test_site_commands_run_directly_while_the_panel_is_still_www_data(): void
     {
         $runner = $this->recordingRunner();

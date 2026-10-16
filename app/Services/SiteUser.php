@@ -22,6 +22,9 @@ class SiteUser
 {
     public const PREFIX = 'lfy-';
 
+    /** The panel's own Unix user, the same name scripts/privileges.sh creates. */
+    public const PANEL = 'laravelify';
+
     public function __construct(private CommandRunner $runner, private ?string $slug = null) {}
 
     /**
@@ -145,18 +148,33 @@ class SiteUser
     }
 
     /**
-     * Whether the panel runs as another user than the sites, so site work goes through sudo.
-     * False on development machines, in tests, and on servers not migrated yet (panel as www-data).
+     * Whether this process must change site files through sudo.
+     * True only for the panel user (and root, during an update). A developer, a CI runner, and a
+     * server that still runs the panel as the site user change files directly.
      */
     public function separate(): bool
     {
-        if (! $this->runner->supportsHostCommands() || ! function_exists('posix_geteuid') || ! function_exists('posix_getpwuid')) {
+        if (! $this->runner->supportsHostCommands()) {
             return false;
+        }
+
+        $name = $this->currentUser();
+
+        return in_array($name, ['root', self::PANEL], true) && $name !== $this->name();
+    }
+
+    /**
+     * The Unix user of this process, or null where POSIX accounts do not exist.
+     */
+    protected function currentUser(): ?string
+    {
+        if (! function_exists('posix_geteuid') || ! function_exists('posix_getpwuid')) {
+            return null;
         }
 
         $current = posix_getpwuid(posix_geteuid());
 
-        return is_array($current) && ($current['name'] ?? null) !== $this->name();
+        return is_array($current) ? ($current['name'] ?? null) : null;
     }
 
     /**
