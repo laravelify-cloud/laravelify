@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
-## [0.3.0-beta.46] - unreleased
+## [0.3.0-beta.46] - 2026-10-16
 
 - **Database tool: mark a column encrypted.** Pick a column's encryption method once, from **⋮ → Encrypted with… ▸** on its header or in the **Structure** tab. The panel then handles that column everywhere:
   - The grid shows its values decrypted, with a lock in the header. **Show as stored** shows the stored values.
