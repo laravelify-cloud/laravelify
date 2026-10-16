@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\BackupCron;
+use App\Support\SkippedTables;
 use Database\Factories\BackupScheduleFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -56,6 +57,16 @@ class BackupSchedule extends Model
         return $this->hasMany(BackupRun::class);
     }
 
+    /**
+     * Tables a database schedule leaves out: "database.table" or "*.table".
+     *
+     * @return list<string>
+     */
+    public function skippedTables(): array
+    {
+        return SkippedTables::normalize((array) (($this->targets ?? [])['skip_tables'] ?? []));
+    }
+
     public function isDatabase(): bool
     {
         return $this->kind === self::KIND_DATABASE;
@@ -74,7 +85,10 @@ class BackupSchedule extends Model
         $targets = $this->targets ?? [];
 
         if ($this->isDatabase()) {
-            return ! empty($targets['all']) ? 'All databases' : implode(', ', $targets['databases'] ?? []);
+            $skipped = count($this->skippedTables());
+
+            return (! empty($targets['all']) ? 'All databases' : implode(', ', $targets['databases'] ?? []))
+                .($skipped > 0 ? ' · skips '.$skipped.' '.($skipped === 1 ? 'table' : 'tables') : '');
         }
 
         if (! empty($targets['websites'])) {

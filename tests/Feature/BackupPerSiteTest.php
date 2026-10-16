@@ -10,7 +10,9 @@ use App\Models\BackupStorage;
 use App\Models\User;
 use App\Services\BackupManager;
 use App\Services\BackupStorageClient;
+use App\Services\DatabaseDumper;
 use App\Services\TwoFactor;
+use App\Support\SkippedTables;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Mockery\MockInterface;
@@ -105,5 +107,36 @@ class BackupPerSiteTest extends TestCase
 
         $this->assertSame('lv:/backups/laravelify/files/shop.tar.gz', $client->remote($storage, 'files/shop.tar.gz'));
         $this->assertSame(['RCLONE_CONFIG_LV_TYPE' => 'local'], $client->environment($storage));
+    }
+
+    public function test_skipped_tables_are_cleaned_and_matched_per_database(): void
+    {
+        $entries = SkippedTables::normalize('shop_db.sessions
+*.cache, bad entry, shop_db.sessions');
+
+        $this->assertSame(['*.cache', 'shop_db.sessions'], $entries);
+        $this->assertSame(['cache', 'sessions'], SkippedTables::forDatabase($entries, 'shop_db'));
+        $this->assertSame(['cache'], SkippedTables::forDatabase($entries, 'blog_db'));
+        $this->assertSame(['bad', 'entry'], SkippedTables::invalid('bad entry *.ok'));
+    }
+
+    public function test_a_database_dump_leaves_out_the_skipped_tables(): void
+    {
+        $storage = BackupStorage::factory()->create();
+        $schedule = BackupSchedule::factory()->create(['backup_storage_id' => $storage->id, 'targets' => ['all' => false, 'databases' => ['app_db'], 'skip_tables' => ['app_db.sessions', '*.cache', 'other_db.users']]]);
+
+        $this->mock(DatabaseDumper::class, function (MockInterface $mock) {
+            $mock->shouldReceive('dump')->once()->with('app_db', \Mockery::any(), ['cache', 'sessions'])
+                ->andReturnUsing(fn (string $database, string $file) => file_put_contents($file, 'dump'));
+            $mock->shouldReceive('tables')->andReturn(['users', 'sessions', 'cache']);
+        });
+        $this->mock(BackupStorageClient::class, fn (MockInterface $mock) => $mock->shouldReceive('upload')->once());
+
+        $run = app(BackupManager::class)->run($schedule, 'manual')[0];
+
+        $this->assertSame(['users'], $run->meta['tables']);
+        $this->assertSame(['cache', 'sessions'], $run->meta['skipped_tables']);
+        $this->assertStringContainsString('Skipping 2 table(s): cache, sessions.', (string) $run->log);
+        $this->assertSame('app_db · skips 3 tables', $schedule->describeTargets());
     }
 }

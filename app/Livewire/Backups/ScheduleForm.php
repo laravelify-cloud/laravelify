@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Backups;
 
+use App\Livewire\Concerns\ListsTables;
 use App\Livewire\PanelComponent;
 use App\Models\BackupSchedule;
 use App\Models\BackupStorage;
@@ -10,12 +11,15 @@ use App\Services\FileArchiver;
 use App\Support\BackupCron;
 use App\Support\BackupExcludes;
 use App\Support\SiteTypes;
+use App\Support\SkippedTables;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
 use Throwable;
 
 class ScheduleForm extends PanelComponent
 {
+    use ListsTables;
+
     public ?BackupSchedule $schedule = null;
 
     public string $kind = BackupSchedule::KIND_DATABASE;
@@ -45,6 +49,9 @@ class ScheduleForm extends PanelComponent
     public array $databases = [];
 
     public string $extraDatabase = '';
+
+    /** @var list<string> Tables left out: "database.table" or "*.table". */
+    public array $skip_tables = [];
 
     /** @var list<string> */
     public array $paths = [];
@@ -80,6 +87,7 @@ class ScheduleForm extends PanelComponent
         $this->all_databases = (bool) ($targets['all'] ?? false);
         $this->all_websites = (bool) ($targets['websites'] ?? false);
         $this->databases = array_values($targets['databases'] ?? []);
+        $this->skip_tables = $this->schedule->skippedTables();
         $this->paths = array_values($targets['paths'] ?? []);
         $this->excludes = implode("\n", $targets['excludes'] ?? []);
         $this->retention_count = $this->schedule->retention_count;
@@ -251,7 +259,7 @@ class ScheduleForm extends PanelComponent
                 return;
             }
 
-            $targets = ['all' => $this->all_databases, 'databases' => $this->all_databases ? [] : $databases];
+            $targets = ['all' => $this->all_databases, 'databases' => $this->all_databases ? [] : $databases, 'skip_tables' => SkippedTables::normalize($this->skip_tables)];
         } else {
             if (! $this->all_websites && $this->paths === []) {
                 $this->addError('paths', 'Choose at least one folder to back up.');

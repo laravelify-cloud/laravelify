@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.35] - 2026-10-16
+
+- **Skip tables in database backups.** Like skipped folders in file backups: a database schedule has a **Skip tables** picker (open a database, untick tables such as cache, sessions, logs, or data that never changes), and `*.table` skips a table in every database. Skipped tables are left out of the dump with `mysqldump --ignore-table`, listed in the run's log, and not offered in its restore. A restore leaves those tables in the target database as they are.
+- **Full backup asks first (databases).** **Full backup** on Database backups opens a dialog with every database and its tables: untick what you do not need and press **Back up**. Each database is still dumped to its own file, and the choice is kept for the next full backup.
+- **Database backups are grouped by schedule.** One row per schedule (like **FULL BACKUP · 3 dumps, one per database · 2 runs**), the newest run's dump of each database under it, older runs behind **older runs**, as for file backups.
+
 ## [0.3.0-beta.34] - 2026-10-16
 
 - **File backups are grouped by schedule.** One row per schedule (like **FULL BACKUP · 6 archives, one per website · 2 runs**), the newest run's archive of each website under it, and the older runs, each with its archives, behind **older runs**. Before, every run of the same schedule was a separate group.

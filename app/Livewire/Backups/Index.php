@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Backups;
 
+use App\Livewire\Concerns\ListsTables;
 use App\Livewire\PanelComponent;
 use App\Models\BackupRun;
 use App\Models\BackupSchedule;
@@ -9,14 +10,27 @@ use App\Models\BackupStorage;
 use App\Models\PanelTask;
 use App\Services\BackupInspector;
 use App\Services\BackupManager;
+use App\Services\DatabaseDumper;
 use App\Services\FileArchiver;
 use App\Services\PanelTaskRunner;
 use App\Support\BackupCron;
+use App\Support\SkippedTables;
 use Illuminate\Support\Collection;
 use Throwable;
 
 class Index extends PanelComponent
 {
+    use ListsTables;
+
+    /** The Full backup dialog (databases): open, and the tables it leaves out. */
+    public bool $fullOpen = false;
+
+    /** @var list<string> */
+    public array $fullSkip = [];
+
+    /** @var list<string> */
+    public array $fullDatabases = [];
+
     public const TABLES_PER_PAGE = 25;
 
     public const TASK_SCOPE = 'backups';
@@ -122,12 +136,42 @@ class Index extends PanelComponent
     }
 
     /**
-     * Every database, or every website, now.
+     * Every database, or every website, now. Databases first open a dialog to leave tables out.
      */
-    public function fullBackup(BackupManager $backups): void
+    public function fullBackup(BackupManager $backups, DatabaseDumper $dumper): void
+    {
+        if ($this->kind === BackupSchedule::KIND_DATABASE && ! $this->fullOpen) {
+            try {
+                $this->fullDatabases = $dumper->databases();
+            } catch (Throwable $exception) {
+                $this->toast('Could not list the databases: '.$exception->getMessage(), 'error');
+
+                return;
+            }
+
+            $saved = BackupSchedule::query()->where('kind', $this->kind)->where('name', 'Full backup')->first();
+            $this->fullSkip = $saved ? $saved->skippedTables() : [];
+            $this->fullOpen = true;
+
+            return;
+        }
+
+        $this->startFull($backups, null);
+    }
+
+    public function startFullBackup(BackupManager $backups): void
+    {
+        $this->startFull($backups, SkippedTables::normalize($this->fullSkip));
+        $this->fullOpen = false;
+    }
+
+    /**
+     * @param  list<string>|null  $skipTables
+     */
+    private function startFull(BackupManager $backups, ?array $skipTables): void
     {
         try {
-            $schedule = $backups->fullBackup($this->kind);
+            $schedule = $backups->fullBackup($this->kind, $skipTables);
             $names = $schedule->runs()->where('status', BackupRun::QUEUED)->orderBy('id')->pluck('target');
             $this->toast('Full backup started, one file each: '.$names->implode(', ').'. Progress shows in the list below.');
         } catch (Throwable $exception) {
@@ -570,13 +614,11 @@ class Index extends PanelComponent
             'lastRuns' => $lastRuns,
             'running' => $schedules->mapWithKeys(fn (BackupSchedule $schedule) => [$schedule->id => $backups->isRunning($schedule)]),
             'runs' => $runs,
-            // Databases: by database, older dumps under the newest. Files: by schedule, the newest run's
-            // archive of each website under it, older runs behind a toggle. Restores stand alone.
-            'runGroups' => $runs->groupBy(fn (BackupRun $run) => match (true) {
-                $isDatabase => 'database:'.$run->target,
-                $run->isBackup() && $run->backup_schedule_id !== null => 'schedule:'.$run->backup_schedule_id,
-                default => 'run:'.$run->id,
-            }),
+            // By schedule: its newest run's dump of each database (or archive of each website) under it,
+            // older runs behind a toggle. Restores stand alone.
+            'runGroups' => $runs->groupBy(fn (BackupRun $run) => $run->isBackup() && $run->backup_schedule_id !== null
+                ? 'schedule:'.$run->backup_schedule_id
+                : 'run:'.$run->id),
             'filters' => $this->filterOptions($restorable, $schedules),
             'hasStorage' => BackupStorage::query()->exists(),
             'tasks' => $tasks,

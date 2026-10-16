@@ -13,7 +13,7 @@
         :summary="$isDatabase ? 'Dump databases to your storage (S3 or a folder on this server) on a schedule. Restore a whole database or some tables, look inside a backup, or download parts of it as SQL.' : 'Archive folders to your storage (S3 or a folder on this server) on a schedule. Restore everything or picked folders and files, or download a backup.'"
     >
         <x-slot:actions>
-            <button class="btn" type="button" wire:click="fullBackup" wire:loading.attr="disabled" wire:target="fullBackup" @disabled(! $hasStorage) title="{{ $isDatabase ? 'Back up every database now' : 'Back up every website now, each in its own archive, without dependencies and build output' }}"><x-menu-icon name="backup" /> Full backup</button>
+            <button class="btn" type="button" wire:click="fullBackup" wire:loading.attr="disabled" wire:target="fullBackup" @disabled(! $hasStorage) title="{{ $isDatabase ? 'Back up every database now, each in its own file, and choose tables to leave out' : 'Back up every website now, each in its own archive, without dependencies and build output' }}"><x-menu-icon name="backup" /> Full backup</button>
             <button class="btn" type="button" wire:click="openRestore" @disabled(! $hasStorage)><x-menu-icon name="restore" /> Restore</button>
             <a class="btn" href="{{ route('backups.storages') }}" wire:navigate><x-menu-icon name="s3" /> Storage</a>
             <a class="btn btn-primary" href="{{ route('backups.schedules.create', $isDatabase ? 'database' : 'files') }}" wire:navigate><x-menu-icon name="plus" /> New schedule</a>
@@ -121,7 +121,7 @@
     </x-layer-card>
 
     {{-- Backups and restores --}}
-    <x-layer-card title="Backups and restores" helper="{{ $isDatabase ? 'Grouped by database, newest first. Open a group to see its older backups.' : 'Newest first. Grouped by schedule: its newest run lists one archive per website or folder, older runs open below. Look inside, download, or restore one website on its own.' }} Any backup still in storage can be restored." flush>
+    <x-layer-card title="Backups and restores" helper="{{ $isDatabase ? 'Grouped by schedule: its newest run lists one dump per database, older runs open below. Look inside, download, or restore one database on its own.' : 'Grouped by schedule: its newest run lists one archive per website or folder, older runs open below. Look inside, download, or restore one website on its own.' }} Any backup still in storage can be restored." flush>
         <x-slot:actions>
             @if ($filters !== [])
                 <select class="select h-8 text-[13px]" wire:model.live="filter" aria-label="Show backups of">
@@ -155,7 +155,7 @@
                 </tr>
             </thead>
                 @forelse ($runGroups as $key => $group)
-                    @if (! $isDatabase && str_starts_with($key, 'schedule:'))
+                    @if (str_starts_with($key, 'schedule:'))
                         @include('livewire.backups.partials.schedule-group', ['group' => $group, 'first' => $loop->first])
                     @else
                         <tbody x-data="{ open: false }" wire:key="run-group-{{ md5($key) }}">
@@ -188,4 +188,5 @@
     @include('livewire.backups.partials.restore-dialog')
     @include('livewire.backups.partials.view-dialog')
     @include('livewire.backups.partials.download-dialog')
+    @include('livewire.backups.partials.full-backup-dialog')
 </div>

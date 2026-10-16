@@ -43,14 +43,21 @@ class DatabaseDumper
         return $this->query('SHOW FULL TABLES WHERE Table_type = "BASE TABLE"', $database, true);
     }
 
-    public function dump(string $database, string $file): void
+    /**
+     * @param  list<string>  $skipTables  Tables of this database to leave out (not even their structure).
+     */
+    public function dump(string $database, string $file, array $skipTables = []): void
     {
         $this->assertName($database);
+        $ignore = array_map(fn (string $table): string => '--ignore-table='.$database.'.'.$table, array_values(array_filter(
+            $skipTables,
+            fn (string $table): bool => preg_match('/^[A-Za-z0-9_$-]{1,64}$/', $table) === 1,
+        )));
 
         $result = $this->withDefaults(fn (string $defaults) => $this->runner->run([
             'bash', '-c',
-            'set -o pipefail; mysqldump --defaults-extra-file="$1" --single-transaction --quick --routines --triggers --events --no-tablespaces --default-character-set=utf8mb4 "$2" | gzip -c > "$3"',
-            '_', $defaults, $database, $file,
+            'set -o pipefail; mysqldump --defaults-extra-file="$1" --single-transaction --quick --routines --triggers --events --no-tablespaces --default-character-set=utf8mb4 "${@:4}" "$2" | gzip -c > "$3"',
+            '_', $defaults, $database, $file, ...$ignore,
         ]));
 
         if ($result->skipped) {

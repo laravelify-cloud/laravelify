@@ -1,9 +1,10 @@
 {{--
-    One file schedule in the list: its row, the archives of its newest run (one per website or folder)
-    under it, and its older runs (each with its archives) behind "older runs".
+    One schedule in the list: its row, what its newest run made (a dump per database, or an archive per
+    website or folder) under it, and its older runs (each with its files) behind "older runs".
+    Runs from before batches existed are grouped by the minute they started.
 --}}
 @php
-    $batches = $group->groupBy(fn ($run) => $run->batch ?? 'run-'.$run->id)->values();
+    $batches = $group->groupBy(fn ($run) => $run->batch ?? 'at-'.$run->created_at?->format('YmdHi'))->values();
     $latest = $batches->first();
     $schedule = $group->first()->schedule;
     $ids = $group->filter->restorable()->pluck('id')->values()->all();
@@ -21,7 +22,8 @@
         ];
     };
     $now = $summary($latest);
-    $unit = ! empty($schedule?->targets['websites']) ? 'website' : 'folder';
+    $unit = $isDatabase ? 'database' : (! empty($schedule?->targets['websites']) ? 'website' : 'folder');
+    $nouns = $isDatabase ? ['dump', 'dumps'] : ['archive', 'archives'];
 @endphp
 <tbody x-data="{ open: {{ $first ? 'true' : 'false' }}, older: false }" wire:key="schedule-group-{{ $group->first()->backup_schedule_id }}-{{ $group->first()->id }}">
     <tr class="run-batch" wire:key="schedule-row-{{ $group->first()->backup_schedule_id }}-{{ $now['status'] }}">
@@ -33,11 +35,11 @@
         <td class="max-w-xs">
             <button class="flex items-center gap-2 text-left" type="button" @click="open = ! open" :aria-expanded="open">
                 <x-menu-icon name="chevron-right" class="size-4 shrink-0 text-muted transition-transform" ::class="open && 'rotate-90'" />
-                <x-menu-icon name="backup" class="size-4 shrink-0 text-muted" />
+                <x-menu-icon name="{{ $isDatabase ? 'database' : 'backup' }}" class="size-4 shrink-0 text-muted" />
                 <span class="truncate text-[12.5px] font-semibold uppercase tracking-wide">{{ $schedule?->name ?? 'Deleted schedule' }}</span>
             </button>
             <span class="block truncate pl-6 text-[12px] text-muted">
-                {{ $latest->count() }} {{ $latest->count() === 1 ? 'archive' : 'archives' }}{{ $latest->count() > 1 ? ', one per '.$unit : '' }}
+                {{ $latest->count() }} {{ $nouns[$latest->count() === 1 ? 0 : 1] }}{{ $latest->count() > 1 ? ', one per '.$unit : '' }}
                 · {{ $batches->count() }} {{ $batches->count() === 1 ? 'run' : 'runs' }}
                 · {{ $now['first']->trigger === 'manual' ? 'Run now' : 'Scheduled' }}
             </span>
@@ -83,7 +85,7 @@
             @php($info = $summary($batch))
             <tr class="run-older run-older-head" x-show="open && older" x-cloak wire:key="older-run-{{ $info['first']->id }}-{{ $info['status'] }}">
                 <td></td>
-                <td class="text-[12.5px] font-medium">Run of {{ $time->datetime($info['first']->created_at) }} <span class="font-normal text-muted">· {{ $batch->count() }} {{ $batch->count() === 1 ? 'archive' : 'archives' }}</span></td>
+                <td class="text-[12.5px] font-medium">Run of {{ $time->datetime($info['first']->created_at) }} <span class="font-normal text-muted">· {{ $batch->count() }} {{ $nouns[$batch->count() === 1 ? 0 : 1] }}</span></td>
                 <td><x-status-badge :status="$info['status']" /></td>
                 <td class="text-muted">{{ $info['bytes'] > 0 ? \Illuminate\Support\Number::fileSize($info['bytes'], precision: 1) : '—' }}</td>
                 <td></td>

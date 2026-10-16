@@ -108,6 +108,11 @@ class FullBackupTest extends TestCase
 
         Livewire::test(BackupsIndex::class, ['kind' => 'database'])
             ->call('fullBackup')
+            ->assertSet('fullOpen', true)
+            ->assertSet('fullDatabases', ['app_db', 'shop_db'])
+            ->set('fullSkip', ['shop_db.sessions', '*.cache', 'bad entry'])
+            ->call('startFullBackup')
+            ->assertSet('fullOpen', false)
             ->assertSee('Full backup')
             ->assertSee('By hand (Run now)');
 
@@ -115,9 +120,13 @@ class FullBackupTest extends TestCase
         $this->assertSame('manual', $schedule->frequency);
         $this->assertFalse(BackupCron::isDue($schedule->cron), 'A by-hand schedule never runs on its own.');
         $this->assertSame(['app_db', 'shop_db'], BackupRun::query()->orderBy('id')->pluck('target')->all());
+        $this->assertSame(['*.cache', 'shop_db.sessions'], $schedule->skippedTables(), 'The skipped tables are kept for the next full backup.');
         Queue::assertPushed(RunBackupSchedule::class);
 
-        Livewire::test(BackupsIndex::class, ['kind' => 'database'])->call('fullBackup');
+        Livewire::test(BackupsIndex::class, ['kind' => 'database'])
+            ->call('fullBackup')
+            ->assertSet('fullSkip', ['*.cache', 'shop_db.sessions'])
+            ->call('startFullBackup');
         $this->assertSame(1, BackupSchedule::query()->count(), 'The same schedule is used again.');
         $this->assertSame(2, BackupRun::query()->count(), 'Nothing new starts while it is still running.');
     }

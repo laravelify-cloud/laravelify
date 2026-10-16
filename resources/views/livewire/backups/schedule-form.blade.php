@@ -289,6 +289,12 @@
             @endif
         </x-layer-card>
 
+        @if ($isDatabase)
+        <x-layer-card title="Skip tables" helper="Tables to leave out of every dump, like cache, sessions, logs, or data that never changes. Untick them in a database; *.table skips a table in every database.">
+                @include('livewire.backups.partials.table-picker', ['databases' => $all_databases ? $availableDatabases : array_values(array_unique([...$databases, ...$availableDatabases])), 'model' => 'skip_tables'])
+        </x-layer-card>
+        @endif
+
         <x-layer-card title="How often" helper="Times use the timezone from Settings, General.">
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <label class="field">

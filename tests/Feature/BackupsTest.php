@@ -156,7 +156,7 @@ class BackupsTest extends TestCase
         $schedule = BackupSchedule::query()->sole();
         $this->assertSame($storage->id, $schedule->backup_storage_id);
         $this->assertSame('20 * * * *', $schedule->cron);
-        $this->assertSame(['all' => false, 'databases' => ['app_db']], $schedule->targets);
+        $this->assertSame(['all' => false, 'databases' => ['app_db'], 'skip_tables' => []], $schedule->targets);
         $this->assertSame('app_db', $schedule->describeTargets());
     }
 
@@ -452,15 +452,24 @@ SQL;
         $this->assertSame($storage->secret_key, $captured['env']['RCLONE_CONFIG_LV_SECRET_ACCESS_KEY']);
     }
 
-    public function test_backups_of_the_same_database_are_grouped_under_the_newest(): void
+    public function test_database_backups_are_grouped_by_schedule_with_each_database_under_its_run(): void
     {
         $this->signIn();
-        $schedule = BackupSchedule::factory()->create();
-        BackupRun::factory()->count(3)->create(['backup_schedule_id' => $schedule->id, 'backup_storage_id' => $schedule->backup_storage_id, 'target' => 'shop_db']);
-        BackupRun::factory()->create(['backup_schedule_id' => $schedule->id, 'backup_storage_id' => $schedule->backup_storage_id, 'target' => 'blog_db']);
+        $schedule = BackupSchedule::factory()->create(['name' => 'Nightly']);
+        $other = BackupSchedule::factory()->create(['name' => 'Hourly']);
 
-        $page = Livewire::test(BackupsIndex::class, ['kind' => 'database'])->assertSee('2 older backups');
+        foreach (['b1', 'b2'] as $batch) {
+            foreach (['shop_db', 'blog_db'] as $database) {
+                BackupRun::factory()->create(['backup_schedule_id' => $schedule->id, 'backup_storage_id' => $schedule->backup_storage_id, 'batch' => $batch, 'target' => $database]);
+            }
+        }
 
-        $this->assertSame(['database:blog_db' => 1, 'database:shop_db' => 3], $page->viewData('runGroups')->map->count()->all());
+        BackupRun::factory()->create(['backup_schedule_id' => $other->id, 'backup_storage_id' => $other->backup_storage_id, 'batch' => 'b3', 'target' => 'shop_db']);
+
+        $page = Livewire::test(BackupsIndex::class, ['kind' => 'database'])
+            ->assertSee('2 dumps, one per database')
+            ->assertSee('1 older run');
+
+        $this->assertSame(['schedule:'.$other->id => 1, 'schedule:'.$schedule->id => 4], $page->viewData('runGroups')->map->count()->all());
     }
 }

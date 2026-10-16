@@ -2064,4 +2064,20 @@ html:has(.modal-root:not([x-cloak]):not([style*="display: none"])) {
 
 /* Wide dialogs (restore, view, download). Outside a layer, like .modal-panel itself. */
 .modal-wide .modal-panel { width: min(100%, 56rem); }
+
+/* Backups: pick the tables a database backup leaves out. */
+.table-picker-grid { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; min-height: 18rem; }
+.table-picker-dbs { overflow: auto; max-height: 24rem; border-right: 1px solid var(--color-line); padding: 6px; background: var(--color-recessed); }
+.table-picker-db { display: flex; width: 100%; align-items: center; gap: 8px; border-radius: 7px; padding: 7px 8px; text-align: left; }
+.table-picker-db:hover { background: color-mix(in srgb, var(--color-ink) 5%, transparent); }
+.table-picker-db.is-active { background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
+.table-picker-tables { display: flex; min-width: 0; flex-direction: column; }
+.table-picker-list { overflow: auto; max-height: 21rem; padding: 4px; }
+.table-picker-row { display: flex; align-items: center; gap: 10px; border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+.table-picker-row:hover { background: color-mix(in srgb, var(--color-ink) 4%, transparent); }
+.table-picker-row.is-skipped span:first-of-type { color: var(--color-muted); text-decoration: line-through; }
+@media (max-width: 640px) {
+    .table-picker-grid { grid-template-columns: 1fr; }
+    .table-picker-dbs { max-height: 10rem; border-right: 0; border-bottom: 1px solid var(--color-line); }
+}
 .modal-medium .modal-panel { width: min(100%, 44rem); }

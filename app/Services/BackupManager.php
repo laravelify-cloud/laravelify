@@ -9,6 +9,7 @@ use App\Models\BackupSchedule;
 use App\Models\BackupStorage;
 use App\Support\BackupCron;
 use App\Support\BackupExcludes;
+use App\Support\SkippedTables;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Number;
 use Illuminate\Support\Str;
@@ -59,7 +60,11 @@ class BackupManager
      * without dependencies and build output). Uses a "Full backup" schedule that only runs
      * by hand, made the first time, so the backups are listed and kept like any other.
      */
-    public function fullBackup(string $kind): BackupSchedule
+    /**
+     * @param  list<string>|null  $skipTables  For databases: tables to leave out ("db.table", "*.table"),
+     *                                         kept on the schedule for the next full backup. Null keeps the saved list.
+     */
+    public function fullBackup(string $kind, ?array $skipTables = null): BackupSchedule
     {
         $isDatabase = $kind === BackupSchedule::KIND_DATABASE;
         $schedule = BackupSchedule::query()->where('kind', $kind)->where('name', 'Full backup')->first();
@@ -80,6 +85,11 @@ class BackupManager
                 'targets' => $isDatabase ? ['all' => true, 'databases' => []] : ['websites' => true, 'paths' => [], 'excludes' => []],
                 'retention_count' => 5,
             ]);
+        }
+
+        if ($isDatabase && $skipTables !== null) {
+            $schedule->targets = [...($schedule->targets ?? []), 'skip_tables' => SkippedTables::normalize($skipTables)];
+            $schedule->save();
         }
 
         if (! $this->queue($schedule->load('storage'), 'manual')) {
@@ -154,7 +164,7 @@ class BackupManager
             $schedule,
             $run,
             $schedule->isDatabase()
-                ? ['label' => $run->target, 'database' => $run->target]
+                ? ['label' => $run->target, 'database' => $run->target, 'skip' => SkippedTables::forDatabase($schedule->skippedTables(), $run->target)]
                 : ($folders[$run->target] ?? ['label' => $run->target, 'paths' => [], 'excludes' => []]),
         ), $waiting);
 
@@ -218,7 +228,7 @@ class BackupManager
         if ($schedule->isDatabase()) {
             $names = ! empty($targets['all']) ? $this->databases->databases() : array_values($targets['databases'] ?? []);
 
-            return array_map(fn (string $name) => ['label' => $name, 'database' => $name], $names);
+            return array_map(fn (string $name) => ['label' => $name, 'database' => $name, 'skip' => SkippedTables::forDatabase($schedule->skippedTables(), $name)], $names);
         }
 
         // Every website, each in its own archive, without what a deploy rebuilds.
@@ -271,9 +281,16 @@ class BackupManager
 
             if ($schedule->isDatabase()) {
                 $phase('Dumping the database');
+                $skip = array_values($target['skip'] ?? []);
                 $log->line('Dumping database '.$target['database'].'...');
-                $this->databases->dump($target['database'], $file);
-                $meta['tables'] = $this->databases->tables($target['database']);
+
+                if ($skip !== []) {
+                    $log->line('Skipping '.count($skip).' table(s): '.implode(', ', $skip).'.');
+                }
+
+                $this->databases->dump($target['database'], $file, $skip);
+                $meta['tables'] = array_values(array_diff($this->databases->tables($target['database']), $skip));
+                $meta['skipped_tables'] = $skip;
                 $log->line('Dumped '.count($meta['tables']).' tables.');
             } else {
                 $phase('Packing the files');
