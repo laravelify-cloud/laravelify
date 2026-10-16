@@ -39,6 +39,8 @@ class DatabaseBrowser
     /** Longest value shown in lists; the row dialog shows the whole value. */
     private const PREVIEW = 300;
 
+    private bool $fresh = false;
+
     public function __construct(private DatabaseDumper $dumper) {}
 
     public function connection(): Connection
@@ -47,7 +49,20 @@ class DatabaseBrowser
             config(['database.connections.'.self::CONNECTION => [...(array) config('database.connections.mysql'), 'database' => 'information_schema']]);
         }
 
-        return DB::connection(self::CONNECTION);
+        $connection = DB::connection(self::CONNECTION);
+
+        // MySQL 8 caches table sizes and row counts for a day; this tool shows them as they are now.
+        if (! $this->fresh) {
+            try {
+                $connection->statement('SET SESSION information_schema_stats_expiry = 0');
+            } catch (Throwable) {
+                // MySQL 5.7 and MariaDB have no such cache.
+            }
+
+            $this->fresh = true;
+        }
+
+        return $connection;
     }
 
     public static function validDatabase(string $name): bool

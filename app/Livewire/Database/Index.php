@@ -24,6 +24,9 @@ class Index extends PanelComponent
     #[Url]
     public string $sort = 'name';
 
+    #[Url(as: 'dir')]
+    public string $direction = 'asc';
+
     public string $filter = '';
 
     public string $query = '';
@@ -65,6 +68,13 @@ class Index extends PanelComponent
         }
     }
 
+    public function sortBy(string $column): void
+    {
+        // The same column again reverses the order; a new one starts A–Z for names, largest first for numbers.
+        $this->direction = $this->sort === $column ? ($this->direction === 'asc' ? 'desc' : 'asc') : ($column === 'name' ? 'asc' : 'desc');
+        $this->sort = in_array($column, ['name', 'tables', 'size'], true) ? $column : 'name';
+    }
+
     public function backup(BackupManager $backups, string $database): void
     {
         try {
@@ -88,7 +98,7 @@ class Index extends PanelComponent
 
         $shown = collect($databases)
             ->filter(fn (array $database): bool => $this->filter === '' || str_contains(strtolower($database['name']), strtolower(trim($this->filter))))
-            ->sortBy($this->sort === 'size' ? 'size' : 'name', SORT_NATURAL | SORT_FLAG_CASE, $this->sort === 'size')
+            ->sortBy(in_array($this->sort, ['tables', 'size'], true) ? $this->sort : 'name', SORT_NATURAL | SORT_FLAG_CASE, $this->direction === 'desc')
             ->values();
 
         return view('livewire.database.index', [

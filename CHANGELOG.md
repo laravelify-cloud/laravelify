@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.38] - 2026-10-16
+
+- **Database tool: sort by clicking a column header.** Databases (name, tables, size) and tables (name, rows, size, engine, last change); click again to reverse.
+- **Fixed: tables showed 0 rows.** MySQL 8 keeps table sizes and row counts for a day; the Database tool now reads them as they are.
+- **Fixed: sorting rows by a column did nothing in phpMyAdmin.** On newer PHP versions phpMyAdmin put PHP's deprecation notices into its AJAX answers, which broke clicks like sorting. The panel's phpMyAdmin settings (`/etc/phpmyadmin/conf.d/zz-laravelify-hide.php`, written by installs and updates) now leave deprecation notices out.
+
 ## [0.3.0-beta.37] - 2026-10-16
 
 - **The panel's own database is hidden.** `laravelify` (the database in the panel's `.env`) no longer shows in Tools → Database, the backup pickers, the Full backup dialog, or "All databases" backups, and phpMyAdmin no longer lists it (or its own `phpmyadmin` database): installs and updates write `/etc/phpmyadmin/conf.d/zz-laravelify-hide.php` with `hide_db` for every phpMyAdmin server.

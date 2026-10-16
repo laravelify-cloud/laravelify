@@ -19,14 +19,17 @@
         <x-layer-card title="Databases" helper="{{ count($allDatabases) }} databases · {{ \Illuminate\Support\Number::fileSize($totalSize, precision: 1) }} in all. Sizes are MySQL's own figures and can be a little behind." flush>
             <x-slot:actions>
                 <input class="input h-8 w-48" type="search" wire:model.live.debounce.250ms="filter" placeholder="Filter databases" aria-label="Filter databases">
-                <div class="segmented" role="group" aria-label="Sort">
-                    <button type="button" wire:click="$set('sort', 'name')" aria-pressed="{{ $sort === 'name' ? 'true' : 'false' }}" class="text-[12px]">Name</button>
-                    <button type="button" wire:click="$set('sort', 'size')" aria-pressed="{{ $sort === 'size' ? 'true' : 'false' }}" class="text-[12px]">Size</button>
-                </div>
             </x-slot:actions>
             <div class="overflow-x-auto">
                 <table class="table">
-                    <thead><tr><th>Database</th><th>Tables</th><th>Size</th><th class="w-56"></th></tr></thead>
+                    <thead>
+                        <tr>
+                            @foreach (['name' => 'Database', 'tables' => 'Tables', 'size' => 'Size'] as $key => $label)
+                                <th>@include('livewire.database.partials.sort-header', ['key' => $key, 'label' => $label])</th>
+                            @endforeach
+                            <th class="w-56"></th>
+                        </tr>
+                    </thead>
                     <tbody>
                         @forelse ($databases as $database)
                             <tr wire:key="db-{{ $database['name'] }}">

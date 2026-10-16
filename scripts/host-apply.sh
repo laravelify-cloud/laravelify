@@ -363,7 +363,9 @@ PHP
     echo "phpMyAdmin one-click sign-in is installed."
     ;;
   phpmyadmin-hide)
-    # phpMyAdmin does not list the panel's own database (or its own storage database).
+    # phpMyAdmin does not list the panel's own database (or its own storage database), and PHP's
+    # deprecation notices stay out of its pages: phpMyAdmin adds them to its AJAX answers, which
+    # breaks sorting rows by a column and other clicks on newer PHP versions.
     # Loaded after the other conf.d files ("zz-"), so the one-click sign-in server is covered too.
     [[ -d /etc/phpmyadmin ]] || { echo "phpMyAdmin is not installed."; exit 0; }
     panel_db="$(grep -E '^DB_DATABASE=' "${ROOT}/.env" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '"'"'"' \r')"
@@ -372,7 +374,9 @@ PHP
     ensure_dirs /etc/phpmyadmin/conf.d
     cat > /etc/phpmyadmin/conf.d/zz-laravelify-hide.php <<PHP
 <?php
-// Written by Laravelify (host-apply.sh phpmyadmin-hide): the panel's own database is not listed.
+// Written by Laravelify (host-apply.sh phpmyadmin-hide): the panel's own database is not listed,
+// and deprecation notices of newer PHP versions do not break phpMyAdmin's AJAX answers.
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED & ~E_STRICT);
 foreach (array_keys(\$cfg['Servers'] ?? []) as \$laravelifyServer) {
     \$cfg['Servers'][\$laravelifyServer]['hide_db'] = '^(${panel_db}|phpmyadmin)\$';
 }

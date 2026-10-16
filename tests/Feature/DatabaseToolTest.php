@@ -253,4 +253,18 @@ class DatabaseToolTest extends TestCase
             ->set('tab', 'structure')
             ->assertSee('line');
     }
+
+    public function test_table_headers_sort_and_row_counts_are_current(): void
+    {
+        $tables = collect($this->browser->tables(self::DB))->keyBy('name');
+        $this->assertSame(3, $tables['people']['rows'], 'Row counts are read fresh, not from the day-long cache of MySQL.');
+
+        Livewire::test(DatabaseShow::class, ['database' => self::DB])
+            ->call('sortBy', 'rows')
+            ->assertSet('direction', 'desc')
+            ->assertSeeInOrder(['people', 'logs'])
+            ->call('sortBy', 'rows')
+            ->assertSet('direction', 'asc')
+            ->assertSeeInOrder(['logs', 'people']);
+    }
 }

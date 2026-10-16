@@ -2065,6 +2065,12 @@ html:has(.modal-root:not([x-cloak]):not([style*="display: none"])) {
 /* Wide dialogs (restore, view, download). Outside a layer, like .modal-panel itself. */
 .modal-wide .modal-panel { width: min(100%, 56rem); }
 
+/* Database tool: column headers that sort. */
+.sort-header { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font: inherit; color: inherit; }
+.sort-header:hover, .sort-header.is-active { color: var(--color-ink); }
+.sort-header-arrow { font-size: 11px; opacity: 0.45; }
+.sort-header.is-active .sort-header-arrow { opacity: 1; color: var(--color-accent); }
+
 /* Backups: pick the tables a database backup leaves out. */
 .table-picker-grid { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; min-height: 18rem; }
 .table-picker-dbs { overflow: auto; max-height: 24rem; border-right: 1px solid var(--color-line); padding: 6px; background: var(--color-recessed); }

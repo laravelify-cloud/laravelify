@@ -26,6 +26,9 @@ class Show extends PanelComponent
     #[Url]
     public string $sort = 'name';
 
+    #[Url(as: 'dir')]
+    public string $direction = 'asc';
+
     public string $filter = '';
 
     // Search in this database (shared search partial).
@@ -61,6 +64,13 @@ class Show extends PanelComponent
         abort_unless(DatabaseBrowser::validDatabase($database), 404);
         $this->database = $database;
         $this->scope = [$database];
+    }
+
+    public function sortBy(string $column): void
+    {
+        // The same column again reverses the order; a new one starts A–Z for names, largest first for numbers.
+        $this->direction = $this->sort === $column ? ($this->direction === 'asc' ? 'desc' : 'asc') : (in_array($column, ['name', 'engine'], true) ? 'asc' : 'desc');
+        $this->sort = in_array($column, ['name', 'rows', 'size', 'engine', 'updated'], true) ? $column : 'name';
     }
 
     public function runSearch(DatabaseBrowser $browser): void
@@ -169,11 +179,7 @@ class Show extends PanelComponent
 
         $shown = collect($tables)
             ->filter(fn (array $table): bool => $this->filter === '' || str_contains(strtolower($table['name']), strtolower(trim($this->filter))))
-            ->sortBy(match ($this->sort) {
-                'size' => 'size',
-                'rows' => 'rows',
-                default => 'name',
-            }, SORT_NATURAL | SORT_FLAG_CASE, in_array($this->sort, ['size', 'rows'], true))
+            ->sortBy(fn (array $table) => $table[in_array($this->sort, ['rows', 'size', 'engine', 'updated'], true) ? $this->sort : 'name'] ?? '', SORT_NATURAL | SORT_FLAG_CASE, $this->direction === 'desc')
             ->values();
 
         return view('livewire.database.show', [

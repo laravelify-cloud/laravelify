@@ -27,15 +27,16 @@
         <x-layer-card title="Tables" helper="Rows and sizes are MySQL's own figures and can be a little behind." flush>
             <x-slot:actions>
                 <input class="input h-8 w-48" type="search" wire:model.live.debounce.250ms="filter" placeholder="Filter tables" aria-label="Filter tables">
-                <div class="segmented" role="group" aria-label="Sort">
-                    <button type="button" wire:click="$set('sort', 'name')" aria-pressed="{{ $sort === 'name' ? 'true' : 'false' }}" class="text-[12px]">Name</button>
-                    <button type="button" wire:click="$set('sort', 'size')" aria-pressed="{{ $sort === 'size' ? 'true' : 'false' }}" class="text-[12px]">Size</button>
-                    <button type="button" wire:click="$set('sort', 'rows')" aria-pressed="{{ $sort === 'rows' ? 'true' : 'false' }}" class="text-[12px]">Rows</button>
-                </div>
             </x-slot:actions>
             <div class="overflow-x-auto">
                 <table class="table">
-                    <thead><tr><th>Table</th><th>Rows</th><th>Size</th><th>Engine</th><th>Last change</th></tr></thead>
+                    <thead>
+                        <tr>
+                            @foreach (['name' => 'Table', 'rows' => 'Rows', 'size' => 'Size', 'engine' => 'Engine', 'updated' => 'Last change'] as $key => $label)
+                                <th>@include('livewire.database.partials.sort-header', ['key' => $key, 'label' => $label])</th>
+                            @endforeach
+                        </tr>
+                    </thead>
                     <tbody>
                         @forelse ($tables as $table)
                             <tr wire:key="table-{{ $table['name'] }}">
