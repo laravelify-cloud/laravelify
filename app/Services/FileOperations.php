@@ -22,7 +22,7 @@ class FileOperations
     /** More files and folders than this, and the work goes to the queue. */
     public const int INLINE_LIMIT = 1500;
 
-    public function __construct(private SitePaths $paths) {}
+    public function __construct(private SitePaths $paths, private SiteFiles $files, private SiteUser $site) {}
 
     public static function canZip(): bool
     {
@@ -176,7 +176,21 @@ class FileOperations
 
         $files = $this->zipList($sources, $skipped);
 
-        $this->writeZip($target, $files, $progress);
+        if (! $this->site->separate()) {
+            $this->writeZip($target, $files, $progress);
+
+            return $this->paths->relative($root, $target);
+        }
+
+        // The panel builds the zip in its own folder; the site user writes it into the site.
+        $temporary = $this->temporaryZip();
+
+        try {
+            $this->writeZip($temporary, $files, $progress);
+            $this->files->putFile($target, $temporary, 0644);
+        } finally {
+            @unlink($temporary);
+        }
 
         return $this->paths->relative($root, $target);
     }
@@ -239,6 +253,20 @@ class FileOperations
 
             $target = $this->uniquePath(dirname($full), pathinfo($full, PATHINFO_FILENAME), false);
 
+            if ($this->site->separate()) {
+                // The names were checked above. unzip runs as the site user, so the files are the site's.
+                $this->files->makeDirectory($target);
+                $result = $this->files->exec(['unzip', '-q', '-o', $full, '-d', $target]);
+
+                if (! $result->ok && $result->exitCode !== 1) {
+                    throw new RuntimeException('Could not extract that archive: '.$result->output);
+                }
+
+                $progress && $progress(count($names), count($names));
+
+                return $this->paths->relative($root, $target);
+            }
+
             if (! mkdir($target, 0755)) {
                 throw new RuntimeException('Could not create the folder to extract into.');
             }
@@ -289,6 +317,16 @@ class FileOperations
             }
 
             $target = $this->uniquePath($destinationPath, $name, ! is_dir($source));
+
+            if ($this->site->separate()) {
+                $this->files->copy($source, $target);
+                $done += $this->count([$target]);
+                $progress && $progress(min($done, $total), $total);
+                $copied++;
+
+                continue;
+            }
+
             $this->copyRecursive($source, $target, function () use (&$done, $total, $progress) {
                 $done++;
                 $progress && $progress($done, $total);
@@ -313,6 +351,13 @@ class FileOperations
         foreach (array_keys($sources) as $full) {
             if ($full === $root) {
                 throw new RuntimeException('The root folder cannot be deleted.');
+            }
+
+            if ($this->site->separate()) {
+                $this->removeAsSite($full, $root);
+                $progress && $progress(++$done, count($sources));
+
+                continue;
             }
 
             $this->remove($full, $root, function () use (&$done, $total, $progress) {
@@ -560,6 +605,31 @@ class FileOperations
         if (! rmdir($resolved)) {
             throw new RuntimeException('Could not delete '.basename($resolved).'.');
         }
+    }
+
+    /**
+     * The same checks as remove(), then one `rm -rf` as the site user (which never follows links).
+     */
+    private function removeAsSite(string $full, string $root): void
+    {
+        $check = is_link($full) ? realpath(dirname($full)) : realpath($full);
+
+        if ($check === false || ! $this->paths->inside($root, $check) || (! is_link($full) && $check === $root)) {
+            throw new RuntimeException('That path is outside the root folder.');
+        }
+
+        $this->files->delete(is_link($full) ? $full : $check);
+    }
+
+    private function temporaryZip(): string
+    {
+        $directory = storage_path('app/zips');
+
+        if (! is_dir($directory)) {
+            @mkdir($directory, 0700, true);
+        }
+
+        return $directory.DIRECTORY_SEPARATOR.bin2hex(random_bytes(8)).'.zip';
     }
 
     private function requireZip(): void

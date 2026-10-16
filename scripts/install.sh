@@ -387,10 +387,7 @@ fi
 if ! command -v pm2 >/dev/null 2>&1 || ! command -v n >/dev/null 2>&1; then
   npm install -g pm2 n
 fi
-# Node sites run in root's PM2 daemon; pm2-root restores them after a reboot.
-if ! systemctl is-enabled --quiet pm2-root 2>/dev/null; then
-  HOME=/root PM2_HOME=/root/.pm2 pm2 startup systemd -u root --hp /root >/dev/null || true
-fi
+# Node sites run in www-data's PM2 daemon; scripts/privileges.sh enables pm2-www-data below.
 for node_major in 20 22 24; do
   if ! compgen -G "/usr/local/n/versions/node/${node_major}.*" >/dev/null; then
     n "$node_major" || true
@@ -524,9 +521,9 @@ $values = [
   "DB_DATABASE" => "laravelify",
   "DB_USERNAME" => "root",
   "DB_PASSWORD" => $password,
-  "SESSION_DRIVER" => "redis",
-  "QUEUE_CONNECTION" => "redis",
-  "CACHE_STORE" => "redis",
+  "SESSION_DRIVER" => "database",
+  "QUEUE_CONNECTION" => "database",
+  "CACHE_STORE" => "database",
   "REDIS_CLIENT" => "phpredis",
   "REDIS_HOST" => "127.0.0.1",
   "REDIS_PASSWORD" => "null",
@@ -658,56 +655,14 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl reload nginx
 
-install -d -o www-data -g www-data \
-  "$APP_ROOT/storage/logs" \
-  "$APP_ROOT/storage/framework/cache" \
-  "$APP_ROOT/storage/framework/sessions" \
-  "$APP_ROOT/storage/framework/views" \
-  "$APP_ROOT/bootstrap/cache" \
-  /var/www
-chown -R www-data:www-data "$APP_ROOT/storage" "$APP_ROOT/bootstrap/cache"
-chmod 755 "$APP_ROOT/scripts/host-apply.sh" "$APP_ROOT/scripts/with-node.sh"
+install -d -o www-data -g www-data -m 0755 /var/www
+chmod 755 "$APP_ROOT"/scripts/*.sh
 
-cat > /etc/sudoers.d/laravelify <<EOF
-www-data ALL=(root) NOPASSWD: ${APP_ROOT}/scripts/host-apply.sh
-EOF
-chmod 440 /etc/sudoers.d/laravelify
-visudo -cf /etc/sudoers.d/laravelify
+# The panel's own user (laravelify) with its own PHP-FPM pool, queue worker, and scheduler;
+# websites stay www-data and cannot read the panel. Also writes the sudo rule and Supervisor
+# programs, and sets the owners and permissions of the panel's files.
+LARAVELIFY_ROOT="$APP_ROOT" LARAVELIFY_PHP="php${PANEL_PHP}" bash "$APP_ROOT/scripts/privileges.sh"
 bash "$APP_ROOT/scripts/host-apply.sh" phpmyadmin-hide all || true
-
-cat > /etc/supervisor/conf.d/laravelify-panel.conf <<EOF
-[program:laravelify-queue]
-command=php ${APP_ROOT}/artisan queue:work --sleep=1 --tries=1 --timeout=3600
-directory=${APP_ROOT}
-autostart=true
-autorestart=true
-stopasgroup=true
-killasgroup=true
-user=www-data
-environment=HOME="${APP_ROOT}/storage/app/process-home",COMPOSER_HOME="${APP_ROOT}/storage/app/process-home/.composer"
-redirect_stderr=true
-stdout_logfile=${APP_ROOT}/storage/logs/panel-queue.log
-stdout_logfile_maxbytes=10MB
-stdout_logfile_backups=3
-
-[program:laravelify-scheduler]
-command=php ${APP_ROOT}/artisan schedule:work
-directory=${APP_ROOT}
-autostart=true
-autorestart=true
-stopasgroup=true
-killasgroup=true
-user=www-data
-environment=HOME="${APP_ROOT}/storage/app/process-home"
-redirect_stderr=true
-stdout_logfile=${APP_ROOT}/storage/logs/panel-scheduler.log
-stdout_logfile_maxbytes=10MB
-stdout_logfile_backups=3
-EOF
-
-install -d -o www-data -g www-data "$APP_ROOT/storage/app/process-home" "$APP_ROOT/storage/app/process-home/.composer" "$APP_ROOT/storage/app/process-home/.npm" "$APP_ROOT/storage/app/process-home/.corepack"
-supervisorctl reread || true
-supervisorctl update || true
 
 if ! command -v cloudflared >/dev/null 2>&1; then
   case "$(uname -m)" in

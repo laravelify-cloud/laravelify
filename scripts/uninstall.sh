@@ -104,8 +104,19 @@ rm -f /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/p
 if command -v pm2 >/dev/null 2>&1; then
   pm2 kill || true
   pm2 unstartup systemd || true
+  if [[ -d /var/lib/laravelify/home/.pm2 ]]; then
+    runuser -u www-data -- env PM2_HOME=/var/lib/laravelify/home/.pm2 pm2 kill || true
+  fi
+  pm2 unstartup systemd -u www-data --hp /var/lib/laravelify/home || true
 fi
 rm -rf /root/.pm2
+systemctl disable --now pm2-www-data >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/pm2-www-data.service /etc/php/*/fpm/pool.d/laravelify.conf
+rm -rf /var/lib/laravelify /var/log/laravelify
+# nginx's workers ran as laravelify-web; nginx is purged below, so only the users go.
+userdel laravelify >/dev/null 2>&1 || true
+userdel laravelify-web >/dev/null 2>&1 || true
+groupdel laravelify >/dev/null 2>&1 || true
 
 echo "Removing apt repositories added for PHP, MySQL, and Node.js."
 for source in /etc/apt/sources.list.d/*; do

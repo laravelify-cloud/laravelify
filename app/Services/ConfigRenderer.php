@@ -131,6 +131,7 @@ NGINX;
         if (! str_contains($process, 'realtime/server.js') && ! str_contains($process, 'node server.js')) {
             $slug = $website->slug;
             $path = $website->deploy_path;
+            $logs = self::supervisorLogDirectory($slug);
             $website->process_config = rtrim($process).<<<CONF
 
 
@@ -144,7 +145,7 @@ killasgroup=true
 user=www-data
 environment=HOME="/var/www"
 redirect_stderr=true
-stdout_logfile={$path}/storage/logs/socketio.log
+stdout_logfile={$logs}/socketio.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=3
 CONF;
@@ -329,11 +330,90 @@ server {
 NGINX;
     }
 
+    /**
+     * Supervisor writes its programs' logs as root, so they live in a root-owned folder: a log
+     * file inside the site folder could be swapped for a link to any file on the server.
+     */
+    public static function supervisorLogDirectory(string $slug): string
+    {
+        return rtrim((string) config('laravelify.site_log_dir'), '/').'/'.$slug;
+    }
+
+    /**
+     * Make a site's Supervisor config safe to apply: every program runs as the site user, and
+     * its logs go to the site's log folder (a program's own log name is kept). host-apply.sh
+     * refuses anything else.
+     */
+    public static function secureSupervisor(string $config, string $slug): string
+    {
+        $logs = self::supervisorLogDirectory($slug);
+        $user = (string) (config('laravelify.site_user') ?: 'www-data');
+        $lines = preg_split('/\R/', $config) ?: [];
+        $output = [];
+        $program = null;
+        $hasUser = false;
+
+        $closeProgram = function () use (&$output, &$program, &$hasUser, $user): void {
+            if ($program !== null && ! $hasUser) {
+                // Insert after the last setting of the section, before trailing blank lines.
+                $at = count($output);
+
+                while ($at > 0 && trim($output[$at - 1]) === '') {
+                    $at--;
+                }
+
+                array_splice($output, $at, 0, ['user='.$user]);
+            }
+
+            $program = null;
+            $hasUser = false;
+        };
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+
+            if (preg_match('/^\[([^\]]+)\]$/', $trimmed, $match) === 1) {
+                $closeProgram();
+                $program = str_starts_with($match[1], 'program:') ? substr($match[1], 8) : null;
+                $output[] = $line;
+
+                continue;
+            }
+
+            if ($program !== null && preg_match('/^user\s*[=:]/i', $trimmed) === 1) {
+                $output[] = 'user='.$user;
+                $hasUser = true;
+
+                continue;
+            }
+
+            if ($program !== null && preg_match('/^(stdout_logfile|stderr_logfile)\s*[=:]\s*(\S+)\s*(?:[;#].*)?$/i', $trimmed, $match) === 1) {
+                $value = $match[2];
+
+                if (! in_array(strtoupper($value), ['AUTO', 'NONE'], true) && ! str_starts_with($value, $logs.'/')) {
+                    $name = preg_replace('/[^A-Za-z0-9_.-]/', '-', basename($value)) ?: $program.'.log';
+                    $value = $logs.'/'.(str_ends_with($name, '.log') ? $name : $name.'.log');
+                }
+
+                $output[] = $match[1].'='.$value;
+
+                continue;
+            }
+
+            $output[] = $line;
+        }
+
+        $closeProgram();
+
+        return implode("\n", $output);
+    }
+
     private function supervisor(Website $website): string
     {
         $php = '/usr/bin/php'.($website->php_version ?: '8.4');
         $path = $website->deploy_path;
         $slug = $website->slug;
+        $logs = self::supervisorLogDirectory($slug);
         $reverb = '';
 
         if ($website->enable_reverb && $website->reverb_port) {
@@ -349,7 +429,7 @@ stopasgroup=true
 killasgroup=true
 user=www-data
 redirect_stderr=true
-stdout_logfile={$path}/storage/logs/reverb.log
+stdout_logfile={$logs}/reverb.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=3
 CONF;
@@ -369,7 +449,7 @@ stopasgroup=true
 killasgroup=true
 user=www-data
 redirect_stderr=true
-stdout_logfile={$path}/storage/logs/queue.log
+stdout_logfile={$logs}/queue.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=3
 stopwaitsecs=120
@@ -383,7 +463,7 @@ stopasgroup=true
 killasgroup=true
 user=www-data
 redirect_stderr=true
-stdout_logfile={$path}/storage/logs/scheduler.log
+stdout_logfile={$logs}/scheduler.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=3
 {$reverb}

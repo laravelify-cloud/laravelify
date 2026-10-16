@@ -18,6 +18,17 @@ class HostWriter
     }
 
     /**
+     * Only a site's workers: its Supervisor programs or its PM2 app. Used by updates; the
+     * site's .env and nginx files are left as they are.
+     */
+    public function writeProcesses(Website $website): string
+    {
+        $this->renderSite($website);
+
+        return $this->apply(['site-processes', $website->slug, $website->type]);
+    }
+
+    /**
      * Only the nginx side of a site (security rules, blocked IPs, request log),
      * without restarting its workers.
      */
@@ -48,6 +59,17 @@ class HostWriter
         // Every site includes its security snippet: it also carries the Monitoring request log.
         if ($security->ensureInclude($website)) {
             $website->save();
+        }
+
+        // Supervisor programs run as the site user and log outside the site folder (host-apply.sh
+        // refuses anything else). Older configs are brought up to date here and saved.
+        if ($website->isLaravel()) {
+            $secured = ConfigRenderer::secureSupervisor((string) $website->process_config, $website->slug);
+
+            if (trim($secured) !== trim((string) $website->process_config)) {
+                $website->process_config = $secured;
+                $website->save();
+            }
         }
 
         File::put($directory.'/nginx.conf', (string) $website->nginx_config);
@@ -139,9 +161,10 @@ UNIT;
             return;
         }
 
-        $owner = posix_getpwnam('www-data');
+        // Run as root (an artisan command during an update): hand the folders to the panel user.
+        $owner = posix_getpwuid((int) @fileowner(storage_path('app')));
 
-        if ($owner === false) {
+        if ($owner === false || $owner['name'] === 'root') {
             return;
         }
 
@@ -169,6 +192,18 @@ UNIT;
     }
 
     /**
+     * Empty one of a site's Supervisor program logs (root's files in /var/log/laravelify/sites).
+     */
+    public function clearProgramLog(Website $website, string $file): string
+    {
+        if (preg_match('/^[A-Za-z0-9_.-]+\.log$/', $file) !== 1) {
+            throw new RuntimeException('Unknown log.');
+        }
+
+        return $this->apply(['program-log-clear', $website->slug, $file]);
+    }
+
+    /**
      * Refresh apt and list upgradable packages (read-only otherwise).
      */
     public function serverPatches(): string
@@ -185,7 +220,7 @@ UNIT;
     }
 
     /**
-     * Make a folder outside /var/www that the panel can write backups into (owned by www-data).
+     * Make a folder outside /var/www that the panel can write backups into (owned by the panel user).
      */
     public function backupFolder(string $path): string
     {

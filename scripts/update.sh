@@ -84,8 +84,7 @@ tar -C "${SOURCE}" \
   -cf - . | tar -C "${APP_ROOT}" -xf - --no-overwrite-dir
 
 sed -i 's/\r$//' "${APP_ROOT}"/scripts/*.sh
-chmod 755 "${APP_ROOT}"
-chmod 755 "${APP_ROOT}/scripts/host-apply.sh" "${APP_ROOT}/scripts/with-node.sh" "${APP_ROOT}/scripts/update.sh"
+chmod 755 "${APP_ROOT}"/scripts/*.sh
 
 cd "${APP_ROOT}"
 export COMPOSER_ALLOW_SUPERUSER=1
@@ -98,50 +97,24 @@ composer install --no-dev --optimize-autoloader --no-interaction --no-ansi
 "${PHP_BIN}" artisan laravelify:upload-limits --no-ansi || true
 bash "${APP_ROOT}/scripts/host-apply.sh" phpmyadmin-hide all || true
 
-# The steps above run as root. The panel runs as www-data and must own what it writes:
-# logs, caches, and the home folder its tools use (older installs made that one as root).
-install -d "${APP_ROOT}/storage/app/process-home/.composer" "${APP_ROOT}/storage/app/process-home/.npm" "${APP_ROOT}/storage/app/process-home/.corepack"
-chown -R www-data:www-data "${APP_ROOT}/storage" "${APP_ROOT}/bootstrap/cache"
-systemctl reload php8.4-fpm
+# The panel runs as its own user (laravelify), websites as www-data. The first update with this
+# moves an older install over (users, PHP-FPM pool, nginx, sudo, Supervisor, PM2); later ones
+# put owners and permissions back after the copy above. See scripts/privileges.sh.
+LARAVELIFY_ROOT="${APP_ROOT}" LARAVELIFY_PHP="${PHP_BIN}" bash "${APP_ROOT}/scripts/privileges.sh"
+systemctl reload "php${PHP_BIN#php}-fpm" || true
 
 # Deploys run inside the queue worker, a long-running process that keeps the old
 # code in memory. queue:restart lets it finish the current job (a deploy in
 # progress is not killed) and exit; Supervisor starts it again on the new code.
-"${PHP_BIN}" artisan queue:restart --no-ansi
+runuser -u laravelify -- "${PHP_BIN}" "${APP_ROOT}/artisan" queue:restart --no-ansi || true
 supervisorctl start laravelify-queue >/dev/null 2>&1 || true
-
-# The scheduler runs the monitor behind the Telegram alerts (sites, workers,
-# disk, patches). Older installs did not have it.
-if ! grep -qs '^\[program:laravelify-scheduler\]' /etc/supervisor/conf.d/*.conf; then
-  cat > /etc/supervisor/conf.d/laravelify-scheduler.conf <<EOF
-[program:laravelify-scheduler]
-command=${PHP_BIN} ${APP_ROOT}/artisan schedule:work
-directory=${APP_ROOT}
-autostart=true
-autorestart=true
-stopasgroup=true
-killasgroup=true
-user=www-data
-environment=HOME="${APP_ROOT}/storage/app/process-home"
-redirect_stderr=true
-stdout_logfile=${APP_ROOT}/storage/logs/panel-scheduler.log
-stdout_logfile_maxbytes=10MB
-stdout_logfile_backups=3
-EOF
-  supervisorctl reread >/dev/null || true
-  supervisorctl update || true
-else
-  # schedule:work also keeps the old code in memory.
-  supervisorctl restart laravelify-scheduler >/dev/null 2>&1 || true
-fi
+# schedule:work also keeps the old code in memory.
+supervisorctl restart laravelify-scheduler >/dev/null 2>&1 || true
 
 # Backups to S3 use rclone. Older installs do not have it yet; add it once, quietly.
 if ! command -v rclone >/dev/null 2>&1; then
   echo "Installing rclone for backups..."
   apt-get install -y rclone >/dev/null 2>&1 || echo "Could not install rclone. Backups need it: sudo apt-get install -y rclone" >&2
 fi
-
-# Next.js sites: one PM2 daemon under /root, saved, and restored on boot by pm2-root.
-bash "${APP_ROOT}/scripts/host-apply.sh" pm2-boot all || echo "PM2 boot setup failed; run: sudo bash ${APP_ROOT}/scripts/host-apply.sh pm2-boot all" >&2
 
 echo "Panel updated."

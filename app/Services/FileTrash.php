@@ -20,7 +20,7 @@ class FileTrash
     /** Folders bigger than this many entries are not measured; their size shows as unknown. */
     private const SIZE_SCAN_LIMIT = 20000;
 
-    public function __construct(private SitePaths $paths, private FileOperations $operations, private TwoFactor $twoFactor) {}
+    public function __construct(private SitePaths $paths, private FileOperations $operations, private TwoFactor $twoFactor, private SiteFiles $files) {}
 
     /**
      * Move entries of a root folder to the trash. Returns how many were moved.
@@ -48,12 +48,11 @@ class FileTrash
                 'user_id' => $userId,
             ]);
 
-            File::ensureDirectoryExists($item->folder());
-
             try {
-                $this->transfer($full, $item->storedPath());
+                $this->files->makeDirectory($item->folder(), 0750, true);
+                $this->files->move($full, $item->storedPath());
             } catch (RuntimeException $exception) {
-                File::deleteDirectory($item->folder());
+                $this->deleteFolder($item);
                 $item->delete();
 
                 throw $exception;
@@ -80,8 +79,8 @@ class FileTrash
         $parent = $item->parentPath();
         $parentFull = rtrim($root, '/\\').($parent === '' ? '' : DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $parent));
 
-        if (! is_dir($parentFull) && ! mkdir($parentFull, 0755, true)) {
-            throw new RuntimeException('Could not create the folder '.$parent.' again.');
+        if (! is_dir($parentFull)) {
+            $this->files->makeDirectory($parentFull, 0755, true);
         }
 
         // The parent must still be inside the root (it may have been replaced by a link).
@@ -93,8 +92,8 @@ class FileTrash
             $target = $this->operations->uniquePath($parentFull, $this->restoredName($item), ! $item->is_dir);
         }
 
-        $this->transfer($item->storedPath(), $target);
-        File::deleteDirectory($item->folder());
+        $this->files->move($item->storedPath(), $target);
+        $this->deleteFolder($item);
         $item->delete();
 
         return $this->paths->relative($root, $target);
@@ -105,7 +104,7 @@ class FileTrash
      */
     public function purge(TrashItem $item): void
     {
-        File::deleteDirectory($item->folder());
+        $this->deleteFolder($item);
         $item->delete();
     }
 
@@ -119,26 +118,14 @@ class FileTrash
     }
 
     /**
-     * Rename when it can; copy and delete when the trash is on another disk.
+     * The trash folder is owned by the site user, so the site user empties it.
      */
-    private function transfer(string $from, string $to): void
+    private function deleteFolder(TrashItem $item): void
     {
-        if (@rename($from, $to)) {
-            return;
-        }
-
-        if (is_dir($from) && ! is_link($from)) {
-            if (! File::copyDirectory($from, $to)) {
-                throw new RuntimeException('Could not move '.basename($from).'.');
-            }
-
-            File::deleteDirectory($from);
-
-            return;
-        }
-
-        if (! @copy($from, $to) || ! @unlink($from)) {
-            throw new RuntimeException('Could not move '.basename($from).'.');
+        try {
+            $this->files->delete($item->folder());
+        } catch (RuntimeException) {
+            // Already gone, or a leftover the next purge removes.
         }
     }
 

@@ -11,6 +11,19 @@ return [
     // Where the global file manager starts. Empty uses sites_root. Set to / to browse the whole server.
     'files_root' => env('LARAVELIFY_FILES_ROOT'),
 
+    // The panel runs as its own user (laravelify). Websites, their workers, deploys, and the
+    // terminal run as the site user, which owns the site folders and cannot read the panel.
+    'site_user' => env('LARAVELIFY_SITE_USER', 'www-data'),
+
+    // HOME and the Composer, npm, and Corepack caches of deploy commands (owned by the site user).
+    'site_home' => env('LARAVELIFY_SITE_HOME', '/var/lib/laravelify/home'),
+
+    // The file manager's trash (owned by the site user, which moves files in and out).
+    'trash_root' => env('LARAVELIFY_TRASH_ROOT', '/var/lib/laravelify/trash'),
+
+    // Supervisor program logs, one folder per site (root-owned, readable by the panel).
+    'site_log_dir' => env('LARAVELIFY_SITE_LOG_DIR', '/var/log/laravelify/sites'),
+
     'node_port_start' => 3000,
 
     'http_port_start' => 8081,

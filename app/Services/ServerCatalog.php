@@ -122,12 +122,29 @@ max_execution_time=600";
 NGINX;
     }
 
+    /** The panel's own PHP-FPM pool, as the laravelify user. Only nginx may open it. */
+    public const PANEL_SOCKET = 'unix:/run/php/laravelify.sock';
+
+    /** Any socket of the panel's or the sites' pools, in nginx files. */
+    public const SOCKET_PATTERN = '#unix:/run/php/(?:php[0-9.]+-fpm|laravelify)\.sock#';
+
+    /**
+     * Where nginx sends the panel's PHP (the sign-in script, the access check) and phpMyAdmin.
+     * Once the panel has its own user, that is the panel's pool: phpMyAdmin in the sites'
+     * pool would leave its sessions and config readable to website code.
+     */
+    public static function panelSocket(string $phpVersion = '8.4'): string
+    {
+        return app(SiteUser::class)->separate() ? self::PANEL_SOCKET : 'unix:/run/php/php'.$phpVersion.'-fpm.sock';
+    }
+
     /**
      * The nginx location that serves Laravelify's one-click sign-in script
      * (scripts/phpmyadmin-signon.php) on the phpMyAdmin domain.
      */
-    public static function signonLocation(string $socket = 'unix:/run/php/php8.4-fpm.sock'): string
+    public static function signonLocation(?string $socket = null): string
     {
+        $socket ??= self::panelSocket();
         $script = base_path('scripts/phpmyadmin-signon.php');
 
         return <<<NGINX
@@ -156,7 +173,9 @@ NGINX;
             return $config;
         }
 
-        $socket = preg_match('#unix:/run/php/php[0-9.]+-fpm\.sock#', $config, $match) === 1 ? $match[0] : 'unix:/run/php/php8.4-fpm.sock';
+        $socket = app(SiteUser::class)->separate()
+            ? self::PANEL_SOCKET
+            : (preg_match(self::SOCKET_PATTERN, $config, $match) === 1 ? $match[0] : self::panelSocket());
         $updated = preg_replace('/^[ \t]*(location ~ \\\\\.php\$ \{)/m', '    '.trim(self::signonLocation($socket))."\n\n    $1", $config, 1, $count);
 
         if (is_string($updated) && $count === 1) {

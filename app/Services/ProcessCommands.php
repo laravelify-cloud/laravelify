@@ -6,9 +6,9 @@ use Throwable;
 
 /**
  * PM2 and Supervisor commands typed in the terminal. Terminal commands run as
- * www-data, but site apps live under root's PM2 daemon and Supervisor needs
- * root, so these few commands go through ServerProcesses (sudo host-apply.sh)
- * instead. Anything else returns null and runs as a normal command.
+ * www-data in a sandbox that cannot reach the PM2 daemon or the Supervisor socket,
+ * so these few commands go through ServerProcesses (sudo host-apply.sh) instead.
+ * Anything else returns null and runs as a normal command.
  */
 class ProcessCommands
 {

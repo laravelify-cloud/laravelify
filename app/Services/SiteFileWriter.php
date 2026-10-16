@@ -26,7 +26,7 @@ class SiteFileWriter
     /** The most an archive may hold once unpacked. */
     private const MAX_EXTRACTED_BYTES = 200 * 1024 * 1024;
 
-    public function __construct(private SitePaths $paths) {}
+    public function __construct(private SitePaths $paths, private SiteFiles $files) {}
 
     /**
      * Write one file. Missing folders on the way are created.
@@ -186,8 +186,8 @@ class SiteFileWriter
                 throw new RuntimeException('"'.$part.'" in that path is a file or a link, so nothing was written.');
             }
 
-            if (! is_dir($next) && ! mkdir($next, 0755) && ! is_dir($next)) {
-                throw new RuntimeException('Could not create the folder '.$part.'.');
+            if (! is_dir($next)) {
+                $this->files->makeDirectory($next);
             }
 
             $current = $this->paths->resolveIn($root, $this->paths->relative($root, $next));
@@ -198,19 +198,7 @@ class SiteFileWriter
 
     private function put(string $target, string $contents): void
     {
-        $temporary = $target.'.laravelify-'.bin2hex(random_bytes(4));
-
-        if (file_put_contents($temporary, $contents) === false) {
-            throw new RuntimeException('Could not write '.basename($target).'.');
-        }
-
-        @chmod($temporary, 0640);
-
-        if (! @rename($temporary, $target)) {
-            @unlink($temporary);
-
-            throw new RuntimeException('Could not write '.basename($target).'.');
-        }
+        $this->files->put($target, $contents, 0640);
     }
 
     private function guardSize(int $bytes): void

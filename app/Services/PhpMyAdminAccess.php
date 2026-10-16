@@ -96,7 +96,7 @@ class PhpMyAdminAccess
             ."    location = /__laravelify_access {\n"
             ."        internal;\n"
             ."        auth_request off;\n"
-            ."        fastcgi_pass unix:/run/php/php{$phpVersion}-fpm.sock;\n"
+            .'        fastcgi_pass '.ServerCatalog::panelSocket($phpVersion).";\n"
             ."        fastcgi_pass_request_body off;\n"
             ."        fastcgi_param CONTENT_LENGTH \"\";\n"
             ."        fastcgi_param CONTENT_TYPE \"\";\n"

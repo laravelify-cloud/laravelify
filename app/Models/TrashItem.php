@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SiteUser;
 use Database\Factories\TrashItemFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Number;
 
 /**
- * A file or folder deleted in the file manager. It is kept in storage/app/trash/{id}/{name}
+ * A file or folder deleted in the file manager. It is kept in the trash folder (SiteUser::trashRoot()), as {id}/{name}
  * until it is restored or deleted for good. Deleting the same path again adds another item,
  * so every deleted version can be brought back.
  */
@@ -47,7 +48,7 @@ class TrashItem extends Model
      */
     public function folder(): string
     {
-        return storage_path('app/trash/'.$this->id);
+        return app(SiteUser::class)->trashRoot().DIRECTORY_SEPARATOR.$this->id;
     }
 
     /**

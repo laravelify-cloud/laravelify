@@ -19,6 +19,8 @@ class Deployer
         private HostWriter $hostWriter,
         private DatabaseProvisioner $databases,
         private DeploymentNotifier $notifier,
+        private SiteFiles $files,
+        private SiteUser $site,
     ) {}
 
     public function run(Deployment $deployment): void
@@ -86,8 +88,8 @@ class Deployer
             $this->syncEnvBack($website, $log);
             $log->line($this->hostWriter->writeWebsite($website));
 
-            $sha = trim($this->must($this->runner->run(['git', '-C', $website->deploy_path, 'rev-parse', 'HEAD']), $log)->output);
-            $commit = $this->runner->run(['git', '-C', $website->deploy_path, 'log', '-1', '--format=%an%n%B']);
+            $sha = trim($this->must($this->runner->runAsSite(['git', '-C', $website->deploy_path, 'rev-parse', 'HEAD']), $log)->output);
+            $commit = $this->runner->runAsSite(['git', '-C', $website->deploy_path, 'log', '-1', '--format=%an%n%B']);
             [$author, $message] = array_pad(explode("\n", trim($commit->output), 2), 2, '');
 
             $deployment->update([
@@ -132,30 +134,32 @@ class Deployer
         if (is_dir($path.'/.git')) {
             // Never trust the stored origin: it may hold an expired GitHub App token from
             // an earlier clone. Keep origin token-free and fetch with a fresh token each time.
-            $this->must($this->runner->run(['git', '-C', $path, 'remote', 'set-url', 'origin', (string) $website->repository]), $log);
+            $this->must($this->runner->runAsSite(['git', '-C', $path, 'remote', 'set-url', 'origin', (string) $website->repository]), $log);
             GitInput::assertSafe((string) $website->repository, $website->branch);
-            $this->must($this->runner->run([
+            $this->must($this->runner->runAsSite([
                 'git', '-C', $path, 'fetch', '--', $repository,
                 '+refs/heads/'.$website->branch.':refs/remotes/origin/'.$website->branch,
             ]), $log);
-            $this->must($this->runner->run(['git', '-C', $path, 'checkout', '-B', $website->branch, 'origin/'.$website->branch]), $log);
-            $this->must($this->runner->run(['git', '-C', $path, 'reset', '--hard', 'origin/'.$website->branch]), $log);
+            $this->must($this->runner->runAsSite(['git', '-C', $path, 'checkout', '-B', $website->branch, 'origin/'.$website->branch]), $log);
+            $this->must($this->runner->runAsSite(['git', '-C', $path, 'reset', '--hard', 'origin/'.$website->branch]), $log);
 
             return;
         }
 
-        $staging = storage_path('app/checkouts/'.$website->slug);
-        File::deleteDirectory($staging);
-        File::ensureDirectoryExists(storage_path('app/checkouts'));
+        // The clone is made by the site user, in its own home folder.
+        $checkouts = $this->site->home().DIRECTORY_SEPARATOR.'checkouts';
+        $staging = $checkouts.DIRECTORY_SEPARATOR.$website->slug;
+        $this->files->delete($staging);
+        $this->files->makeDirectory($checkouts, 0700, true);
 
         GitInput::assertSafe((string) $website->repository, $website->branch);
-        $this->must($this->runner->run([
+        $this->must($this->runner->runAsSite([
             'git', 'clone', '--branch', $website->branch, '--single-branch', '--', $repository, $staging,
         ]), $log);
         // The clone URL carries a short-lived token. Do not leave it in .git/config.
-        $this->must($this->runner->run(['git', '-C', $staging, 'remote', 'set-url', 'origin', (string) $website->repository]), $log);
-        $this->must($this->runner->run(['cp', '-a', $staging.'/.', $path.'/']), $log);
-        File::deleteDirectory($staging);
+        $this->must($this->runner->runAsSite(['git', '-C', $staging, 'remote', 'set-url', 'origin', (string) $website->repository]), $log);
+        $this->must($this->runner->runAsSite(['cp', '-a', $staging.'/.', $path.'/']), $log);
+        $this->files->delete($staging);
     }
 
     /**
@@ -183,8 +187,8 @@ class Deployer
 
     private function writeEnv(Website $website, DeploymentLogger $log): void
     {
-        File::ensureDirectoryExists($website->deploy_path);
-        File::put($website->deploy_path.'/.env', (string) $website->env_content);
+        $this->files->makeDirectory($website->deploy_path, 0755, true);
+        $this->files->put($website->deploy_path.'/.env', (string) $website->env_content, 0640);
         $log->line('Wrote '.$website->deploy_path.'/.env');
     }
 
@@ -212,12 +216,12 @@ class Deployer
         }
 
         if (filled($website->db_name)) {
-            $this->must($this->runner->run([$php, $path.'/artisan', 'migrate', '--force', '--no-ansi'], $path), $log);
+            $this->must($this->runner->runAsSite([$php, $path.'/artisan', 'migrate', '--force', '--no-ansi'], $path), $log);
         } else {
             $log->line('Skipped migrations. Create a MySQL database for this site before migrating.');
         }
 
-        $this->must($this->runner->run([$php, $path.'/artisan', 'optimize', '--no-ansi'], $path), $log);
+        $this->must($this->runner->runAsSite([$php, $path.'/artisan', 'optimize', '--no-ansi'], $path), $log);
         $this->installFrontend($website, $log);
         $this->installSocketIo($website, $log);
     }
@@ -250,7 +254,7 @@ class Deployer
         $this->installDependencies($website, $log);
         $this->buildSite($website, $log);
 
-        File::put($website->deploy_path.'/.laravelify-built', now()->toIso8601String()."\n");
+        $this->files->put($website->deploy_path.'/.laravelify-built', now()->toIso8601String()."\n");
         $log->line('Start command: '.($website->startCommand() ?: 'npm start'));
     }
 
@@ -274,7 +278,7 @@ class Deployer
     private function composerInstall(string $path, DeploymentLogger $log): void
     {
         $composer = is_executable('/usr/local/bin/composer') ? '/usr/local/bin/composer' : 'composer';
-        $this->must($this->runner->run([$composer, 'install', '--no-dev', '--optimize-autoloader', '--no-interaction', '--no-ansi', '--no-progress'], $path), $log);
+        $this->must($this->runner->runAsSite([$composer, 'install', '--no-dev', '--optimize-autoloader', '--no-interaction', '--no-ansi', '--no-progress'], $path), $log);
     }
 
     /**
@@ -329,7 +333,7 @@ class Deployer
 
     private function runShell(string $withNode, string $node, string $path, string $command, DeploymentLogger $log): void
     {
-        $this->must($this->runner->run(['bash', $withNode, $node, 'bash', '-c', $command], $path), $log);
+        $this->must($this->runner->runAsSite(['bash', $withNode, $node, 'bash', '-c', $command], $path), $log);
     }
 
     private function linkBuildOutput(Website $website, DeploymentLogger $log): void
@@ -346,15 +350,11 @@ class Deployer
 
         $link = $path.'/public_html';
 
-        if (is_link($link) || is_file($link)) {
-            @unlink($link);
-        } elseif (is_dir($link)) {
+        if (is_dir($link) && ! is_link($link)) {
             throw new RuntimeException('public_html is a real folder in your repository. Rename it, because Laravelify uses that name for the build output.');
         }
 
-        if (! @symlink($output, $link)) {
-            throw new RuntimeException('Could not link public_html to '.$output.'.');
-        }
+        $this->files->symlink($output, $link);
 
         $log->line('Serving '.$output.' (public_html → '.$output.').');
     }
@@ -369,7 +369,7 @@ class Deployer
 
         $withNode = base_path('scripts/with-node.sh');
         $node = (string) ($website->node_version ?: '22');
-        File::deleteDirectory($path.'/node_modules');
+        $this->files->delete($path.'/node_modules');
         $this->installPackages($withNode, $node, $path, $log);
         $this->runScript($withNode, $node, $path, 'build', $log);
     }
@@ -393,8 +393,8 @@ class Deployer
 
         match ($manager) {
             // Corepack runs the pnpm/yarn version pinned in package.json "packageManager".
-            'pnpm' => $this->must($this->runner->run(['bash', $withNode, $node, 'corepack', 'pnpm', 'install', '--frozen-lockfile'], $path), $log),
-            'yarn' => $this->must($this->runner->run(['bash', $withNode, $node, 'corepack', 'yarn', 'install'], $path), $log),
+            'pnpm' => $this->must($this->runner->runAsSite(['bash', $withNode, $node, 'corepack', 'pnpm', 'install', '--frozen-lockfile'], $path), $log),
+            'yarn' => $this->must($this->runner->runAsSite(['bash', $withNode, $node, 'corepack', 'yarn', 'install'], $path), $log),
             default => $this->npm($withNode, $node, $path, [is_file($path.'/package-lock.json') ? 'ci' : 'install'], $log),
         };
     }
@@ -402,8 +402,8 @@ class Deployer
     private function runScript(string $withNode, string $node, string $path, string $script, DeploymentLogger $log): void
     {
         match ($this->packageManager($path)) {
-            'pnpm' => $this->must($this->runner->run(['bash', $withNode, $node, 'corepack', 'pnpm', 'run', $script], $path), $log),
-            'yarn' => $this->must($this->runner->run(['bash', $withNode, $node, 'corepack', 'yarn', 'run', $script], $path), $log),
+            'pnpm' => $this->must($this->runner->runAsSite(['bash', $withNode, $node, 'corepack', 'pnpm', 'run', $script], $path), $log),
+            'yarn' => $this->must($this->runner->runAsSite(['bash', $withNode, $node, 'corepack', 'yarn', 'run', $script], $path), $log),
             default => $this->npm($withNode, $node, $path, ['run', $script], $log),
         };
     }
@@ -421,20 +421,20 @@ class Deployer
             throw new RuntimeException('next build did not create .next/standalone/server.js. Add output: "standalone" to next.config so PM2 can start the app.');
         }
 
-        File::deleteDirectory($standalone.'/public');
-        File::deleteDirectory($standalone.'/.next/static');
+        $this->files->delete($standalone.'/public');
+        $this->files->delete($standalone.'/.next/static');
 
         if (is_dir($path.'/public')) {
-            File::copyDirectory($path.'/public', $standalone.'/public');
+            $this->files->copy($path.'/public', $standalone.'/public');
         }
 
         if (is_dir($path.'/.next/static')) {
-            File::ensureDirectoryExists($standalone.'/.next');
-            File::copyDirectory($path.'/.next/static', $standalone.'/.next/static');
+            $this->files->makeDirectory($standalone.'/.next', 0755, true);
+            $this->files->copy($path.'/.next/static', $standalone.'/.next/static');
         }
 
         if (is_file($path.'/.env')) {
-            File::copy($path.'/.env', $standalone.'/.env');
+            $this->files->copy($path.'/.env', $standalone.'/.env');
         }
 
         $log->line('Copied public/, .next/static/, and .env into .next/standalone.');
@@ -450,7 +450,7 @@ class Deployer
 
         $withNode = base_path('scripts/with-node.sh');
         $install = is_file($realtime.'/package-lock.json') ? 'ci' : 'install';
-        File::deleteDirectory($realtime.'/node_modules');
+        $this->files->delete($realtime.'/node_modules');
         $this->npm($withNode, '22', $realtime, [$install, '--omit=dev'], $log);
 
         if (app(ConfigRenderer::class)->attachSocketIo($website)) {
@@ -463,7 +463,7 @@ class Deployer
      */
     private function npm(string $withNode, string $node, string $path, array $arguments, DeploymentLogger $log): void
     {
-        $this->must($this->runner->run(['bash', $withNode, $node, 'npm', '--no-progress', '--no-fund', '--loglevel=warn', ...$arguments], $path), $log);
+        $this->must($this->runner->runAsSite(['bash', $withNode, $node, 'npm', '--no-progress', '--no-fund', '--loglevel=warn', ...$arguments], $path), $log);
     }
 
     private function writeAppKey(string $path): void
@@ -475,7 +475,7 @@ class Deployer
             ? (string) preg_replace('/^APP_KEY=.*$/m', 'APP_KEY='.$key, $contents, 1)
             : "APP_KEY={$key}\n".$contents;
 
-        file_put_contents($envPath, $contents);
+        $this->files->put($envPath, $contents);
     }
 
     private function syncEnvBack(Website $website, DeploymentLogger $log): void

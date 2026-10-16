@@ -103,29 +103,8 @@ if ! command -v composer >/dev/null 2>&1; then
   rm -f /tmp/composer-setup.php
 fi
 
-install -d -o www-data -g www-data /var/www
-chmod 755 "${ROOT}/scripts/host-apply.sh" "${ROOT}/scripts/with-node.sh"
-
-cat > /etc/sudoers.d/laravelify <<EOF
-www-data ALL=(root) NOPASSWD: ${ROOT}/scripts/host-apply.sh
-EOF
-chmod 440 /etc/sudoers.d/laravelify
-visudo -cf /etc/sudoers.d/laravelify
-
-cat > /etc/supervisor/conf.d/laravelify-panel.conf <<EOF
-[program:laravelify-queue]
-command=php ${ROOT}/artisan queue:work --sleep=1 --tries=1 --timeout=3600
-directory=${ROOT}
-autostart=true
-autorestart=true
-stopasgroup=true
-killasgroup=true
-user=www-data
-redirect_stderr=true
-stdout_logfile=${ROOT}/storage/logs/panel-queue.log
-stdout_logfile_maxbytes=10MB
-stdout_logfile_backups=3
-EOF
+install -d -o www-data -g www-data -m 0755 /var/www
+chmod 755 "${ROOT}"/scripts/*.sh
 
 if [[ ! -x /usr/bin/php ]]; then
   for version in 8.4 8.3 8.5 8.2 8.1 8.0; do
@@ -136,16 +115,10 @@ if [[ ! -x /usr/bin/php ]]; then
   done
 fi
 
-install -d -o www-data -g www-data "${ROOT}/storage" "${ROOT}/bootstrap/cache"
-chown -R www-data:www-data "${ROOT}/storage" "${ROOT}/bootstrap/cache" || true
-
-if supervisorctl status >/dev/null 2>&1; then
-  supervisorctl reread
-  supervisorctl update
-else
-  echo "Supervisor is installed. It will load laravelify-queue when the service starts."
-fi
-
 echo "Laravelify host packages are installed."
-echo "Panel queue worker: laravelify-queue"
-echo "Sudoers allows www-data to run ${ROOT}/scripts/host-apply.sh"
+if [[ -f "${ROOT}/.env" && -f "${ROOT}/vendor/autoload.php" ]]; then
+  # The panel's user, PHP-FPM pool, sudo rule, and Supervisor programs (queue and scheduler).
+  bash "${ROOT}/scripts/privileges.sh"
+else
+  echo "Next: create ${ROOT}/.env and run composer install, then: sudo bash ${ROOT}/scripts/privileges.sh"
+fi

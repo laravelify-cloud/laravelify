@@ -114,7 +114,7 @@
         </x-layer-card>
 
         <x-callout type="warning" title="Locked out?">
-            On the server, run <code>sudo -u www-data php /opt/laravelify/artisan laravelify:access-off</code> to turn the sign-in box off again.
+            On the server, run <code>sudo -u laravelify php /opt/laravelify/artisan laravelify:access-off</code> to turn the sign-in box off again.
         </x-callout>
 
         <div>

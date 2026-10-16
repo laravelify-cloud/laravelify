@@ -15,7 +15,7 @@ class FileArchiver
 
     private const MAX_LISTED = 400;
 
-    public function __construct(private CommandRunner $runner, private SitePaths $paths) {}
+    public function __construct(private CommandRunner $runner, private SitePaths $paths, private SiteFiles $files, private SiteUser $site) {}
 
     public function root(): string
     {
@@ -149,7 +149,12 @@ class FileArchiver
             }
         }
 
-        $result = $this->runner->run([...$command, '--', ...array_values(array_unique($members))]);
+        $command = [...$command, '--', ...array_values(array_unique($members))];
+
+        // The site user reads the sites (some files are its own only) and the panel keeps the archive.
+        $result = $this->site->separate()
+            ? $this->files->execToFile(array_replace($command, [3 => '-']), $file)
+            : $this->runner->run($command);
 
         if ($result->skipped) {
             touch($file);
@@ -182,8 +187,8 @@ class FileArchiver
         if (! $toOriginal) {
             $destination = $root.'/laravelify-restore/'.now()->format('Ymd-His');
 
-            if (! is_dir($destination) && ! mkdir($destination, 0775, true)) {
-                throw new RuntimeException('Could not create the restore folder in '.$root.'.');
+            if (! is_dir($destination)) {
+                $this->files->makeDirectory($destination, 0775, true);
             }
         }
 
@@ -196,7 +201,22 @@ class FileArchiver
             array_push($command, ...$members);
         }
 
-        $result = $this->runner->run($command);
+        if ($this->site->separate()) {
+            // The site user writes the files, reading the archive the panel downloaded from stdin.
+            $stream = @fopen($file, 'rb');
+
+            if ($stream === false) {
+                throw new RuntimeException('Could not read the downloaded backup.');
+            }
+
+            try {
+                $result = $this->files->exec(array_replace($command, [3 => '-']), $stream);
+            } finally {
+                fclose($stream);
+            }
+        } else {
+            $result = $this->runner->run($command);
+        }
 
         if (! $result->ok) {
             throw new RuntimeException('tar could not unpack the backup: '.$result->output);

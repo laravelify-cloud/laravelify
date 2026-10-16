@@ -126,10 +126,11 @@ class Edit extends PanelComponent
                 $this->config,
                 1,
             );
-            // Every fastcgi_pass: phpMyAdmin itself and the Laravelify sign-in script.
+            // Every fastcgi_pass: phpMyAdmin itself and the Laravelify sign-in script. Once the panel
+            // has its own user, phpMyAdmin runs in the panel's pool (the panel's PHP version).
             $this->config = (string) preg_replace(
-                '#unix:/run/php/php[0-9.]+-fpm\.sock#',
-                'unix:/run/php/php'.$this->php_version.'-fpm.sock',
+                ServerCatalog::SOCKET_PATTERN,
+                ServerCatalog::panelSocket($this->php_version),
                 $this->config,
             );
 

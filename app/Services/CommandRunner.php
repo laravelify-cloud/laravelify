@@ -70,6 +70,27 @@ class CommandRunner
         );
     }
 
+    /**
+     * Run a command in a site folder as the site user (www-data). Deploys run repository code,
+     * which must never run as the panel. The log shows the command without the sudo wrapper.
+     *
+     * @param  list<string>  $command
+     * @param  (callable(string): void)|null  $onOutput
+     */
+    public function runAsSite(array $command, ?string $cwd = null, ?callable $onOutput = null): CommandResult
+    {
+        $site = app(SiteUser::class);
+
+        if (! $site->separate()) {
+            return $this->run($command, $cwd, [], $onOutput);
+        }
+
+        $env = [...$this->environment($site->home(), false), 'USER' => $site->name(), 'LOGNAME' => $site->name()];
+        $result = $this->run($site->wrap($command, $env), $cwd, [], $onOutput);
+
+        return new CommandResult($result->ok, $result->skipped, $command, $result->output, $result->exitCode, $result->stopped);
+    }
+
     private function stopped(): bool
     {
         return is_callable($this->shouldStop) && ($this->shouldStop)();
@@ -112,9 +133,11 @@ class CommandRunner
      * Composer refuses to start when both HOME and COMPOSER_HOME are empty.
      * The queue worker is a service account and often has neither.
      *
+     * $home is the folder for HOME and tool caches; $create makes it (the panel's own folder).
+     *
      * @return array<string, string|false>
      */
-    public function environment(): array
+    public function environment(?string $home = null, bool $create = true): array
     {
         $env = [];
 
@@ -136,15 +159,16 @@ class CommandRunner
             $env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
         }
 
-        $home = $this->ensureDirectory(storage_path('app/process-home'));
+        $folder = fn (string $path): string => $create ? $this->ensureDirectory($path) : $path;
+        $home = $folder($home ?? storage_path('app/process-home'));
         $env['HOME'] = $home;
-        $env['COMPOSER_HOME'] = $this->ensureDirectory($home.DIRECTORY_SEPARATOR.'.composer');
-        $env['NPM_CONFIG_CACHE'] = $this->ensureDirectory($home.DIRECTORY_SEPARATOR.'.npm');
+        $env['COMPOSER_HOME'] = $folder($home.DIRECTORY_SEPARATOR.'.composer');
+        $env['NPM_CONFIG_CACHE'] = $folder($home.DIRECTORY_SEPARATOR.'.npm');
         $env['npm_config_cache'] = $env['NPM_CONFIG_CACHE'];
         $env['NO_COLOR'] = '1';
         // Corepack (pnpm/yarn) must never wait on a "download pnpm?" prompt.
         $env['COREPACK_ENABLE_DOWNLOAD_PROMPT'] = '0';
-        $env['COREPACK_HOME'] = $this->ensureDirectory($home.DIRECTORY_SEPARATOR.'.corepack');
+        $env['COREPACK_HOME'] = $folder($home.DIRECTORY_SEPARATOR.'.corepack');
         $env['NEXT_TELEMETRY_DISABLED'] = '1';
 
         return $env;

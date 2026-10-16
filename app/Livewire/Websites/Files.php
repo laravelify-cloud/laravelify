@@ -10,6 +10,7 @@ use App\Services\DisplayTime;
 use App\Services\FileOperations;
 use App\Services\FileTrash;
 use App\Services\PanelTaskRunner;
+use App\Services\SiteFiles;
 use App\Services\SitePaths;
 use App\Services\UploadLimits;
 use Illuminate\Support\Collection;
@@ -319,9 +320,7 @@ class Files extends PanelComponent
                 throw new RuntimeException('That file is no longer there.');
             }
 
-            if (file_put_contents($full, (string) $this->openContent, LOCK_EX) === false) {
-                throw new RuntimeException('Could not save that file.');
-            }
+            app(SiteFiles::class)->put($full, (string) $this->openContent);
 
             clearstatcache(true, $full);
             $this->openSize = $this->sizeLabel((int) @filesize($full));
@@ -343,9 +342,7 @@ class Files extends PanelComponent
         try {
             $target = $this->newEntryPath($this->folderName, $paths);
 
-            if (! mkdir($target, 0755)) {
-                throw new RuntimeException('Could not create that folder.');
-            }
+            app(SiteFiles::class)->makeDirectory($target);
 
             $this->folderName = '';
             $this->refreshList();
@@ -365,11 +362,7 @@ class Files extends PanelComponent
         try {
             $target = $this->newEntryPath($this->fileName, $paths);
 
-            if (file_put_contents($target, '') === false) {
-                throw new RuntimeException('Could not create that file.');
-            }
-
-            @chmod($target, 0644);
+            app(SiteFiles::class)->put($target, '', 0644);
             $this->fileName = '';
             $this->refreshList();
             $this->dispatch('entry-created');
@@ -405,9 +398,7 @@ class Files extends PanelComponent
                 throw new RuntimeException('That name already exists.');
             }
 
-            if (! rename($full, $target)) {
-                throw new RuntimeException('Could not rename that entry.');
-            }
+            app(SiteFiles::class)->move($full, $target);
 
             if ($this->openPath === $relative) {
                 $this->closeFile();
@@ -725,9 +716,7 @@ class Files extends PanelComponent
                     throw new RuntimeException($entry['name'].' already exists there.');
                 }
 
-                if (! rename($source, $target)) {
-                    throw new RuntimeException('Could not move '.$entry['name'].'.');
-                }
+                app(SiteFiles::class)->move($source, $target);
 
                 if ($this->openPath === $entry['relative']) {
                     $this->closeFile();
@@ -760,9 +749,7 @@ class Files extends PanelComponent
                 throw new RuntimeException('Permissions of a link cannot be changed.');
             }
 
-            if (! chmod($full, (int) octdec($mode))) {
-                throw new RuntimeException('Could not change the permissions.');
-            }
+            app(SiteFiles::class)->chmod($full, (int) octdec($mode));
 
             clearstatcache(true, $full);
             $this->refreshList();
@@ -996,7 +983,17 @@ class Files extends PanelComponent
 
         $cached = dirname($savedFile).DIRECTORY_SEPARATOR.'bootstrap'.DIRECTORY_SEPARATOR.'cache'.DIRECTORY_SEPARATOR.'config.php';
 
-        return is_file($cached) && ! is_link($cached) && @unlink($cached);
+        if (! is_file($cached) || is_link($cached)) {
+            return false;
+        }
+
+        try {
+            app(SiteFiles::class)->delete($cached);
+        } catch (RuntimeException) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -1136,19 +1133,12 @@ class Files extends PanelComponent
 
         $target = $dir.DIRECTORY_SEPARATOR.$name;
 
-        if (is_link($target)) {
-            if (! unlink($target)) {
-                throw new RuntimeException('Could not replace that link.');
-            }
-        } elseif (is_dir($target)) {
+        if (is_dir($target) && ! is_link($target)) {
             throw new RuntimeException('A folder with that name already exists.');
         }
 
-        if (! copy($source, $target)) {
-            throw new RuntimeException('Could not write that file.');
-        }
-
-        @chmod($target, 0644);
+        // A link with that name is replaced by the file, never written through.
+        app(SiteFiles::class)->putFile($target, $source, is_file($target) && ! is_link($target) ? null : 0644);
     }
 
     private function safeName(string $name): string

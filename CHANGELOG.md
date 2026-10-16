@@ -2,6 +2,20 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.40] - 2026-10-16
+
+Security: website code can no longer reach the panel or root. Before, the panel, every website's PHP, and the Laravel workers all ran as `www-data`, and Node apps ran as root, so a hacked upload in any site could read the panel's `.env` (MySQL root password, app key) and become root through the panel's sudo rule.
+
+- **The panel runs as its own user, `laravelify`.** It has its own PHP-FPM pool (`/run/php/laravelify.sock`), queue worker, and scheduler. `/opt/laravelify` is `root:laravelify` (`751`), `.env` is `640`, and `storage/` and `bootstrap/cache` belong to the panel. `www-data` has no sudo; only `laravelify` may run `host-apply.sh` as root.
+- **Websites stay `www-data`, and so does everything that touches them.** Deploy commands (git, Composer, npm, artisan) and file manager changes (save, upload, rename, move, copy, delete, permissions, zip, unzip, restore) run with `sudo -u www-data`, so repository code never runs as the panel and site files stay the site's own.
+- **Node apps run as `www-data`,** in their own PM2 daemon (`pm2-www-data` restores it on boot), not as root. PM2 app files move from the site folder to `/var/lib/laravelify/pm2`.
+- **nginx's workers run as `laravelify-web`** (in the `www-data` group), so only nginx and the panel can open the panel's PHP-FPM socket; website code cannot send it FastCGI.
+- **The panel keeps sessions, its queue, and its cache in MySQL** instead of Redis, which every site can reach without a password. Everyone signs in again once.
+- **phpMyAdmin runs in the panel's pool;** its config and temp files belong to the panel user.
+- **host-apply.sh checks what it installs.** Rendered files must come from the panel's storage. Site nginx files may only log under `/var/log/nginx` or `/var/log/laravelify`, include files under `/etc/nginx`, and keep temp and cache folders under nginx's own. Supervisor programs must run as `www-data` and log to `/var/log/laravelify/sites/<slug>/` (the panel fills both in when you save). The sites' `www.conf` must run as `www-data`. The tunnel unit is written by the script, only the token comes from the panel. Root never writes through a path inside `/var/www`.
+- **Worker logs moved** from `storage/logs` in the site to `/var/log/laravelify/sites/<slug>/` (Supervisor writes them as root). The **Logs** tab reads both.
+- **The update moves an existing server over by itself** (`scripts/privileges.sh`, safe to run again). It lets a running deploy finish, saves the old files to `/var/lib/laravelify/rollback/before-privilege-separation`, and applies every site's workers again. The panel answers 502 for a few seconds; each worker and Node app restarts once. `scripts/rollback-privileges.sh` undoes it. See the docs: Security → Users and permissions.
+
 ## [0.3.0-beta.39] - 2026-10-16
 
 Security fixes from an audit of the panel, the landing site, and the docs.

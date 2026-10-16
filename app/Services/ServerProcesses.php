@@ -219,26 +219,15 @@ class ServerProcesses
     }
 
     /**
-     * Run a Supervisor or PM2 command. Both need root: supervisorctl to reach the
-     * Supervisor socket, and pm2 because site apps live under root's PM2 daemon.
-     * A non-root panel goes through the sudo-allowed host-apply.sh.
+     * Run a Supervisor or PM2 command through host-apply.sh: supervisorctl needs root to reach
+     * the Supervisor socket, and site apps live in the site user's PM2 daemon, which the script
+     * talks to. The panel user goes through sudo.
      */
     private function manage(string $manager, string $command, ?string $name = null): CommandResult
     {
-        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
-            $direct = match ([$manager, $command]) {
-                ['supervisor', 'status'] => ['supervisorctl', 'status'],
-                ['supervisor', 'tail'] => ['supervisorctl', 'tail', '-8000', (string) $name],
-                ['pm2', 'jlist'] => ['pm2', 'jlist'],
-                ['pm2', 'restart'] => ['pm2', 'restart', (string) $name, '--update-env'],
-                ['pm2', 'logs'] => ['pm2', 'logs', (string) $name, '--nostream', '--lines', '400', '--raw'],
-                default => [$manager === 'supervisor' ? 'supervisorctl' : 'pm2', $command, (string) $name],
-            };
+        $script = [base_path('scripts/host-apply.sh'), $manager, $command, $name ?? 'all'];
 
-            return $this->runner->run($direct);
-        }
-
-        return $this->runner->run(['sudo', '-n', base_path('scripts/host-apply.sh'), $manager, $command, $name ?? 'all']);
+        return $this->runner->run(function_exists('posix_geteuid') && posix_geteuid() === 0 ? $script : ['sudo', '-n', ...$script]);
     }
 
     public function env(string $name): string

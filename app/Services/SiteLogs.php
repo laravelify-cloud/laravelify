@@ -34,7 +34,7 @@ class SiteLogs
         }
 
         foreach ($this->programs($website) as $program => $logfile) {
-            $path = $root !== null ? $this->insideSite($root, $logfile) : null;
+            $path = $this->programLog($website, $root, $logfile);
 
             if ($path === null) {
                 continue;
@@ -104,9 +104,14 @@ class SiteLogs
             throw new RuntimeException('That log file does not exist.');
         }
 
-        if (file_put_contents($path, '') === false) {
-            throw new RuntimeException('Could not clear that log. Check its permissions.');
+        // Supervisor's logs are root's files in the site's log folder; the site's own logs are the site user's.
+        if (str_starts_with($path, ConfigRenderer::supervisorLogDirectory($website->slug).'/')) {
+            $this->hostWriter->clearProgramLog($website, basename($path));
+
+            return;
         }
+
+        app(SiteFiles::class)->put($path, '');
     }
 
     /**
@@ -170,17 +175,18 @@ class SiteLogs
 
     private function pathFor(Website $website, string $key): string
     {
+        // Worker logs live in the site's log folder, which exists before the first deploy.
+        if (str_starts_with($key, 'program:')) {
+            $logfile = $this->programs($website)[substr($key, 8)] ?? null;
+            $path = $logfile !== null ? $this->programLog($website, $this->siteRoot($website), $logfile) : null;
+
+            return $path ?? throw new RuntimeException('That program has no log file Laravelify can read.');
+        }
+
         $root = $this->siteRoot($website) ?? throw new RuntimeException('Deploy the site first.');
 
         if ($key === 'laravel') {
             return $this->newest($root.'/storage/logs', 'laravel*.log') ?? $root.'/storage/logs/laravel.log';
-        }
-
-        if (str_starts_with($key, 'program:')) {
-            $logfile = $this->programs($website)[substr($key, 8)] ?? null;
-            $path = $logfile !== null ? $this->insideSite($root, $logfile) : null;
-
-            return $path ?? throw new RuntimeException('That program has no log file inside the site folder.');
         }
 
         if (str_starts_with($key, 'file:')) {
@@ -203,6 +209,22 @@ class SiteLogs
         } catch (RuntimeException) {
             return null;
         }
+    }
+
+    /**
+     * A program's log path from the config: in the site's Supervisor log folder, or (configs
+     * from before 0.3.0-beta.40) inside the site folder.
+     */
+    private function programLog(Website $website, ?string $root, string $logfile): ?string
+    {
+        $directory = ConfigRenderer::supervisorLogDirectory($website->slug);
+        $logfile = str_replace('\\', '/', $logfile);
+
+        if (str_starts_with($logfile, $directory.'/') && ! str_contains($logfile, '..') && ! str_contains(substr($logfile, strlen($directory) + 1), '/')) {
+            return $logfile;
+        }
+
+        return $root !== null ? $this->insideSite($root, $logfile) : null;
     }
 
     /**
