@@ -2,6 +2,14 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.33] - 2026-10-16
+
+- **Backups without a bucket.** Backup storage has a new provider, **This server (a folder)**: give a full path like `/backups` and backups are saved there instead of S3. Laravelify makes the folder (owned by the panel's user) and tests it; it must be outside `/var/www` and system folders. Backups, restores, look inside, and download work the same. "S3 storage" is now **Backup storage**.
+- **One archive per website.** A file schedule with several folders (or several websites) packs each into its own `tar.gz`, so one website can be looked at, downloaded, or restored without the others. **Everything** stays one archive.
+- **The backup list shows a run, then its websites.** A full backup (or any run with several archives) is one row, like **FULL BACKUP · 6 archives, one per website**, with each website's archive under it. Before, the first website's row looked like the parent of the others.
+- **File editor: find shows every match.** Matches are highlighted in the text and the current one stands out, with its line number next to the count. Before, the match was selected but not visible while typing in the find box.
+- **Fixed: a select list sometimes opened empty.** After moving to another page, the list was attached to the old page. It is made again when needed. Form fields without an id or name get a name, so the browser no longer warns about them.
+
 ## [0.3.0-beta.32] - 2026-10-15
 
 - **Tunnel redirects work for a bare domain that receives mail.** The tunnel's CNAME is no longer refused because the domain has MX, TXT, or CAA records (Cloudflare flattens a CNAME at the bare domain and keeps them); only an existing A, AAAA, or CNAME is reported. Switching a redirect between **Cloudflare tunnel** and **Server IP** removes the record the panel made for the other way first.

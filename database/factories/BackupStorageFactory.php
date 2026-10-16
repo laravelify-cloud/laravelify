@@ -28,6 +28,14 @@ class BackupStorageFactory extends Factory
         ];
     }
 
+    /**
+     * A folder on this server.
+     */
+    public function local(string $path = '/backups/laravelify'): static
+    {
+        return $this->state(['driver' => BackupStorage::DRIVER_LOCAL, 'endpoint' => null, 'region' => 'local', 'bucket' => '', 'path' => $path, 'access_key' => '', 'secret_key' => '']);
+    }
+
     public function default(): static
     {
         return $this->state(['is_default' => true]);

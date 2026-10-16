@@ -461,6 +461,21 @@ PHP
     # Read-only: listening TCP ports with the processes behind them (names need root).
     exec ss -H -lntp
     ;;
+  backup-folder)
+    # A folder on this server for backups (Backups → Storage → This server). Never a system
+    # folder or a website folder: www-data owns it and writes backups into it.
+    [[ "${TARGET}" =~ ^/[A-Za-z0-9._/-]+$ && "${TARGET}" != *..* ]] || die "invalid folder"
+    case "${TARGET%/}/" in
+      /var/www/*|/etc/*|/usr/*|/bin/*|/sbin/*|/lib/*|/lib64/*|/boot/*|/proc/*|/sys/*|/dev/*|/run/*|/tmp/*|/var/lib/*|/var/log/*|/root/*|"${ROOT}"/*)
+        die "choose a folder outside system folders and /var/www, like /backups"
+        ;;
+    esac
+    [[ "${TARGET%/}" =~ ^/[^/]+ ]] || die "choose a folder, not /"
+    mkdir -p -- "${TARGET}"
+    chown www-data:www-data -- "${TARGET}"
+    chmod 750 -- "${TARGET}"
+    echo "Backup folder ready: ${TARGET}"
+    ;;
   nginx-global-log)
     # Read-only: the last lines of nginx's own error log (root-only), for the Nginx page.
     [[ "${2:-}" == "error" ]] || die "unknown log"

@@ -185,6 +185,14 @@ UNIT;
     }
 
     /**
+     * Make a folder outside /var/www that the panel can write backups into (owned by www-data).
+     */
+    public function backupFolder(string $path): string
+    {
+        return $this->apply(['backup-folder', $path]);
+    }
+
+    /**
      * Check every nginx config with nginx -t.
      */
     public function nginxTest(): string

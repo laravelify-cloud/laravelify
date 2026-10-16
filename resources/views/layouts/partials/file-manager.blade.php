@@ -645,6 +645,7 @@
             closeFind() {
                 this.findOpen = false;
                 this.matchLabel = '';
+                this.renderMarks(-1);
                 this.$refs.code && this.$refs.code.focus();
             },
 
@@ -667,8 +668,56 @@
                 }
 
                 this.matchLabel = count === 0 ? 'No results' : count + (count === 1 ? ' match' : ' matches');
+                this.renderMarks(-1);
 
                 return count;
+            },
+
+            /** Mark every match on the layer behind the text; `current` (a text offset) is the selected one. */
+            renderMarks(current) {
+                var marks = this.$refs.marks;
+                var code = this.$refs.code;
+
+                if (!marks || !code) {
+                    return;
+                }
+
+                var query = this.findOpen ? this.findQuery.toLowerCase() : '';
+
+                if (query === '') {
+                    marks.innerHTML = '';
+
+                    return;
+                }
+
+                var escape = function (value) {
+                    return value.split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;');
+                };
+                var source = code.value;
+                var text = source.toLowerCase();
+                var html = '';
+                var last = 0;
+                var shown = 0;
+                var index = text.indexOf(query);
+
+                while (index !== -1 && shown < 5000) {
+                    html += escape(source.slice(last, index)) + '<mark' + (index === current ? ' class="is-current"' : '') + '>' + escape(source.slice(index, index + query.length)) + '</mark>';
+                    last = index + query.length;
+                    shown++;
+                    index = text.indexOf(query, last);
+                }
+
+                // A trailing newline keeps the last line's height, as in the textarea.
+                marks.innerHTML = html + escape(source.slice(last)) + '\n';
+                marks.style.paddingRight = (16 + code.offsetWidth - code.clientWidth) + 'px';
+                this.syncMarks();
+            },
+
+            syncMarks() {
+                if (this.$refs.marks && this.$refs.code) {
+                    this.$refs.marks.scrollTop = this.$refs.code.scrollTop;
+                    this.$refs.marks.scrollLeft = this.$refs.code.scrollLeft;
+                }
             },
 
             find(direction) {
@@ -705,7 +754,8 @@
                 code.scrollTop = Math.max(0, (line - 4) * lineHeight);
 
                 this.caret();
-                this.matchLabel = position + ' of ' + total;
+                this.renderMarks(index);
+                this.matchLabel = position + ' of ' + total + ' · line ' + (line + 1);
                 this.$refs.find.focus();
             },
         };

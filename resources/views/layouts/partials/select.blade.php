@@ -176,7 +176,8 @@
             if (state && state.select === select) { close(true); return; }
             close(false);
 
-            if (!panel) {
+            // wire:navigate replaces <body>, which leaves an earlier panel detached (and the list invisible).
+            if (!panel || !document.body.contains(panel)) {
                 panel = el('div', 'select-panel');
                 panel.setAttribute('role', 'listbox');
                 document.body.appendChild(panel);
@@ -192,6 +193,7 @@
                 search.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"/></svg>';
                 var input = el('input');
                 input.type = 'text';
+                input.name = 'select-search';
                 input.placeholder = 'Search ' + count + ' options…';
                 input.setAttribute('autocomplete', 'off');
                 input.setAttribute('spellcheck', 'false');
@@ -288,6 +290,38 @@
                         if (state && !document.body.contains(state.select)) close(false);
                     });
                 });
+            });
+        });
+
+        /*
+         * Browsers want every form field to have an id or a name (autofill, and a DevTools warning).
+         * Livewire and Alpine fields often have neither, so give them one from what they bind to.
+         */
+        var unnamed = 0;
+
+        function nameFields() {
+            document.querySelectorAll('input:not([name]):not([id]), select:not([name]):not([id]), textarea:not([name]):not([id])').forEach(function (field) {
+                var bound = '';
+
+                for (var i = 0; i < field.attributes.length; i++) {
+                    var attribute = field.attributes[i].name;
+
+                    if (attribute.indexOf('wire:model') === 0 || attribute === 'x-model' || attribute.indexOf('x-model.') === 0) {
+                        bound = field.attributes[i].value;
+                        break;
+                    }
+                }
+
+                bound = bound || field.getAttribute('aria-label') || field.getAttribute('placeholder') || '';
+                field.setAttribute('name', (bound.toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '') || 'field') + '-' + (++unnamed));
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', nameFields);
+        document.addEventListener('livewire:navigated', nameFields);
+        document.addEventListener('livewire:init', function () {
+            Livewire.hook('commit', function (commit) {
+                commit.succeed(function () { queueMicrotask(nameFields); });
             });
         });
 

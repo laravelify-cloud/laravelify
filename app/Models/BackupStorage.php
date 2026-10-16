@@ -8,16 +8,21 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * An S3-compatible bucket backups are sent to: AWS S3, DigitalOcean Spaces, Cloudflare R2,
- * Backblaze B2, Wasabi, MinIO. The keys are encrypted at rest.
+ * Where backups are sent: an S3-compatible bucket (AWS S3, DigitalOcean Spaces, Cloudflare R2,
+ * Backblaze B2, Wasabi, MinIO; the keys are encrypted at rest), or a folder on this server.
  */
 class BackupStorage extends Model
 {
     /** @use HasFactory<BackupStorageFactory> */
     use HasFactory;
 
+    public const DRIVER_S3 = 's3';
+
+    public const DRIVER_LOCAL = 'local';
+
     protected $fillable = [
         'name',
+        'driver',
         'endpoint',
         'region',
         'bucket',
@@ -60,6 +65,26 @@ class BackupStorage extends Model
     public function prefix(): string
     {
         return trim((string) $this->path, '/');
+    }
+
+    /**
+     * A folder on this server instead of a bucket. Its path is absolute, like /backups.
+     */
+    public function isLocal(): bool
+    {
+        return $this->driver === self::DRIVER_LOCAL;
+    }
+
+    /**
+     * Where the backups go, for people: "/backups/laravelify" or "bucket/folder".
+     */
+    public function location(): string
+    {
+        if ($this->isLocal()) {
+            return '/'.$this->prefix();
+        }
+
+        return $this->bucket.($this->prefix() !== '' ? '/'.$this->prefix() : '');
     }
 
     public function usable(): bool

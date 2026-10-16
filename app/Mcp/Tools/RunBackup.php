@@ -12,7 +12,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 use RuntimeException;
 
-#[Description('Start a backup now: one schedule (schedule_id from list-backups), or a full backup of every database or every website (full: "database" or "files"). It runs in the background; list-backups shows its status. Needs S3 storage set up in the panel (Backups → S3 storage).')]
+#[Description('Start a backup now: one schedule (schedule_id from list-backups), or a full backup of every database or every website (full: "database" or "files"). It runs in the background; list-backups shows its status. Needs a backup storage set up in the panel (Backups → Backup storage): an S3 bucket or a folder on this server.')]
 class RunBackup extends Tool
 {
     public function handle(Request $request, BackupManager $backups): Response
@@ -34,7 +34,7 @@ class RunBackup extends Tool
                 ?? throw ValidationException::withMessages(['schedule_id' => 'Give a schedule_id (list-backups) or full: "database" / "files".']);
 
             if ($schedule->storage === null) {
-                throw ValidationException::withMessages(['schedule_id' => 'This backup has no S3 storage. Add one in the panel under Backups → S3 storage.']);
+                throw ValidationException::withMessages(['schedule_id' => 'This backup has no storage. Add one in the panel under Backups → Backup storage.']);
             }
 
             if (! $backups->queue($schedule)) {

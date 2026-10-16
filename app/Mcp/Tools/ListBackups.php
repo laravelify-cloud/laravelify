@@ -12,7 +12,7 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[IsReadOnly]
-#[Description('The backup schedules (database and folder backups to the S3 storage) with when they last ran, and the latest backups with their status and size. Run one now with run-backup.')]
+#[Description('The backup schedules (database and folder backups to the backup storage: an S3 bucket or a folder on this server) with when they last ran, and the latest backups with their status and size. Run one now with run-backup.')]
 class ListBackups extends Tool
 {
     public function handle(Request $request): Response

@@ -87,7 +87,7 @@
                     </a>
                     <a class="menu-item {{ request()->routeIs('backups.storages') ? 'menu-item-active' : '' }}" href="{{ route('backups.storages') }}" wire:navigate>
                         <x-menu-icon name="s3" />
-                        <span>S3 storage</span>
+                        <span>Backup storage</span>
                     </a>
 
                     <p class="nav-section">Infrastructure</p>

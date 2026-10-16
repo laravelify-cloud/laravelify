@@ -10,6 +10,7 @@ use RuntimeException;
  * Talks to an S3-compatible bucket through rclone, so files of any size are uploaded in parts,
  * and AWS S3, DigitalOcean Spaces, Cloudflare R2, Backblaze B2, Wasabi, and MinIO all work.
  * The keys travel in the environment of the one command, never on its command line.
+ * A storage on this server is an rclone "local" remote: the same commands copy into its folder.
  */
 class BackupStorageClient
 {
@@ -122,6 +123,10 @@ class BackupStorageClient
      */
     public function remote(BackupStorage $storage, string $key): string
     {
+        if ($storage->isLocal()) {
+            return 'lv:/'.implode('/', array_filter([$storage->prefix(), ltrim($key, '/')], fn (string $part) => $part !== ''));
+        }
+
         $parts = array_filter([$storage->bucket, $storage->prefix(), ltrim($key, '/')], fn (string $part) => $part !== '');
 
         return 'lv:'.implode('/', $parts);
@@ -132,6 +137,10 @@ class BackupStorageClient
      */
     public function environment(BackupStorage $storage): array
     {
+        if ($storage->isLocal()) {
+            return ['RCLONE_CONFIG_LV_TYPE' => 'local'];
+        }
+
         $custom = filled($storage->endpoint);
 
         return array_filter([

@@ -5,6 +5,7 @@ namespace App\Livewire\Backups;
 use App\Livewire\PanelComponent;
 use App\Models\BackupStorage;
 use App\Services\BackupStorageClient;
+use App\Services\HostWriter;
 use Illuminate\Validation\Rule;
 use Throwable;
 
@@ -22,7 +23,13 @@ class Storages extends PanelComponent
         'b2' => ['label' => 'Backblaze B2', 'endpoint' => 'https://s3.{region}.backblazeb2.com', 'region' => 'us-west-004', 'hint' => 'Region is shown on the bucket, like us-west-004.'],
         'wasabi' => ['label' => 'Wasabi', 'endpoint' => 'https://s3.{region}.wasabisys.com', 'region' => 'us-east-1', 'hint' => 'Use your Wasabi region.'],
         'custom' => ['label' => 'MinIO or other S3', 'endpoint' => 'https://', 'region' => 'us-east-1', 'hint' => 'Any S3-compatible endpoint.'],
+        'local' => ['label' => 'This server (a folder)', 'endpoint' => '', 'region' => 'local', 'hint' => 'No bucket needed: backups are saved in a folder on this server, outside /var/www. They are lost with the server, so copy them elsewhere too.'],
     ];
+
+    /**
+     * Folders a local storage may not be in: system folders, website folders, and the panel itself.
+     */
+    private const FORBIDDEN_FOLDERS = ['/var/www', '/etc', '/usr', '/bin', '/sbin', '/lib', '/lib64', '/boot', '/proc', '/sys', '/dev', '/run', '/tmp', '/var/lib', '/var/log', '/root'];
 
     public bool $showForm = false;
 
@@ -59,7 +66,7 @@ class Storages extends PanelComponent
         $storage = BackupStorage::query()->findOrFail($id);
         $this->editingId = $storage->id;
         $this->name = $storage->name;
-        $this->provider = filled($storage->endpoint) ? 'custom' : 'aws';
+        $this->provider = $storage->isLocal() ? 'local' : (filled($storage->endpoint) ? 'custom' : 'aws');
         $this->endpoint = (string) $storage->endpoint;
         $this->region = (string) $storage->region;
         $this->bucket = $storage->bucket;
@@ -75,6 +82,7 @@ class Storages extends PanelComponent
         $preset = self::PROVIDERS[$provider] ?? null;
 
         if ($preset) {
+            $this->path = $provider === 'local' ? '/backups' : ($this->path !== '' && ! str_starts_with($this->path, '/') ? $this->path : 'laravelify');
             $this->region = $preset['region'];
             $this->endpoint = str_replace('{region}', $preset['region'], $preset['endpoint']);
         }
@@ -89,9 +97,16 @@ class Storages extends PanelComponent
         }
     }
 
-    public function save(BackupStorageClient $client): void
+    public function save(BackupStorageClient $client, HostWriter $host): void
     {
         $editing = $this->editingId ? BackupStorage::query()->findOrFail($this->editingId) : null;
+
+        if ($this->provider === 'local') {
+            $this->saveLocal($client, $host, $editing);
+
+            return;
+        }
+
         $keysRequired = $editing === null;
 
         $validated = $this->validate([
@@ -111,6 +126,7 @@ class Storages extends PanelComponent
 
         $attributes = [
             'name' => $validated['name'],
+            'driver' => BackupStorage::DRIVER_S3,
             'endpoint' => filled($validated['endpoint']) ? trim($validated['endpoint']) : null,
             'region' => $validated['region'],
             'bucket' => $validated['bucket'],
@@ -129,6 +145,57 @@ class Storages extends PanelComponent
 
         $storage = $editing ?? new BackupStorage(['is_default' => ! BackupStorage::query()->exists()]);
         $storage->fill($attributes)->save();
+
+        $this->showForm = false;
+        $this->runTest($client, $storage);
+    }
+
+    /**
+     * A folder on this server: made (owned by the panel's user) and tested like a bucket.
+     */
+    private function saveLocal(BackupStorageClient $client, HostWriter $host, ?BackupStorage $editing): void
+    {
+        $this->path = '/'.trim(trim($this->path), '/');
+
+        $validated = $this->validate([
+            'name' => ['required', 'string', 'max:80', Rule::unique('backup_storages', 'name')->ignore($editing?->id)],
+            'path' => ['required', 'string', 'max:190', 'regex:/^\/[A-Za-z0-9._\-\/]+$/', 'not_regex:/\.\./', function (string $attribute, mixed $value, \Closure $fail): void {
+                $folder = rtrim((string) $value, '/').'/';
+
+                foreach ([...self::FORBIDDEN_FOLDERS, rtrim(base_path(), '/')] as $forbidden) {
+                    if (str_starts_with($folder, $forbidden.'/')) {
+                        $fail('Choose a folder outside '.$forbidden.', like /backups or /home/backups.');
+
+                        return;
+                    }
+                }
+            }],
+        ], [
+            'path.required' => 'Choose a folder, like /backups.',
+            'path.regex' => 'Use a full path like /backups, with letters, numbers, dots, dashes, and slashes.',
+        ]);
+
+        try {
+            $host->backupFolder($validated['path']);
+        } catch (Throwable $exception) {
+            $this->addError('path', $exception->getMessage());
+
+            return;
+        }
+
+        $storage = $editing ?? new BackupStorage(['is_default' => ! BackupStorage::query()->exists()]);
+        $storage->fill([
+            'name' => $validated['name'],
+            'driver' => BackupStorage::DRIVER_LOCAL,
+            'endpoint' => null,
+            'region' => 'local',
+            'bucket' => '',
+            'path' => trim($validated['path'], '/'),
+            'access_key' => '',
+            'secret_key' => '',
+            'checked_at' => null,
+            'last_error' => null,
+        ])->save();
 
         $this->showForm = false;
         $this->runTest($client, $storage);
@@ -170,7 +237,7 @@ class Storages extends PanelComponent
         try {
             $client->test($storage);
             $storage->forceFill(['checked_at' => now(), 'last_error' => null])->save();
-            $this->toast('Connected: a test file was written to '.$storage->bucket.' and removed.');
+            $this->toast('Connected: a test file was written to '.$storage->location().' and removed.');
         } catch (Throwable $exception) {
             $storage->forceFill(['checked_at' => null, 'last_error' => $exception->getMessage()])->save();
             $this->toast($exception->getMessage(), 'error');

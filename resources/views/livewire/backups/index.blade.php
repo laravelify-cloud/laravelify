@@ -10,7 +10,7 @@
 >
     <x-page-header
         :title="$isDatabase ? 'Database backups' : 'File backups'"
-        :summary="$isDatabase ? 'Dump databases to your S3 storage on a schedule. Restore a whole database or some tables, look inside a backup, or download parts of it as SQL.' : 'Archive folders to your S3 storage on a schedule. Restore everything or picked folders and files, or download a backup.'"
+        :summary="$isDatabase ? 'Dump databases to your storage (S3 or a folder on this server) on a schedule. Restore a whole database or some tables, look inside a backup, or download parts of it as SQL.' : 'Archive folders to your storage (S3 or a folder on this server) on a schedule. Restore everything or picked folders and files, or download a backup.'"
     >
         <x-slot:actions>
             <button class="btn" type="button" wire:click="fullBackup" wire:loading.attr="disabled" wire:target="fullBackup" @disabled(! $hasStorage) title="{{ $isDatabase ? 'Back up every database now' : 'Back up every website now, each in its own archive, without dependencies and build output' }}"><x-menu-icon name="backup" /> Full backup</button>
@@ -24,7 +24,7 @@
         <div class="callout" role="note">
             <x-menu-icon name="s3" class="size-4 shrink-0 text-muted" />
             <p class="min-w-0 flex-1 text-[13px] text-muted">
-                <span class="font-medium text-ink">Add an S3 storage first.</span>
+                <span class="font-medium text-ink">Add a backup storage first (an S3 bucket or a folder on this server).</span>
                 Backups need a bucket to go to.
                 <a class="underline" href="{{ route('backups.storages') }}" wire:navigate>Add storage</a>
             </p>
@@ -121,7 +121,7 @@
     </x-layer-card>
 
     {{-- Backups and restores --}}
-    <x-layer-card title="Backups and restores" helper="Grouped by {{ $isDatabase ? 'database' : 'schedule' }}, newest first. Open a group to see its older backups. Look inside, download, or restore any backup that is still in the bucket." flush>
+    <x-layer-card title="Backups and restores" helper="{{ $isDatabase ? 'Grouped by database, newest first. Open a group to see its older backups.' : 'Newest first. Each run lists one archive per website or folder: look inside, download, or restore one website on its own.' }} Any backup still in storage can be restored." flush>
         <x-slot:actions>
             @if ($filters !== [])
                 <select class="select h-8 text-[13px]" wire:model.live="filter" aria-label="Show backups of">
@@ -155,12 +155,21 @@
                 </tr>
             </thead>
                 @forelse ($runGroups as $key => $group)
-                    <tbody x-data="{ open: false }" wire:key="run-group-{{ md5($key) }}">
-                        @include('livewire.backups.partials.run-row', ['run' => $group->first(), 'older' => $group->count() - 1, 'nested' => false])
-                        @foreach ($group->slice(1) as $run)
-                            @include('livewire.backups.partials.run-row', ['run' => $run, 'older' => 0, 'nested' => true])
-                        @endforeach
-                    </tbody>
+                    @if (! $isDatabase && str_starts_with($key, 'batch:') && ($group->count() > 1 || ! empty($group->first()->schedule?->targets['websites'])))
+                        <tbody x-data="{ open: {{ $loop->first ? 'true' : 'false' }} }" wire:key="run-group-{{ md5($key) }}">
+                            @include('livewire.backups.partials.batch-row', ['group' => $group])
+                            @foreach ($group->sortBy('target') as $run)
+                                @include('livewire.backups.partials.run-row', ['run' => $run, 'older' => 0, 'nested' => true])
+                            @endforeach
+                        </tbody>
+                    @else
+                        <tbody x-data="{ open: false }" wire:key="run-group-{{ md5($key) }}">
+                            @include('livewire.backups.partials.run-row', ['run' => $group->first(), 'older' => $group->count() - 1, 'nested' => false])
+                            @foreach ($group->slice(1) as $run)
+                                @include('livewire.backups.partials.run-row', ['run' => $run, 'older' => 0, 'nested' => true])
+                            @endforeach
+                        </tbody>
+                    @endif
                 @empty
                     <tbody>
                         <tr>

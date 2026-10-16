@@ -1,7 +1,7 @@
 <div class="flex flex-col gap-6">
     <x-page-header
         :title="$schedule ? 'Edit '.($isDatabase ? 'database' : 'file').' backup' : 'New '.($isDatabase ? 'database' : 'file').' backup'"
-        :summary="$isDatabase ? 'Each database is dumped on its own, compressed, and sent to your S3 storage.' : 'The folders are packed into one archive, compressed, and sent to your S3 storage.'"
+        :summary="$isDatabase ? 'Each database is dumped on its own, compressed, and sent to your storage.' : 'Each folder is packed into its own archive (one per website), compressed, and sent to your storage, so you can restore one website on its own.'"
     >
         <x-slot:actions>
             <a class="btn" href="{{ route($isDatabase ? 'backups.databases' : 'backups.files') }}" wire:navigate>Back</a>
@@ -21,11 +21,11 @@
                     <select class="select" wire:model="backup_storage_id">
                         <option value="">Choose a storage</option>
                         @foreach ($storages as $storage)
-                            <option value="{{ $storage->id }}">{{ $storage->name }} ({{ $storage->bucket }})</option>
+                            <option value="{{ $storage->id }}">{{ $storage->name }} ({{ $storage->location() }})</option>
                         @endforeach
                     </select>
                     @if ($storages->isEmpty())
-                        <small class="text-muted"><a class="underline" href="{{ route('backups.storages') }}" wire:navigate>Add an S3 storage</a> first.</small>
+                        <small class="text-muted"><a class="underline" href="{{ route('backups.storages') }}" wire:navigate>Add a storage</a> first (an S3 bucket or a folder on this server).</small>
                     @endif
                     @error('backup_storage_id') <small class="error">{{ $message }}</small> @enderror
                 </label>

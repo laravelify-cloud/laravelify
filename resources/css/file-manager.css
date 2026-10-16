@@ -213,6 +213,13 @@
 .fm-code textarea { min-width: 0; flex: 1; resize: none; overflow: auto; border: 0; background: transparent; padding: 14px 16px; color: var(--color-ink); font-family: var(--font-mono); font-size: var(--fm-font); line-height: 1.65; white-space: pre; overflow-wrap: normal; outline: none; tab-size: 4; }
 .fm-code.is-wrapped textarea { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
 .fm-code textarea:focus-visible { outline: none; }
+/* Find: every match is marked on a layer behind the (transparent) textarea, the current one stronger. */
+.fm-code-area { position: relative; display: flex; min-width: 0; flex: 1; }
+.fm-code-area textarea { position: relative; z-index: 1; }
+.fm-marks { position: absolute; inset: 0; z-index: 0; margin: 0; overflow: hidden; padding: 14px 16px; color: transparent; font-family: var(--font-mono); font-size: var(--fm-font); line-height: 1.65; white-space: pre; overflow-wrap: normal; tab-size: 4; pointer-events: none; }
+.fm-code.is-wrapped .fm-marks { white-space: pre-wrap; overflow-wrap: anywhere; }
+.fm-marks mark { border-radius: 2px; background: color-mix(in srgb, var(--color-accent) 28%, transparent); color: transparent; }
+.fm-marks mark.is-current { background: color-mix(in srgb, var(--color-accent) 70%, transparent); box-shadow: 0 0 0 1px var(--color-accent); }
 .fm-code textarea::selection { background: color-mix(in srgb, var(--color-accent) 35%, transparent); }
 .fm-preview {
     display: grid;

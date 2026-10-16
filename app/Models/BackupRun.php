@@ -28,6 +28,7 @@ class BackupRun extends Model
     protected $fillable = [
         'backup_schedule_id',
         'backup_storage_id',
+        'batch',
         'source_run_id',
         'type',
         'kind',

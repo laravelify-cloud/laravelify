@@ -97,6 +97,8 @@
 
                 <div class="fm-code" :class="wrap && 'is-wrapped'" :style="`--fm-font: ${fontSize}px`">
                     <pre class="fm-gutter" x-ref="gutter" aria-hidden="true" x-show="!wrap" x-text="gutter()"></pre>
+                    <div class="fm-code-area">
+                    <pre class="fm-marks" x-ref="marks" aria-hidden="true"></pre>
                     <textarea
                         x-ref="code"
                         wire:model="openContent"
@@ -104,14 +106,15 @@
                         autocapitalize="off"
                         autocomplete="off"
                         aria-label="Contents of {{ $openName }}"
-                        @input="dirty = true; measure()"
+                        @input="dirty = true; measure(); findOpen && countMatches()"
                         @click="caret()"
                         @keyup="caret()"
-                        @scroll="$refs.gutter.scrollTop = $el.scrollTop"
+                        @scroll="$refs.gutter.scrollTop = $el.scrollTop; syncMarks()"
                         @keydown.tab.prevent="document.execCommand('insertText', false, '    ')"
                         @keydown.ctrl.s.prevent="$wire.saveFile()"
                         @keydown.meta.s.prevent="$wire.saveFile()"
                     ></textarea>
+                    </div>
                 </div>
                 <div class="fm-editor-foot">
                     <span class="flex flex-wrap items-center gap-x-4 gap-y-1">

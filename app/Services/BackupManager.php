@@ -66,7 +66,7 @@ class BackupManager
 
         if (! $schedule) {
             $storage = BackupStorage::query()->where('is_default', true)->first() ?? BackupStorage::query()->first()
-                ?? throw new RuntimeException('Add an S3 storage first.');
+                ?? throw new RuntimeException('Add a backup storage first (an S3 bucket or a folder on this server).');
 
             $schedule = BackupSchedule::query()->create([
                 'name' => 'Full backup',
@@ -90,15 +90,19 @@ class BackupManager
     }
 
     /**
-     * A waiting run for every target of the schedule.
+     * A waiting run for every target of the schedule. The runs of one go share a batch id, so the
+     * list shows them together (a full backup, then each website in it).
      *
      * @return list<BackupRun>
      */
     public function prepareRuns(BackupSchedule $schedule, string $trigger): array
     {
+        $batch = (string) Str::uuid();
+
         return array_map(fn (array $target) => BackupRun::query()->create([
             'backup_schedule_id' => $schedule->id,
             'backup_storage_id' => $schedule->backup_storage_id,
+            'batch' => $batch,
             'type' => BackupRun::TYPE_BACKUP,
             'kind' => $schedule->kind,
             'target' => $target['label'],
@@ -177,7 +181,7 @@ class BackupManager
         $buttons = [];
 
         foreach ($succeeded as $run) {
-            $url = $run->storage ? $this->storage->temporaryUrl($run->storage, (string) $run->object_key, self::LINK_SECONDS) : null;
+            $url = $run->storage && ! $run->storage->isLocal() ? $this->storage->temporaryUrl($run->storage, (string) $run->object_key, self::LINK_SECONDS) : null;
             $name = Telegram::escape($run->target);
             $lines[] = '• '.($url ? '<a href="'.htmlspecialchars($url, ENT_QUOTES).'">'.$name.'</a>' : $name).' · '.$run->sizeLabel();
 
@@ -234,11 +238,19 @@ class BackupManager
             return [];
         }
 
-        return [[
-            'label' => implode(', ', array_map(fn (string $path) => $path === '' ? '(everything)' : $path, $paths)),
-            'paths' => $paths,
-            'excludes' => array_values($targets['excludes'] ?? []),
-        ]];
+        $excludes = array_values($targets['excludes'] ?? []);
+
+        // "Everything" is one archive of the whole folder.
+        if (in_array('', $paths, true)) {
+            return [['label' => '(everything)', 'paths' => [''], 'excludes' => $excludes]];
+        }
+
+        // One archive per folder (a website, or a folder in it), so each restores and downloads on its own.
+        return array_map(fn (string $path) => [
+            'label' => $path,
+            'paths' => [$path],
+            'excludes' => $excludes,
+        ], $paths);
     }
 
     /**
@@ -254,7 +266,7 @@ class BackupManager
         $file = $workDir.'/'.Str::random(12).'.'.$extension;
 
         try {
-            $storage = $schedule->storage ?? throw new RuntimeException('This schedule has no storage. Choose an S3 storage and save it.');
+            $storage = $schedule->storage ?? throw new RuntimeException('This schedule has no storage. Choose a storage and save it.');
             $meta = [];
 
             if ($schedule->isDatabase()) {

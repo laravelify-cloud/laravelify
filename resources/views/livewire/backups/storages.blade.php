@@ -1,5 +1,5 @@
 <div class="flex flex-col gap-6" x-data="{ open: @entangle('showForm') }">
-    <x-page-header title="Backup storage" summary="Backups are sent to an S3 bucket you own: Amazon S3, DigitalOcean Spaces, Cloudflare R2, Backblaze B2, Wasabi, or MinIO. The keys are stored encrypted.">
+    <x-page-header title="Backup storage" summary="Backups are sent to an S3 bucket you own (Amazon S3, DigitalOcean Spaces, Cloudflare R2, Backblaze B2, Wasabi, or MinIO; the keys are stored encrypted), or to a folder on this server.">
         <x-slot:actions>
             <button class="btn btn-primary" type="button" wire:click="create"><x-menu-icon name="plus" /> Add storage</button>
         </x-slot:actions>
@@ -10,7 +10,7 @@
             <thead>
                 <tr>
                     <th>Name</th>
-                    <th>Bucket</th>
+                    <th>Where</th>
                     <th>Status</th>
                     <th class="w-28">Schedules</th>
                     <th class="w-64"></th>
@@ -29,8 +29,8 @@
                             </span>
                         </td>
                         <td class="text-muted">
-                            {{ $storage->bucket }}{{ $storage->prefix() !== '' ? '/'.$storage->prefix() : '' }}
-                            <span class="block text-[12px]">{{ $storage->endpoint ?: 'Amazon S3' }} · {{ $storage->region }}</span>
+                            <span class="font-mono text-[12.5px]">{{ $storage->location() }}</span>
+                            <span class="block text-[12px]">{{ $storage->isLocal() ? 'Folder on this server' : ($storage->endpoint ?: 'Amazon S3').' · '.$storage->region }}</span>
                         </td>
                         <td>
                             @if ($storage->last_error)
@@ -56,7 +56,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="5" class="table-empty">No storage yet. Add an S3 bucket, then create a backup schedule.</td>
+                        <td colspan="5" class="table-empty">No storage yet. Add an S3 bucket or a folder on this server, then create a backup schedule.</td>
                     </tr>
                 @endforelse
             </tbody>
@@ -66,7 +66,7 @@
     <x-modal-frame close="$wire.set('showForm', false)">
         <form class="grid gap-4" wire:submit="save">
             <div class="flex items-center justify-between gap-3">
-                <h2 class="text-lg font-semibold">{{ $editingId ? 'Edit storage' : 'Add S3 storage' }}</h2>
+                <h2 class="text-lg font-semibold">{{ $editingId ? 'Edit storage' : 'Add storage' }}</h2>
                 <button class="btn" type="button" wire:click="$set('showForm', false)">Close</button>
             </div>
 
@@ -86,6 +86,14 @@
                 <small class="text-muted">{{ $providers[$provider]['hint'] }}</small>
             </label>
 
+            @if ($provider === 'local')
+                <label class="field">
+                    <span>Folder on this server</span>
+                    <input class="input font-mono" wire:model="path" placeholder="/backups" spellcheck="false">
+                    @error('path') <small class="error">{{ $message }}</small> @enderror
+                    <small class="text-muted">A full path outside /var/www and system folders, like <code>/backups</code>. Laravelify makes it if it is missing.</small>
+                </label>
+            @else
             <div class="grid gap-4 sm:grid-cols-2">
                 <label class="field">
                     <span>Endpoint</span>
@@ -120,6 +128,7 @@
             </div>
 
             <p class="text-[12.5px] text-muted">The keys need read, write, and delete access to this bucket. Saving writes a small test file and removes it.</p>
+            @endif
 
             <div class="flex justify-end gap-2 border-t border-line pt-4">
                 <button class="btn" type="button" wire:click="$set('showForm', false)">Cancel</button>

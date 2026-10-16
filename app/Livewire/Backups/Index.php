@@ -108,7 +108,7 @@ class Index extends PanelComponent
         $schedule = BackupSchedule::query()->with('storage')->where('kind', $this->kind)->findOrFail($id);
 
         if (! $schedule->storage) {
-            $this->toast('Choose an S3 storage for this schedule first (Edit).', 'error');
+            $this->toast('Choose a storage for this schedule first (Edit).', 'error');
 
             return;
         }
@@ -228,7 +228,7 @@ class Index extends PanelComponent
         $storage = BackupStorage::query()->where('is_default', true)->first() ?? BackupStorage::query()->first();
 
         if (! $storage) {
-            $this->toast('Add an S3 storage first.', 'error');
+            $this->toast('Add a backup storage first: an S3 bucket or a folder on this server.', 'error');
 
             return;
         }
@@ -570,7 +570,12 @@ class Index extends PanelComponent
             'lastRuns' => $lastRuns,
             'running' => $schedules->mapWithKeys(fn (BackupSchedule $schedule) => [$schedule->id => $backups->isRunning($schedule)]),
             'runs' => $runs,
-            'runGroups' => $runs->groupBy(fn (BackupRun $run) => $isDatabase ? 'database:'.$run->target : 'schedule:'.$run->backup_schedule_id),
+            // Databases: by database, older dumps under the newest. Files: by run, each website's archive under it.
+            'runGroups' => $runs->groupBy(fn (BackupRun $run) => match (true) {
+                $isDatabase => 'database:'.$run->target,
+                $run->isBackup() && $run->batch !== null => 'batch:'.$run->batch,
+                default => 'run:'.$run->id,
+            }),
             'filters' => $this->filterOptions($restorable, $schedules),
             'hasStorage' => BackupStorage::query()->exists(),
             'tasks' => $tasks,

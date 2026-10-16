@@ -230,7 +230,7 @@ class ScheduleForm extends PanelComponent
             'retention_count' => ['required', 'integer', 'between:1,365'],
             'retention_days' => ['nullable', 'integer', 'between:1,3650'],
         ], [
-            'backup_storage_id.required' => 'Choose where to store the backups. Add an S3 storage first if the list is empty.',
+            'backup_storage_id.required' => 'Choose where to store the backups. Add a storage (an S3 bucket or a folder on this server) first if the list is empty.',
             'run_time.regex' => 'Use a time like 02:30.',
         ]);
 
