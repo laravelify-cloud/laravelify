@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Database\Connection;
 use Illuminate\Database\QueryException;
 
 /**
@@ -199,7 +200,7 @@ class DatabaseSql
     /**
      * @return array<string, mixed>
      */
-    private function execute(\Illuminate\Database\Connection $connection, string $statement): array
+    private function execute(Connection $connection, string $statement): array
     {
         $kind = $this->kind($statement);
 

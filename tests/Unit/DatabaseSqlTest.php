@@ -12,11 +12,11 @@ class DatabaseSqlTest extends TestCase
     {
         $sql = new DatabaseSql;
 
-        $this->assertSame(['SELECT 1', 'SELECT 2'], $sql->split("SELECT 1; SELECT 2;"));
+        $this->assertSame(['SELECT 1', 'SELECT 2'], $sql->split('SELECT 1; SELECT 2;'));
         $this->assertSame(["SELECT ';'", 'SELECT 2'], $sql->split("SELECT ';'; SELECT 2"));
         $this->assertSame(['SELECT "a;b"', 'SELECT 2'], $sql->split('SELECT "a;b"; SELECT 2'));
         $this->assertSame(['SELECT `a;b`', 'SELECT 2'], $sql->split('SELECT `a;b`; SELECT 2'));
-        $this->assertSame(['SELECT 1 /* ; */', 'SELECT 2'], $sql->split("SELECT 1 /* ; */; SELECT 2"));
+        $this->assertSame(['SELECT 1 /* ; */', 'SELECT 2'], $sql->split('SELECT 1 /* ; */; SELECT 2'));
         $this->assertSame(["SELECT 1 -- ;\nSELECT 2"], $sql->split("SELECT 1 -- ;\nSELECT 2"));
         $this->assertSame(['SELECT 1', "-- note\nSELECT 2"], $sql->split("SELECT 1; -- note\nSELECT 2"));
         $this->assertSame([], $sql->split('   ;   '));
