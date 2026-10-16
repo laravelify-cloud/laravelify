@@ -362,6 +362,24 @@ PHP
     chmod 644 /etc/phpmyadmin/conf.d/laravelify-signon.php
     echo "phpMyAdmin one-click sign-in is installed."
     ;;
+  phpmyadmin-hide)
+    # phpMyAdmin does not list the panel's own database (or its own storage database).
+    # Loaded after the other conf.d files ("zz-"), so the one-click sign-in server is covered too.
+    [[ -d /etc/phpmyadmin ]] || { echo "phpMyAdmin is not installed."; exit 0; }
+    panel_db="$(grep -E '^DB_DATABASE=' "${ROOT}/.env" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '"'"'"' \r')"
+    panel_db="${panel_db:-laravelify}"
+    [[ "${panel_db}" =~ ^[A-Za-z0-9_-]{1,64}$ ]] || die "invalid panel database name"
+    ensure_dirs /etc/phpmyadmin/conf.d
+    cat > /etc/phpmyadmin/conf.d/zz-laravelify-hide.php <<PHP
+<?php
+// Written by Laravelify (host-apply.sh phpmyadmin-hide): the panel's own database is not listed.
+foreach (array_keys(\$cfg['Servers'] ?? []) as \$laravelifyServer) {
+    \$cfg['Servers'][\$laravelifyServer]['hide_db'] = '^(${panel_db}|phpmyadmin)\$';
+}
+PHP
+    chmod 644 /etc/phpmyadmin/conf.d/zz-laravelify-hide.php
+    echo "phpMyAdmin hides ${panel_db}."
+    ;;
   php-fpm)
     version_ok "${TARGET}" || die "invalid php version"
     [[ -f "${RENDERED}/services/php-fpm-${TARGET}.conf" ]] || die "missing php-fpm pool"

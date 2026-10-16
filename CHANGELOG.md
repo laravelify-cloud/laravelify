@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.37] - 2026-10-16
+
+- **The panel's own database is hidden.** `laravelify` (the database in the panel's `.env`) no longer shows in Tools → Database, the backup pickers, the Full backup dialog, or "All databases" backups, and phpMyAdmin no longer lists it (or its own `phpmyadmin` database): installs and updates write `/etc/phpmyadmin/conf.d/zz-laravelify-hide.php` with `hide_db` for every phpMyAdmin server.
+
 ## [0.3.0-beta.36] - 2026-10-16
 
 - **New Tools → Database.** Every MySQL database with its size and tables, without leaving the panel:

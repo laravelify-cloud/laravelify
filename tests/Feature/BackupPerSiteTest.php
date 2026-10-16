@@ -10,6 +10,7 @@ use App\Models\BackupStorage;
 use App\Models\User;
 use App\Services\BackupManager;
 use App\Services\BackupStorageClient;
+use App\Services\DatabaseBrowser;
 use App\Services\DatabaseDumper;
 use App\Services\TwoFactor;
 use App\Support\SkippedTables;
@@ -138,5 +139,15 @@ class BackupPerSiteTest extends TestCase
         $this->assertSame(['cache', 'sessions'], $run->meta['skipped_tables']);
         $this->assertStringContainsString('Skipping 2 table(s): cache, sessions.', (string) $run->log);
         $this->assertSame('app_db · skips 3 tables', $schedule->describeTargets());
+    }
+
+    public function test_the_panels_own_database_is_never_offered(): void
+    {
+        config(['database.connections.mysql.database' => 'laravelify']);
+
+        $this->assertTrue(DatabaseDumper::isPanelDatabase('laravelify'));
+        $this->assertFalse(DatabaseDumper::isPanelDatabase('shop_db'));
+        $this->assertFalse(DatabaseBrowser::validDatabase('laravelify'));
+        $this->assertTrue(DatabaseBrowser::validDatabase('shop_db'));
     }
 }

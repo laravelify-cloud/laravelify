@@ -96,6 +96,7 @@ composer install --no-dev --optimize-autoloader --no-interaction --no-ansi
 "${PHP_BIN}" artisan migrate --force --no-ansi
 "${PHP_BIN}" artisan laravelify:mysql-defaults --no-ansi || true
 "${PHP_BIN}" artisan laravelify:upload-limits --no-ansi || true
+bash "${APP_ROOT}/scripts/host-apply.sh" phpmyadmin-hide all || true
 
 # The steps above run as root. The panel runs as www-data and must own what it writes:
 # logs, caches, and the home folder its tools use (older installs made that one as root).

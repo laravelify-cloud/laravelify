@@ -52,7 +52,7 @@ class DatabaseBrowser
 
     public static function validDatabase(string $name): bool
     {
-        return DatabaseDumper::validName($name) && ! in_array(strtolower($name), DatabaseDumper::SYSTEM, true);
+        return DatabaseDumper::validName($name) && ! in_array(strtolower($name), DatabaseDumper::SYSTEM, true) && ! DatabaseDumper::isPanelDatabase($name);
     }
 
     public static function validTable(string $name): bool

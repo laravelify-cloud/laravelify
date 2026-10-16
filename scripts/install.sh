@@ -663,6 +663,7 @@ www-data ALL=(root) NOPASSWD: ${APP_ROOT}/scripts/host-apply.sh
 EOF
 chmod 440 /etc/sudoers.d/laravelify
 visudo -cf /etc/sudoers.d/laravelify
+bash "$APP_ROOT/scripts/host-apply.sh" phpmyadmin-hide all || true
 
 cat > /etc/supervisor/conf.d/laravelify-panel.conf <<EOF
 [program:laravelify-queue]

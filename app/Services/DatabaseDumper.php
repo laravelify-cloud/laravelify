@@ -18,6 +18,16 @@ class DatabaseDumper
 
     public function __construct(private CommandRunner $runner, private DatabaseProvisioner $provisioner) {}
 
+    /**
+     * The panel's own database: never listed, browsed, or backed up with "all databases".
+     */
+    public static function isPanelDatabase(string $name): bool
+    {
+        $panel = (string) config('database.connections.mysql.database');
+
+        return $panel !== '' && strcasecmp($name, $panel) === 0;
+    }
+
     public static function validName(string $name): bool
     {
         return preg_match('/^[A-Za-z0-9_-]{1,64}$/', $name) === 1;
@@ -30,7 +40,7 @@ class DatabaseDumper
     {
         $lines = $this->query('SHOW DATABASES');
 
-        return array_values(array_filter($lines, fn (string $name) => ! in_array($name, self::SYSTEM, true) && self::validName($name)));
+        return array_values(array_filter($lines, fn (string $name) => ! in_array($name, self::SYSTEM, true) && self::validName($name) && ! self::isPanelDatabase($name)));
     }
 
     /**
