@@ -2,6 +2,14 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.51] - unreleased
+
+- **A step-by-step installer.** The install command now shows a settings summary, then one line per step with a spinner while it runs and a check mark with its time when it is done (Downloaded Laravelify, Installing PHP 8.4, Installing MySQL 8.4, Starting the Cloudflare tunnel, …). What the commands print goes to `/var/log/laravelify-install.log` (root only). When a step fails, the installer stops there and shows the last lines of that log. It ends with a summary: the setup link, the Cloudflare hostnames to add, phpMyAdmin, and how to update. Updating with the install command shows the same steps.
+- **Choose what to install.** `--php=8.3,8.4` and `--node=22,24` (or `LARAVELIFY_PHP_VERSIONS` and `LARAVELIFY_NODE_VERSIONS`) install only the PHP-FPM and Node.js versions your sites use; the defaults are still PHP 8.0 to 8.5 and Node.js 20, 22, and 24. The panel needs PHP 8.3 or newer, so 8.4 is added when none of 8.3, 8.4, 8.5 is chosen, and the newest Node.js chosen is the system one. `--panel-domain` and `--phpmyadmin-domain` skip those questions, and `--help` lists the options. The MySQL password and the tunnel token are still always asked on the server.
+- **Install command builder on laravelify.cloud.** Tick the PHP and Node.js versions, optionally type the domains, copy the command, and see the steps it will show.
+- **Installing from a source folder never copies its `.env`.** `LARAVELIFY_SOURCE` used to copy the folder's own `.env`, `storage`, and caches, so a repair from a developer checkout could replace the server's `APP_KEY` and make every saved secret unreadable. They are left out now, and a failed settings step stops the install right there.
+- **Detailed READMEs** for the panel, the docs, the website, and the organization profile.
+
 ## [0.3.0-beta.50] - 2026-10-17
 
 - **GD for websites that resize images.** Every PHP version the panel installs includes GD (JPEG, PNG, WebP), and updating the panel adds it to any installed PHP version on an older server that is missing it, then reloads that PHP-FPM. Fixes "GD cannot resize images on this PHP. imagejpeg or imagewebp is missing." Queue workers and other long-running processes started before the update need a restart to see it.

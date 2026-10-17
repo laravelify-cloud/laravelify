@@ -19,9 +19,44 @@
 #   LARAVELIFY_REPO           GitHub owner/name to download releases from
 #   LARAVELIFY_SOURCE         directory to copy into /opt/laravelify instead
 #   LARAVELIFY_ARCHIVE_URL    tar.gz of the panel to download instead
+#   LARAVELIFY_PHP_VERSIONS   PHP-FPM versions to install, like "8.3 8.4" (default: 8.0 to 8.5)
+#   LARAVELIFY_NODE_VERSIONS  Node.js majors to install, like "22 24" (default: 20 22 24)
+#
+# The same choices as options (the install command builder on laravelify.cloud writes these):
+#   curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- --php=8.3,8.4 --node=22
+#   --php=LIST  --node=LIST  --panel-domain=HOST  --phpmyadmin-domain=HOST  --help
 
-set -euo pipefail
-trap 'rm -rf /tmp/laravelify-install' EXIT
+set -Eeuo pipefail
+
+usage() {
+  cat <<'USAGE'
+Laravelify installer
+
+  curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash
+  curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- [options]
+
+Options:
+  --php=8.3,8.4               PHP-FPM versions to install (8.0 to 8.5; default: all)
+  --node=22,24                Node.js majors to install (20, 22, 24; default: all three)
+  --panel-domain=HOST         the panel's domain, like panel.example.com
+  --phpmyadmin-domain=HOST    phpMyAdmin's domain, like phpmyadmin.example.com
+  -h, --help                  show this help
+
+The MySQL root password and the Cloudflare tunnel token are always asked on the server,
+so they never end up in a shell history or a copied command.
+USAGE
+}
+
+for argument in "$@"; do
+  case "$argument" in
+    --php=*) LARAVELIFY_PHP_VERSIONS="${argument#*=}" ;;
+    --node=*) LARAVELIFY_NODE_VERSIONS="${argument#*=}" ;;
+    --panel-domain=*) PANEL_DOMAIN="${argument#*=}" ;;
+    --phpmyadmin-domain=*) PHPMYADMIN_DOMAIN="${argument#*=}" ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: ${argument}" >&2; usage >&2; exit 1 ;;
+  esac
+done
 
 # The release workflow replaces this with the real repository when it uploads the script.
 LARAVELIFY_REPO="${LARAVELIFY_REPO:-laravelify-cloud/laravelify}"
@@ -39,6 +74,137 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
+
+# --- Console ------------------------------------------------------------------------------------
+# Each step shows one line: a spinner while it runs, then a check mark and how long it took.
+# What the commands print goes to the log; when a step fails, its last lines are shown.
+LOG_FILE=/var/log/laravelify-install.log
+( umask 077; : > "$LOG_FILE" ) 2>/dev/null || LOG_FILE="$(mktemp /tmp/laravelify-install.XXXXXX.log)"
+chmod 600 "$LOG_FILE" 2>/dev/null || true
+exec 3>&1 4>&2
+
+FANCY=0
+if [[ -t 3 && -z "${NO_COLOR:-}" && "${TERM:-dumb}" != dumb ]]; then
+  FANCY=1
+fi
+
+if [[ "$FANCY" == 1 ]]; then
+  C_RESET=$'\033[0m' C_BOLD=$'\033[1m' C_DIM=$'\033[2m' C_RED=$'\033[31m' C_GREEN=$'\033[32m'
+  C_YELLOW=$'\033[33m' C_CYAN=$'\033[36m' C_MAGENTA=$'\033[35m'
+else
+  C_RESET='' C_BOLD='' C_DIM='' C_RED='' C_GREEN='' C_YELLOW='' C_CYAN='' C_MAGENTA=''
+fi
+
+STEP_LABEL=""
+STEP_START=0
+SPINNER_PID=""
+INSTALL_START=$SECONDS
+
+duration() {
+  local seconds="$1"
+  if (( seconds >= 60 )); then
+    printf '%dm %02ds' $((seconds / 60)) $((seconds % 60))
+  else
+    printf '%ds' "$seconds"
+  fi
+}
+
+ui() { printf '%s\n' "$*" >&3; }
+ui_bar() { printf '%s│%s\n' "$C_DIM" "$C_RESET" >&3; }
+
+# A line under the current step (a skipped version, a fallback), also kept in the log.
+note() {
+  if [[ -n "$SPINNER_PID" ]]; then
+    printf '\r\033[K' >&3
+  fi
+  printf '%s│  %s%s\n' "$C_DIM" "$*" "$C_RESET" >&3
+  printf '%s\n' "$*" >>"$LOG_FILE"
+}
+
+spinner_stop() {
+  if [[ -n "$SPINNER_PID" ]]; then
+    kill "$SPINNER_PID" 2>/dev/null || true
+    wait "$SPINNER_PID" 2>/dev/null || true
+    SPINNER_PID=""
+    printf '\r\033[K' >&3
+  fi
+}
+
+step_done() {
+  [[ -n "$STEP_LABEL" ]] || return 0
+  spinner_stop
+  printf '%s◆%s  %s %s%s%s\n' "$C_GREEN" "$C_RESET" "$STEP_LABEL" "$C_DIM" "$(duration $((SECONDS - STEP_START)))" "$C_RESET" >&3
+  STEP_LABEL=""
+}
+
+# Start a step: the previous one is done, and output goes to the log from here on.
+step() {
+  step_done
+  STEP_LABEL="$1"
+  STEP_START=$SECONDS
+  printf '\n==> %s\n' "$1" >>"$LOG_FILE"
+  exec >>"$LOG_FILE" 2>&1
+
+  if [[ "$FANCY" == 1 ]]; then
+    (
+      trap - EXIT
+      frames=('◒' '◐' '◓' '◑')
+      i=0
+      while :; do
+        printf '\r\033[K%s%s%s  %s %s%s%s' "$C_CYAN" "${frames[i % 4]}" "$C_RESET" "$1" "$C_DIM" "$(duration $((SECONDS - STEP_START)))" "$C_RESET" >&3
+        i=$((i + 1))
+        sleep 0.12
+      done
+    ) &
+    SPINNER_PID=$!
+  else
+    printf -- '- %s ...\n' "$1" >&3
+  fi
+}
+
+on_exit() {
+  local code=$?
+  spinner_stop
+  exec 1>&3 2>&4
+  if (( code != 0 )); then
+    printf '%s■%s  %s%s%s\n' "$C_RED" "$C_RESET" "$C_BOLD" "${STEP_LABEL:-Install} failed" "$C_RESET" >&2
+    if [[ -s "$LOG_FILE" ]]; then
+      printf '%s│%s\n' "$C_DIM" "$C_RESET" >&2
+      tail -n 25 "$LOG_FILE" | sed "s/^/${C_DIM}│${C_RESET}  /" >&2
+    fi
+    printf '%s└%s  Full log: %s\n' "$C_DIM" "$C_RESET" "$LOG_FILE" >&2
+  fi
+  rm -rf /tmp/laravelify-install
+}
+trap on_exit EXIT
+
+# The versions to install. The panel itself needs PHP 8.3 or newer.
+PHP_VERSIONS="${LARAVELIFY_PHP_VERSIONS:-8.0 8.1 8.2 8.3 8.4 8.5}"
+PHP_VERSIONS="$(tr ',' ' ' <<<"$PHP_VERSIONS" | xargs -n1 | sort -uV | xargs)"
+for version in $PHP_VERSIONS; do
+  if [[ ! "$version" =~ ^8\.[0-5]$ ]]; then
+    echo "PHP ${version} is not one the installer offers (8.0 to 8.5)." >&2
+    exit 1
+  fi
+done
+if [[ ! " $PHP_VERSIONS " =~ \ 8\.[345]\  ]]; then
+  PHP_VERSIONS="$(xargs -n1 <<<"$PHP_VERSIONS 8.4" | sort -uV | xargs)"
+  PHP_ADDED_NOTE="PHP 8.4 added: the panel itself needs PHP 8.3 or newer."
+fi
+
+NODE_VERSIONS="${LARAVELIFY_NODE_VERSIONS:-20 22 24}"
+NODE_VERSIONS="$(tr ',' ' ' <<<"$NODE_VERSIONS" | xargs -n1 | sort -un | xargs)"
+for version in $NODE_VERSIONS; do
+  if [[ ! "$version" =~ ^(20|22|24)$ ]]; then
+    echo "Node.js ${version} is not one the installer offers (20, 22, 24)." >&2
+    exit 1
+  fi
+done
+# The system Node.js (for npm, PM2, and sites without a version of their own): the newest chosen.
+NODE_BASE="${NODE_VERSIONS##* }"
+
+printf '\n%s┌%s  %sLaravelify%s %sinstaller · self-hosted deployment panel%s\n' "$C_DIM" "$C_RESET" "$C_BOLD$C_MAGENTA" "$C_RESET" "$C_DIM" "$C_RESET" >&3
+ui_bar
 
 read_tty() {
   if [[ -r /dev/tty ]]; then
@@ -75,10 +241,14 @@ if [[ "${LARAVELIFY_REINSTALL:-}" != "1" && -z "${LARAVELIFY_SOURCE:-}" \
   echo
 
   if [[ ! "$UPDATE_ANSWER" =~ ^[Nn] ]]; then
-    UPDATE_STATUS=0
-    LARAVELIFY_SOURCE="$UPDATE_DIR" LARAVELIFY_ROOT="$INSTALLED_ROOT" LARAVELIFY_RELEASE=1 bash "${UPDATE_DIR}/scripts/update.sh" || UPDATE_STATUS=$?
+    RELEASE_VERSION="$(tr -d '\r\n' < "${UPDATE_DIR}/VERSION" 2>/dev/null || echo unknown)"
+    step "Updating Laravelify ${INSTALLED_VERSION:-} → ${RELEASE_VERSION}"
+    LARAVELIFY_SOURCE="$UPDATE_DIR" LARAVELIFY_ROOT="$INSTALLED_ROOT" LARAVELIFY_RELEASE=1 bash "${UPDATE_DIR}/scripts/update.sh"
+    step_done
     rm -rf "$UPDATE_DIR"
-    exit "$UPDATE_STATUS"
+    exec 1>&3 2>&4
+    printf '%s└%s  %sLaravelify %s is ready%s %s(%s)%s\n\n' "$C_DIM" "$C_RESET" "$C_GREEN$C_BOLD" "$RELEASE_VERSION" "$C_RESET" "$C_DIM" "$(duration $((SECONDS - INSTALL_START)))" "$C_RESET"
+    exit 0
   fi
 
   rm -rf "$UPDATE_DIR"
@@ -195,10 +365,27 @@ printf '%s' "$CLOUDFLARE_TUNNEL_TOKEN" > /tmp/laravelify-install/tunnel-token
 chmod 600 /tmp/laravelify-install/tunnel-token
 unset CLOUDFLARE_TUNNEL_TOKEN
 
+. /etc/os-release
+
+ui_bar
+printf '%s◇%s  %sSettings%s\n' "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" >&3
+printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Server" "${PRETTY_NAME:-Ubuntu}" >&3
+printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Panel" "https://${PANEL_DOMAIN}" >&3
+printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "phpMyAdmin" "https://${PHPMYADMIN_DOMAIN}" >&3
+printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "PHP-FPM" "${PHP_VERSIONS}" >&3
+printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Node.js" "${NODE_VERSIONS} (system: ${NODE_BASE})" >&3
+printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Also" "MySQL 8.4, Redis, nginx, phpMyAdmin, PM2, Composer, cloudflared" >&3
+printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Log" "${LOG_FILE}" >&3
+if [[ -n "${PHP_ADDED_NOTE:-}" ]]; then
+  printf '%s│%s  %s%s%s\n' "$C_DIM" "$C_RESET" "$C_YELLOW" "$PHP_ADDED_NOTE" "$C_RESET" >&3
+fi
+ui_bar
+
 # Get the panel first: later steps use its helper scripts, and a bad download
 # should fail now, not after ten minutes of package installs.
 APP_ROOT="/opt/laravelify"
 SOURCE=""
+step "Downloading Laravelify"
 if [[ -n "${LARAVELIFY_SOURCE:-}" && -f "${LARAVELIFY_SOURCE}/artisan" ]]; then
   SOURCE="$LARAVELIFY_SOURCE"
 elif [[ -n "${BASH_SOURCE[0]:-}" && -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/artisan" ]]; then
@@ -217,7 +404,12 @@ fi
 
 if [[ -n "$SOURCE" && "$SOURCE" != "$APP_ROOT" ]]; then
   install -d "$APP_ROOT"
-  tar -C "$SOURCE" --exclude=vendor --exclude=node_modules --exclude=storage/logs --exclude=.git -cf - . | tar -C "$APP_ROOT" -xf -
+  # Never the source's own .env (another machine's APP_KEY would make every saved secret
+  # unreadable), its data, or its caches: the server keeps its own.
+  tar -C "$SOURCE" --exclude=vendor --exclude=node_modules --exclude=./storage --exclude=./bootstrap/cache \
+    --exclude=./.env --exclude='./.env.*.local' --exclude=./.env.backup --exclude=.git -cf - . | tar -C "$APP_ROOT" -xf -
+  install -d "$APP_ROOT/storage/app" "$APP_ROOT/storage/framework/cache" "$APP_ROOT/storage/framework/sessions" \
+    "$APP_ROOT/storage/framework/views" "$APP_ROOT/storage/logs" "$APP_ROOT/bootstrap/cache"
 fi
 
 if [[ ! -f "$APP_ROOT/artisan" ]]; then
@@ -226,7 +418,9 @@ if [[ ! -f "$APP_ROOT/artisan" ]]; then
   exit 1
 fi
 
-. /etc/os-release
+PANEL_VERSION="$(tr -d '\r\n' < "$APP_ROOT/VERSION" 2>/dev/null || echo '')"
+STEP_LABEL="Downloaded Laravelify ${PANEL_VERSION}"
+
 CODENAME="${VERSION_CODENAME}"
 
 # apt-get install only for the packages that are not installed yet (quiet when all are).
@@ -263,6 +457,7 @@ if awk -v v="${VERSION_ID:-0}" 'BEGIN { exit !(v+0 >= 26.04) }'; then
   drop_extra_sources "ppa.launchpadcontent.net/ondrej/php"
 fi
 
+step "Installing nginx, Redis, Supervisor, Git, and tools"
 apt-get update
 apt_install ca-certificates curl gnupg lsb-release software-properties-common \
   nginx supervisor git unzip redis-server ufw debconf-utils rclone
@@ -273,6 +468,7 @@ php_repository_present() {
 }
 
 if ! php_repository_present; then
+  step "Adding the PHP package repository"
   if awk -v v="${VERSION_ID:-0}" 'BEGIN { exit !(v+0 >= 26.04) }'; then
     curl -fsSLo /tmp/debsuryorg-archive-keyring.deb https://packages.sury.org/debsuryorg-archive-keyring.deb
     dpkg -i /tmp/debsuryorg-archive-keyring.deb
@@ -300,15 +496,17 @@ install_php() {
   done
 
   if [[ ${#missing[@]} -eq 0 ]]; then
-    echo "PHP ${version} is already installed."
+    STEP_LABEL="PHP ${version} is already installed"
   elif apt-cache show "php${version}-fpm" >/dev/null 2>&1; then
     apt-get install -y "${missing[@]}"
   else
-    echo "Skipping PHP ${version}: the package is not in this archive."
+    note "Skipping PHP ${version}: the PHP repository has no packages for ${PRETTY_NAME:-this Ubuntu}."
+    STEP_LABEL="PHP ${version} skipped"
   fi
 }
 
-for version in 8.0 8.1 8.2 8.3 8.4 8.5; do
+for version in $PHP_VERSIONS; do
+  step "Installing PHP ${version} (FPM, CLI, MySQL, Redis, GD, intl, and more)"
   install_php "${version}"
 done
 
@@ -326,8 +524,9 @@ if [[ -z "$PANEL_PHP" ]]; then
   exit 1
 fi
 
+step "Installing MySQL 8.4"
 if package_installed mysql-community-server || package_installed mysql-server; then
-  echo "MySQL is already installed."
+  STEP_LABEL="MySQL is already installed"
 else
   install -d -m 0755 /usr/share/keyrings
   if [[ ! -f /usr/share/keyrings/mysql-archive-keyring.gpg ]]; then
@@ -339,7 +538,7 @@ deb [signed-by=/usr/share/keyrings/mysql-archive-keyring.gpg] http://repo.mysql.
 EOF
 
   if ! apt-get update; then
-    echo "MySQL 8.4 repository has no packages for ${CODENAME}. Using the Ubuntu MySQL package."
+    note "MySQL 8.4 has no packages for ${CODENAME}: using Ubuntu's MySQL package."
     rm -f /etc/apt/sources.list.d/mysql-8.4-lts.list
     apt-get update
     apt-get install -y mysql-server
@@ -366,18 +565,20 @@ preseed_phpmyadmin() {
   fi
   rm -rf "$tmp"
 }
+step "Installing phpMyAdmin"
 if package_installed phpmyadmin; then
-  echo "phpMyAdmin is already installed."
+  STEP_LABEL="phpMyAdmin is already installed"
 else
   preseed_phpmyadmin
-  apt-get install -y phpmyadmin || echo "phpMyAdmin package was not installed. nginx still points at /usr/share/phpmyadmin."
+  apt-get install -y phpmyadmin || note "phpMyAdmin was not installed; nginx still points at /usr/share/phpmyadmin."
 fi
 
+step "Installing Node.js ${NODE_BASE}, npm, and PM2"
 if ! command -v node >/dev/null 2>&1; then
-  if curl -fsSL https://deb.nodesource.com/setup_22.x | bash -; then
+  if curl -fsSL "https://deb.nodesource.com/setup_${NODE_BASE}.x" | bash -; then
     apt-get install -y nodejs
   else
-    echo "NodeSource does not support ${CODENAME}. Using the Ubuntu Node.js package."
+    note "NodeSource does not support ${CODENAME}: using Ubuntu's Node.js package."
     drop_extra_sources "deb.nodesource.com"
     apt-get update
     apt-get install -y nodejs npm
@@ -388,18 +589,25 @@ if ! command -v pm2 >/dev/null 2>&1 || ! command -v n >/dev/null 2>&1; then
   npm install -g pm2 n
 fi
 # Node sites run in www-data's PM2 daemon; scripts/privileges.sh enables pm2-www-data below.
-for node_major in 20 22 24; do
-  if ! compgen -G "/usr/local/n/versions/node/${node_major}.*" >/dev/null; then
-    n "$node_major" || true
+for node_major in $NODE_VERSIONS; do
+  step "Installing Node.js ${node_major}"
+  if compgen -G "/usr/local/n/versions/node/${node_major}.*" >/dev/null; then
+    STEP_LABEL="Node.js ${node_major} is already installed"
+  elif ! n "$node_major"; then
+    note "Could not install Node.js ${node_major}; sites set to it use Node.js ${NODE_BASE}."
   fi
 done
+# `n` switches the system Node.js to each version it installs: end on the system one.
+n "$NODE_BASE" || true
 
 if ! command -v composer >/dev/null 2>&1; then
+  step "Installing Composer"
   curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php
   php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
   rm -f /tmp/composer-setup.php
 fi
 
+step "Setting up MySQL (root password, utf8mb4)"
 install -d -m 700 /tmp/laravelify-install
 printf '%s' "$MYSQL_ROOT_PASSWORD" > /tmp/laravelify-install/password
 chmod 600 /tmp/laravelify-install/password
@@ -450,6 +658,7 @@ $cfg['DefaultCharset'] = 'utf8mb4';
 $cfg['DefaultConnectionCollation'] = 'utf8mb4_general_ci';
 EOF
 
+step "Configuring Redis"
 install -d /etc/redis
 cat > /etc/redis/laravelify.conf <<'EOF'
 bind 127.0.0.1
@@ -462,6 +671,7 @@ if [[ -f /etc/redis/redis.conf ]] && ! grep -q '/etc/redis/laravelify.conf' /etc
 fi
 systemctl restart redis-server
 
+step "Configuring phpMyAdmin"
 cat > /etc/nginx/sites-available/laravelify-phpmyadmin.conf <<EOF
 server {
     listen 80;
@@ -495,6 +705,7 @@ EOF
 ln -sfn /etc/nginx/sites-available/laravelify-phpmyadmin.conf /etc/nginx/sites-enabled/laravelify-phpmyadmin.conf
 
 
+step "Installing the panel (Composer packages, database)"
 if [[ ! -f "$APP_ROOT/.env" ]]; then
   cp "$APP_ROOT/.env.example" "$APP_ROOT/.env"
 fi
@@ -554,6 +765,7 @@ if ! grep -q '^APP_KEY=base64:' .env; then
 fi
 php artisan migrate --force --no-ansi
 
+step "Saving the server settings and the tunnel"
 PHPMYADMIN_DOMAIN="$PHPMYADMIN_DOMAIN" PANEL_DOMAIN="$PANEL_DOMAIN" PANEL_PHP="$PANEL_PHP" php <<'PHP'
 <?php
 require "vendor/autoload.php";
@@ -619,7 +831,12 @@ UNIT;
 file_put_contents("/etc/systemd/system/laravelify-tunnel-{$slug}.service", $unit);
 chmod("/etc/systemd/system/laravelify-tunnel-{$slug}.service", 0600);
 PHP
+if [[ ! -s /tmp/laravelify-install/tunnel-slug ]]; then
+  echo "The server settings and the tunnel were not saved (see the error above)." >&2
+  exit 1
+fi
 
+step "Configuring nginx for the panel"
 cat > /etc/nginx/sites-available/laravelify-panel.conf <<EOF
 server {
     listen 80 default_server;
@@ -655,6 +872,7 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl reload nginx
 
+step "Creating users and permissions (panel, websites, PM2)"
 install -d -o www-data -g www-data -m 0755 /var/www
 chmod 755 "$APP_ROOT"/scripts/*.sh
 
@@ -664,6 +882,7 @@ chmod 755 "$APP_ROOT"/scripts/*.sh
 LARAVELIFY_ROOT="$APP_ROOT" LARAVELIFY_PHP="php${PANEL_PHP}" bash "$APP_ROOT/scripts/privileges.sh"
 bash "$APP_ROOT/scripts/host-apply.sh" phpmyadmin-hide all || true
 
+step "Starting the Cloudflare tunnel"
 if ! command -v cloudflared >/dev/null 2>&1; then
   case "$(uname -m)" in
     x86_64|amd64) CLOUDFLARED_ARCH="amd64" ;;
@@ -683,6 +902,7 @@ install -d /etc/cloudflared
 systemctl daemon-reload
 systemctl enable --now "laravelify-tunnel-${TUNNEL_SLUG}.service"
 
+step "Turning on the firewall (SSH, 80, 443)"
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp
@@ -690,11 +910,20 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw --force enable
 
-echo
-echo "Laravelify is installed."
-echo "Panel: https://${PANEL_DOMAIN}/setup?token=${SETUP_TOKEN}"
-echo "Open that link to create the superadmin. Without the token, /setup does not open."
-echo "phpMyAdmin: https://${PHPMYADMIN_DOMAIN}/  user root, and the MySQL root password you just set."
-echo "In Cloudflare, send ${PANEL_DOMAIN} and ${PHPMYADMIN_DOMAIN} to http://localhost:80."
-echo "Redis has no password yet. Set one in the panel under Server, Redis."
-echo "Firewall allows SSH, port 80, and port 443."
+step_done
+exec 1>&3 2>&4
+
+ui_bar
+printf '%s└%s  %sLaravelify %s is installed%s %s(%s)%s\n\n' "$C_DIM" "$C_RESET" "$C_GREEN$C_BOLD" "${PANEL_VERSION}" "$C_RESET" "$C_DIM" "$(duration $((SECONDS - INSTALL_START)))" "$C_RESET"
+printf '  %sNext steps%s\n\n' "$C_BOLD" "$C_RESET"
+printf '  %s1.%s Create the superadmin (only this link opens the setup page):\n' "$C_CYAN" "$C_RESET"
+printf '     %s%shttps://%s/setup?token=%s%s\n\n' "$C_BOLD" "$C_GREEN" "$PANEL_DOMAIN" "$SETUP_TOKEN" "$C_RESET"
+printf '  %s2.%s In Cloudflare (Zero Trust → Networks → Tunnels → Public hostnames), send\n' "$C_CYAN" "$C_RESET"
+printf '     %s and %s to %shttp://localhost:80%s.\n\n' "$PANEL_DOMAIN" "$PHPMYADMIN_DOMAIN" "$C_BOLD" "$C_RESET"
+printf '  %s3.%s Add a group and a website, and deploy it from GitHub.\n\n' "$C_CYAN" "$C_RESET"
+printf '  %sphpMyAdmin%s  https://%s/  (user root, the MySQL root password you set)\n' "$C_DIM" "$C_RESET" "$PHPMYADMIN_DOMAIN"
+printf '  %sRedis%s       no password yet: set one in the panel under Server → Redis\n' "$C_DIM" "$C_RESET"
+printf '  %sFirewall%s    open: SSH (22), HTTP (80), HTTPS (443)\n' "$C_DIM" "$C_RESET"
+printf '  %sUpdates%s     sudo bash /opt/laravelify/scripts/update.sh\n' "$C_DIM" "$C_RESET"
+printf '  %sDocs%s        https://docs.laravelify.cloud\n' "$C_DIM" "$C_RESET"
+printf '  %sLog%s         %s\n\n' "$C_DIM" "$C_RESET" "$LOG_FILE"
