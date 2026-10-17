@@ -33,7 +33,7 @@ install_php() {
     apt-get install -y \
       "php${version}-fpm" "php${version}-cli" "php${version}-mysql" "php${version}-xml" \
       "php${version}-mbstring" "php${version}-curl" "php${version}-zip" "php${version}-redis" \
-      "php${version}-bcmath" "php${version}-intl"
+      "php${version}-bcmath" "php${version}-intl" "php${version}-gd"
   else
     echo "Skipping PHP ${version}: the package is not in this archive."
   fi

@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.50] - unreleased
+
+- **GD for websites that resize images.** Every PHP version the panel installs includes GD (JPEG, PNG, WebP), and updating the panel adds it to any installed PHP version on an older server that is missing it, then reloads that PHP-FPM. Fixes "GD cannot resize images on this PHP. imagejpeg or imagewebp is missing." Queue workers and other long-running processes started before the update need a restart to see it.
+
 ## [0.3.0-beta.49] - 2026-10-17
 
 - **Terminal: Enter, spaces, and the arrow keys now reach the command.** Typing in the console did not work for some keys (Enter and spaces were dropped on the way), so a question like Laravel's "Are you sure you want to run this command? Yes / No" could not be answered. Every key is now sent as it is typed, and a key that cannot be sent shows a message in the console. The Terminal pages also say 15 minutes instead of 60 seconds.

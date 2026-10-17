@@ -289,7 +289,7 @@ install_php() {
   local packages=()
   local extension
 
-  for extension in fpm cli mysql xml mbstring curl zip redis bcmath intl; do
+  for extension in fpm cli mysql xml mbstring curl zip redis bcmath intl gd; do
     packages+=("php${version}-${extension}")
   done
 

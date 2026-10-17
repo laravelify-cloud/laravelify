@@ -117,4 +117,20 @@ if ! command -v rclone >/dev/null 2>&1; then
   apt-get install -y rclone >/dev/null 2>&1 || echo "Could not install rclone. Backups need it: sudo apt-get install -y rclone" >&2
 fi
 
+# Websites resize images with GD (JPEG, PNG, WebP). New installs have it; older ones do not.
+# Add it for every PHP version installed, then reload that version's PHP-FPM. Workers and
+# queue processes started before this keep running without it until they restart.
+while read -r package; do
+  version="${package#php}"
+  version="${version%-fpm}"
+  if ! dpkg -s "php${version}-gd" 2>/dev/null | grep -q '^Status: install ok installed'; then
+    echo "Installing php${version}-gd for image resizing..."
+    if apt-get install -y "php${version}-gd" >/dev/null 2>&1; then
+      systemctl reload "php${version}-fpm" >/dev/null 2>&1 || true
+    else
+      echo "Could not install php${version}-gd: sudo apt-get install -y php${version}-gd" >&2
+    fi
+  fi
+done < <(dpkg-query -W -f='${Package}\n' 'php[0-9].[0-9]-fpm' 2>/dev/null)
+
 echo "Panel updated."
