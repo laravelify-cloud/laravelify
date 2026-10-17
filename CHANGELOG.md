@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
-## [0.3.0-beta.51] - unreleased
+## [0.3.0-beta.51] - 2026-10-17
 
 - **A step-by-step installer.** The install command now shows a settings summary, then one line per step with a spinner while it runs and a check mark with its time when it is done (Downloaded Laravelify, Installing PHP 8.4, Installing MySQL 8.4, Starting the Cloudflare tunnel, …). What the commands print goes to `/var/log/laravelify-install.log` (root only). When a step fails, the installer stops there and shows the last lines of that log. It ends with a summary: the setup link, the Cloudflare hostnames to add, phpMyAdmin, and how to update. Updating with the install command shows the same steps.
 - **Choose what to install.** `--php=8.3,8.4` and `--node=22,24` (or `LARAVELIFY_PHP_VERSIONS` and `LARAVELIFY_NODE_VERSIONS`) install only the PHP-FPM and Node.js versions your sites use; the defaults are still PHP 8.0 to 8.5 and Node.js 20, 22, and 24. The panel needs PHP 8.3 or newer, so 8.4 is added when none of 8.3, 8.4, 8.5 is chosen, and the newest Node.js chosen is the system one. `--panel-domain` and `--phpmyadmin-domain` skip those questions, and `--help` lists the options. The MySQL password and the tunnel token are still always asked on the server.
