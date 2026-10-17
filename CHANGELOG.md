@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
-## [0.3.0-beta.48] - unreleased
+## [0.3.0-beta.48] - 2026-10-17
 
 - **Terminals are a live console you can type in.** The Terminal tool and each website's Terminal tab now show the output in xterm.js as it happens, with colours. A command that asks a question (`Proceed? (Y/n)`, a number to pick) waits for you: click in the window and answer. Ctrl+C and a **Stop** button end the command, and it shows **Running** or **Exit N**. The same sandbox and user as before; a command can now run up to 15 minutes instead of 60 seconds.
 - **Deployment logs are a live console too.** A deployment's log streams in while it builds, keeps the colours of commands, warnings, and errors, and no longer jumps when the page refreshes. Copy, download, and full screen are still there.
