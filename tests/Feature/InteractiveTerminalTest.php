@@ -60,13 +60,15 @@ class InteractiveTerminalTest extends TestCase
 
         $this->actingAs($this->confirmedUser());
         $this->getJson(route('terminal.sessions.output', ['session' => self::SESSION]))->assertNotFound();
-        $this->postJson(route('terminal.sessions.input', ['session' => self::SESSION]), ['data' => 'x'])->assertNotFound();
+        $this->postJson(route('terminal.sessions.input', ['session' => self::SESSION]), ['data' => base64_encode('x')])->assertNotFound();
         $this->postJson(route('terminal.sessions.stop', ['session' => self::SESSION]))->assertNotFound();
         $this->getJson(route('terminal.sessions.output', ['session' => '../../etc/passwd']))->assertNotFound();
 
         $this->actingAs($owner);
-        $this->postJson(route('terminal.sessions.input', ['session' => self::SESSION]), ['data' => 'ls'])->assertOk();
-        $this->assertSame('ls', File::get(storage_path('app/terminal/'.self::SESSION.'/in')));
+        $this->postJson(route('terminal.sessions.input', ['session' => self::SESSION]), ['data' => base64_encode('ls')])->assertOk();
+        $this->postJson(route('terminal.sessions.input', ['session' => self::SESSION]), ['data' => base64_encode("\r")])->assertOk();
+        $this->postJson(route('terminal.sessions.input', ['session' => self::SESSION]), ['data' => 'not base64!'])->assertStatus(422);
+        $this->assertSame("ls\r", File::get(storage_path('app/terminal/'.self::SESSION.'/in')), 'Enter and spaces arrive as typed.');
     }
 
     public function test_running_a_command_starts_a_session_the_console_follows(): void

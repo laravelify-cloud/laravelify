@@ -3,7 +3,7 @@
     style="height: auto; min-height: 26rem"
     x-data="terminalPrompt(@js($website ? 'site-'.$website->id : 'global'), @js($suggestions))"
     @terminal-ran.window="remember($event.detail.command)"
-    @terminal-state.window="termRunning = $event.detail.running; termExit = $event.detail.exit"
+    @terminal-state.window="termRunning = $event.detail.running; termExit = $event.detail.exit; if (! termRunning) $nextTick(() => $refs.command.focus())"
     @terminal-folder-changed.window="live = []; liveState = 'idle'"
 >
     <div class="logs-viewer-toolbar">
@@ -37,7 +37,7 @@
             @endif
         </div>
         <div class="logs-viewer-end">
-            <span class="hidden text-[12px] text-muted lg:inline">{{ $runsAs }} · 60s limit</span>
+            <span class="hidden text-[12px] text-muted lg:inline">{{ $runsAs }} · 15 min limit</span>
             <span class="status-badge" x-cloak x-show="termRunning" style="--status-color: var(--color-warning)">Running</span>
             <span class="status-badge" x-cloak x-show="!termRunning && termExit !== null" :style="'--status-color: ' + (termExit === 0 ? 'var(--color-success)' : 'var(--color-danger)')" x-text="'Exit ' + termExit"></span>
             <button class="btn btn-sm btn-danger" type="button" x-cloak x-show="termRunning" @click="$dispatch('terminal-stop')" title="Stop the command (Ctrl+C also works inside the window)"><x-menu-icon name="stop" class="size-3.5" /> Stop</button>

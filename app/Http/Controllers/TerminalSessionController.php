@@ -19,8 +19,12 @@ class TerminalSessionController extends Controller
 
     public function input(Request $request, string $session, TerminalSessions $sessions): JsonResponse
     {
-        $data = $request->validate(['data' => ['required', 'string', 'max:65536']])['data'];
+        // Keystrokes arrive base64-encoded: Laravel trims and empties plain strings, which would
+        // drop Enter and spaces.
+        $encoded = $request->validate(['data' => ['required', 'string', 'max:100000']])['data'];
+        $data = base64_decode($encoded, true);
 
+        abort_if($data === false || $data === '', 422);
         abort_unless($sessions->write($session, $data, auth()->id()), 404);
 
         return response()->json(['ok' => true]);

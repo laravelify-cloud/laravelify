@@ -33,6 +33,17 @@ const THEME = {
     brightWhite: '#c0caf5',
 };
 
+/** Keystrokes as base64 of their UTF-8 bytes, so nothing between here and the terminal alters them. */
+function encode(text) {
+    let binary = '';
+
+    new TextEncoder().encode(text).forEach((byte) => {
+        binary += String.fromCharCode(byte);
+    });
+
+    return btoa(binary);
+}
+
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function bytes(base64) {
@@ -99,7 +110,11 @@ export function createTerminal(host, options = {}) {
             queue = '';
 
             try {
-                await fetch(session.urls.input, { method: 'POST', headers: headers(), body: JSON.stringify({ data }) });
+                const response = await fetch(session.urls.input, { method: 'POST', headers: headers(), body: JSON.stringify({ data: encode(data) }) });
+
+                if (!response.ok) {
+                    term.write('\r\n\x1b[31m[could not send that key: ' + response.status + ']\x1b[0m\r\n');
+                }
             } catch (e) {}
         }
 

@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.49] - unreleased
+
+- **Terminal: Enter, spaces, and the arrow keys now reach the command.** Typing in the console did not work for some keys (Enter and spaces were dropped on the way), so a question like Laravel's "Are you sure you want to run this command? Yes / No" could not be answered. Every key is now sent as it is typed, and a key that cannot be sent shows a message in the console. The Terminal pages also say 15 minutes instead of 60 seconds.
+
 ## [0.3.0-beta.48] - 2026-10-17
 
 - **Terminals are a live console you can type in.** The Terminal tool and each website's Terminal tab now show the output in xterm.js as it happens, with colours. A command that asks a question (`Proceed? (Y/n)`, a number to pick) waits for you: click in the window and answer. Ctrl+C and a **Stop** button end the command, and it shows **Running** or **Exit N**. The same sandbox and user as before; a command can now run up to 15 minutes instead of 60 seconds.
