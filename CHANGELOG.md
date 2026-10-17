@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
-## [0.3.0-beta.50] - unreleased
+## [0.3.0-beta.50] - 2026-10-17
 
 - **GD for websites that resize images.** Every PHP version the panel installs includes GD (JPEG, PNG, WebP), and updating the panel adds it to any installed PHP version on an older server that is missing it, then reloads that PHP-FPM. Fixes "GD cannot resize images on this PHP. imagejpeg or imagewebp is missing." Queue workers and other long-running processes started before the update need a restart to see it.
 
