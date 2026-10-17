@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\TerminalSessions;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -14,6 +15,9 @@ Schedule::command('laravelify:monitor --patches')->dailyAt('06:00')->withoutOver
 
 // Background tasks (zips, backup exports) and their files are removed after a day.
 Schedule::command('laravelify:prune-tasks')->hourly()->withoutOverlapping(10);
+
+// Interactive terminal sessions (their output and input files) are forgotten after a day.
+Schedule::call(fn () => app(TerminalSessions::class)->prune())->name('terminal-prune')->hourly();
 
 // Backups: starts every schedule that is due this minute (Backups in the sidebar).
 Schedule::command('laravelify:run-backups')->everyMinute()->withoutOverlapping(5);

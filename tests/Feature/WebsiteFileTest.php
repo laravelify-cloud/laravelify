@@ -368,7 +368,7 @@ class WebsiteFileTest extends TestCase
             ->assertSet('workingDirectory', realpath($this->root))
             ->set('command', 'ls')
             ->call('run')
-            ->assertSet('exitCode', 1);
+            ->assertNotDispatched('terminal-session');
     }
 
     public function test_the_terminal_suggests_commands_for_the_site_type(): void

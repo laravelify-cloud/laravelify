@@ -3,6 +3,7 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
         <title>{{ $title ?? config('app.name') }}</title>
         @include('layouts.partials.favicons')
         @include('layouts.partials.theme')
@@ -37,6 +38,12 @@
                     <a class="menu-item {{ request()->routeIs('monitoring.server') ? 'menu-item-active' : '' }}" href="{{ route('monitoring.server') }}" wire:navigate>
                         <x-menu-icon name="cpu" />
                         <span>Server monitoring</span>
+                    </a>
+
+                    <p class="nav-section">Deployments</p>
+                    <a class="menu-item {{ request()->routeIs('deployments.*') ? 'menu-item-active' : '' }}" href="{{ route('deployments.index') }}" wire:navigate>
+                        <x-menu-icon name="deployments" />
+                        <span>All deployments</span>
                     </a>
 
                     <p class="nav-section">Tools</p>

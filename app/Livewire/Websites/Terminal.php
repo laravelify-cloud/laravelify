@@ -8,6 +8,7 @@ use App\Services\ProcessCommands;
 use App\Services\SiteCommand;
 use App\Services\SitePaths;
 use App\Services\SiteUser;
+use App\Services\TerminalSessions;
 use App\Support\TerminalCommands;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Renderless;
@@ -22,15 +23,16 @@ class Terminal extends PanelComponent
 
     public string $command = '';
 
-    public string $output = '';
+    /** The size of the terminal on screen, sent with the next command. */
+    public int $columns = 120;
+
+    public int $rows = 30;
 
     public string $workingDirectory = '';
 
     /** Global terminal only: the folder under the sites root, kept in the URL as ?dir=. */
     #[Url(as: 'dir', except: '')]
     public string $directory = '';
-
-    public ?int $exitCode = null;
 
     public string $lastCommand = '';
 
@@ -48,46 +50,43 @@ class Terminal extends PanelComponent
         $this->dispatch('terminal-folder-changed');
     }
 
-    public function run(SiteCommand $commands): void
+    public function run(SiteCommand $commands, TerminalSessions $sessions): void
     {
         $this->validate([
             'command' => ['required', 'string', 'max:4000'],
         ]);
 
+        $command = $this->command;
+
         try {
-            $result = app(ProcessCommands::class)->handle($this->command) ?? ($this->website
-                ? $commands->run($this->website, $this->command)
-                : $commands->runGlobal($this->directory, $this->command));
+            $handled = app(ProcessCommands::class)->handle($command);
+
+            if ($handled === null && ! $this->website) {
+                // Fails early, with a message, when the folder is not one the terminal may use.
+                $commands->interactiveArguments(null, $this->directory, $command);
+            }
+
+            $session = $handled === null
+                ? $sessions->start($this->website, $this->directory, $command, auth()->id(), $this->columns, $this->rows)
+                : null;
         } catch (Throwable $e) {
             $this->toast($e->getMessage(), 'error');
 
             return;
         }
 
-        $this->lastCommand = $this->command;
-        $this->output = $result->output;
-        $this->exitCode = $result->exitCode;
+        $this->lastCommand = $command;
         $this->command = '';
-        $this->dispatch('terminal-ran', command: $this->lastCommand);
+        $this->dispatch('terminal-ran', command: $command);
 
-        if ($result->skipped) {
-            $this->toast($result->output !== '' ? $result->output : 'Host commands are disabled on this machine.', 'error');
-
-            return;
-        }
-
-        if (str_contains($result->output, '[output truncated]')) {
-            $this->toast('Command finished. Output was truncated.');
+        if ($session === null) {
+            // PM2 and Supervisor commands are answered by the panel itself: show the answer.
+            $this->dispatch('terminal-text', command: $command, text: $handled->output, exit: $handled->exitCode);
 
             return;
         }
 
-        $this->toast($result->ok ? 'Command finished.' : 'Command failed.', $result->ok ? 'success' : 'error');
-    }
-
-    public function clear(): void
-    {
-        $this->reset('output', 'exitCode', 'lastCommand');
+        $this->dispatch('terminal-session', id: $session, command: $command);
     }
 
     /**
@@ -185,7 +184,7 @@ class Terminal extends PanelComponent
             }
 
             $this->workingDirectory = $this->website ? (string) $this->website->deploy_path : (string) config('laravelify.sites_root');
-            $this->output = $e->getMessage();
+            $this->toast($e->getMessage(), 'error');
         }
     }
 

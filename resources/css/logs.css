@@ -464,3 +464,12 @@ html:has(.logs-viewer.is-fullscreen) { overflow: hidden; }
 @media (max-width: 720px) {
     .term-menu-desc { display: none; }
 }
+
+/* The live console (xterm.js): a terminal that takes input, or a deployment log streamed in. */
+.live-terminal { background: #0c0e12; position: relative; }
+.live-terminal-screen { height: 26rem; padding: 10px 6px 4px 12px; }
+.live-terminal-screen .xterm { height: 100%; }
+.live-terminal-screen .xterm-viewport { background-color: transparent !important; }
+.live-terminal-tall .live-terminal-screen { height: 32rem; }
+.logs-viewer.is-fullscreen .live-terminal { flex: 1; min-height: 0; }
+.logs-viewer.is-fullscreen .live-terminal-screen { height: 100%; }

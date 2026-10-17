@@ -3,6 +3,7 @@
     style="height: auto; min-height: 26rem"
     x-data="terminalPrompt(@js($website ? 'site-'.$website->id : 'global'), @js($suggestions))"
     @terminal-ran.window="remember($event.detail.command)"
+    @terminal-state.window="termRunning = $event.detail.running; termExit = $event.detail.exit"
     @terminal-folder-changed.window="live = []; liveState = 'idle'"
 >
     <div class="logs-viewer-toolbar">
@@ -37,11 +38,11 @@
         </div>
         <div class="logs-viewer-end">
             <span class="hidden text-[12px] text-muted lg:inline">{{ $runsAs }} · 60s limit</span>
-            @if ($exitCode !== null)
-                <span class="status-badge" style="--status-color: {{ $exitCode === 0 ? 'var(--color-success)' : 'var(--color-danger)' }}">Exit {{ $exitCode }}</span>
-            @endif
-            <button class="logs-viewer-btn" type="button" title="Copy output" @click="copyToClipboard(@js($output), 'Output copied.')" @disabled($output === '')><x-menu-icon name="copy" /></button>
-            <button class="logs-viewer-btn" type="button" title="Clear" wire:click="clear" @disabled($output === '')><x-menu-icon name="trash" /></button>
+            <span class="status-badge" x-cloak x-show="termRunning" style="--status-color: var(--color-warning)">Running</span>
+            <span class="status-badge" x-cloak x-show="!termRunning && termExit !== null" :style="'--status-color: ' + (termExit === 0 ? 'var(--color-success)' : 'var(--color-danger)')" x-text="'Exit ' + termExit"></span>
+            <button class="btn btn-sm btn-danger" type="button" x-cloak x-show="termRunning" @click="$dispatch('terminal-stop')" title="Stop the command (Ctrl+C also works inside the window)"><x-menu-icon name="stop" class="size-3.5" /> Stop</button>
+            <button class="logs-viewer-btn" type="button" title="Copy output" @click="$dispatch('terminal-copy')"><x-menu-icon name="copy" /></button>
+            <button class="logs-viewer-btn" type="button" title="Clear" @click="$dispatch('terminal-clear')"><x-menu-icon name="trash" /></button>
         </div>
     </div>
 
@@ -57,13 +58,17 @@
         @endif
     @endunless
 
-    <div class="logs-viewer-viewport" style="max-height: 32rem; min-height: 16rem">
-        <div class="px-4 font-mono text-[12px] leading-[1.7]">
-            @if ($lastCommand !== '')
-                <p class="text-accent"><span class="text-muted">{{ $workingDirectory }}</span> $ {{ $lastCommand }}</p>
-            @endif
-            <pre class="logs-viewer-text">{{ $output !== '' ? $output : 'Output appears here.' }}</pre>
-        </div>
+    <div
+        class="live-terminal"
+        wire:ignore
+        x-data="liveTerminal({ mode: 'terminal', name: 'terminal', urls: { output: @js(route('terminal.sessions.output', ['session' => '__ID__'])), input: @js(route('terminal.sessions.input', ['session' => '__ID__'])), stop: @js(route('terminal.sessions.stop', ['session' => '__ID__'])) } })"
+        @terminal-session.window="startSession($event.detail)"
+        @terminal-text.window="showText($event.detail)"
+        @terminal-stop.window="stop()"
+        @terminal-copy.window="copy()"
+        @terminal-clear.window="clear()"
+    >
+        <div class="live-terminal-screen" x-ref="screen"></div>
     </div>
 
     <form class="relative flex items-center gap-2 border-t border-line p-2" wire:submit="run" @click.outside="menuOpen && closeMenu()">

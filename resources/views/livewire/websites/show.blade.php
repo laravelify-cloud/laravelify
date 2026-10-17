@@ -569,36 +569,25 @@
 
                 @if ($selectedDeployment)
                     @php
-                        $logLines = trim((string) $selectedDeployment->log) === '' ? [] : preg_split('/\R/', (string) $selectedDeployment->log);
                         $isLive = in_array($selectedDeployment->status, ['queued', 'running'], true);
-                        $lineClass = function (string $line): string {
-                            return match (true) {
-                                str_starts_with($line, '$ ') => 'is-command',
-                                preg_match('/^(error|fatal)\b|\b(failed|exception|fatal error)\b/i', $line) === 1 => 'is-error',
-                                preg_match('/^(deploy finished|done\b|success)/i', $line) === 1 => 'is-success',
-                                preg_match('/^(warn|warning|skipped|deploy stopped)/i', $line) === 1 => 'is-warning',
-                                default => '',
-                            };
-                        };
                     @endphp
                     <section
                         class="logs-viewer"
                         wire:key="deployment-log-{{ $selectedDeployment->id }}"
-                        x-data="deployLogs({ live: @js($isLive), name: @js(\Illuminate\Support\Str::slug($website->name).'-deployment-'.$selectedDeployment->id) })"
-                        :class="{ 'is-fullscreen': fullscreen, 'no-wrap': !wrap }"
+                        x-data="{ fullscreen: false, consoleRunning: @js($isLive) }"
+                        :class="{ 'is-fullscreen': fullscreen }"
                         @keydown.escape.window="fullscreen = false"
+                        @console-state.window="consoleRunning = $event.detail.running; $nextTick(() => window.dispatchEvent(new Event('resize')))"
                     >
                         <div class="logs-viewer-toolbar">
                             <div class="logs-viewer-primary">
                                 <div class="logs-viewer-actions">
-                                    <button class="logs-viewer-btn" type="button" :class="follow && 'is-active'" @click="toggleFollow()" title="Follow logs"><x-menu-icon name="arrow-down" /></button>
-                                    <button class="logs-viewer-btn" type="button" :class="wrap && 'is-active'" @click="toggleWrap()" title="Wrap long lines"><x-menu-icon name="wrap" /></button>
-                                    <button class="logs-viewer-btn" type="button" @click="fullscreen = !fullscreen" :title="fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'">
+                                    <button class="logs-viewer-btn" type="button" @click="fullscreen = !fullscreen; $nextTick(() => window.dispatchEvent(new Event('resize')))" :title="fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'">
                                         <x-menu-icon name="expand" x-show="!fullscreen" />
                                         <x-menu-icon name="shrink" x-show="fullscreen" x-cloak />
                                     </button>
-                                    <button class="logs-viewer-btn" type="button" @click="copy()" title="Copy logs"><x-menu-icon name="copy" /></button>
-                                    <button class="logs-viewer-btn" type="button" @click="download()" title="Download logs"><x-menu-icon name="download" /></button>
+                                    <button class="logs-viewer-btn" type="button" @click="$dispatch('console-copy')" title="Copy logs"><x-menu-icon name="copy" /></button>
+                                    <button class="logs-viewer-btn" type="button" @click="$dispatch('console-download')" title="Download logs"><x-menu-icon name="download" /></button>
                                 </div>
                                 <x-status-badge :status="$selectedDeployment->status" />
                                 <span class="logs-viewer-meta hidden md:flex">
@@ -613,28 +602,20 @@
                                 </span>
                             </div>
                             <div class="logs-viewer-end">
-                                <span class="whitespace-nowrap text-[12px] text-muted" x-cloak x-show="query.trim() !== ''" x-text="matches + (matches === 1 ? ' match' : ' matches')"></span>
-                                <label class="logs-viewer-search">
-                                    <x-menu-icon name="search" />
-                                    <input type="search" x-model.debounce.200ms="query" placeholder="Find in logs" aria-label="Find in logs" autocomplete="off" spellcheck="false">
-                                    <button class="clear" type="button" x-cloak x-show="query !== ''" @click="query = ''" aria-label="Clear search"><x-menu-icon name="close" class="size-3" /></button>
-                                </label>
+                                <span class="flex items-center gap-1.5 text-[12px] text-muted" x-cloak x-show="consoleRunning">
+                                    <span class="loader-spinner" style="width: 11px; height: 11px; border-width: 2px"></span> Live
+                                </span>
                             </div>
                         </div>
-                        <div class="logs-viewer-viewport" x-ref="viewport" @scroll="onScroll()" tabindex="0">
-                            <div class="logs-viewer-lines" x-ref="lines">
-                                @forelse ($logLines as $index => $line)
-                                    <div class="logs-viewer-line {{ $lineClass($line) }}" data-log-line wire:key="log-line-{{ $selectedDeployment->id }}-{{ $index }}">
-                                        <span class="logs-viewer-number">{{ $index + 1 }}</span>
-                                        <span class="logs-viewer-text" data-text="{{ $line }}">{{ $line }}</span>
-                                    </div>
-                                @empty
-                                    <p class="logs-viewer-empty">{{ $isLive ? 'Waiting for the queue worker to write the deployment log…' : 'This deployment has no log.' }}</p>
-                                @endforelse
-                            </div>
-                            <p class="logs-viewer-empty" x-cloak x-show="query.trim() !== '' && matches === 0">No lines match.</p>
+                        <div
+                            class="live-terminal live-terminal-tall min-h-0 flex-1"
+                            wire:ignore
+                            x-data="liveTerminal({ mode: 'log', url: @js(route('deployments.log', $selectedDeployment)), name: @js(\Illuminate\Support\Str::slug($website->name).'-deployment-'.$selectedDeployment->id) })"
+                            @console-copy.window="copy()"
+                            @console-download.window="download()"
+                        >
+                            <div class="live-terminal-screen" x-ref="screen"></div>
                         </div>
-                        <button class="logs-viewer-jump" type="button" x-cloak x-show="!follow && !atBottom" x-transition.opacity @click="toggleFollow()" style="position: absolute"><x-menu-icon name="arrow-down" class="size-3.5" /> Jump to latest</button>
                     </section>
                 @endif
 

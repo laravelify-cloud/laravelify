@@ -4,6 +4,9 @@ All notable changes are listed here. Releases follow [semantic versioning](https
 
 ## [0.3.0-beta.48] - unreleased
 
+- **Terminals are a live console you can type in.** The Terminal tool and each website's Terminal tab now show the output in xterm.js as it happens, with colours. A command that asks a question (`Proceed? (Y/n)`, a number to pick) waits for you: click in the window and answer. Ctrl+C and a **Stop** button end the command, and it shows **Running** or **Exit N**. The same sandbox and user as before; a command can now run up to 15 minutes instead of 60 seconds.
+- **Deployment logs are a live console too.** A deployment's log streams in while it builds, keeps the colours of commands, warnings, and errors, and no longer jumps when the page refreshes. Copy, download, and full screen are still there.
+- **New sidebar section: Deployments.** Every website as a card with its latest deployment's state, commit, trigger, and duration, a search and state filter, **Deploy**, and **View log** / **Watch live**. It refreshes by itself.
 - **Monitoring: an open WebSocket is not a slow request.** nginx logs a WebSocket (like Reverb's `/app/…`, status 101) when it closes, with how long it stayed open. These counted as requests of many minutes and raised false "is slow" alerts (a p95 of 777,505 ms on a site whose real requests take milliseconds). They are now left out of the response-time numbers.
 
 ## [0.3.0-beta.47] - 2026-10-16

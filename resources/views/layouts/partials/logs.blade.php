@@ -30,6 +30,8 @@
             suggestions: suggestions,
             live: [],
             liveState: 'idle',
+            termRunning: false,
+            termExit: null,
             menuOpen: false,
             menuQuery: '',
             results: [],

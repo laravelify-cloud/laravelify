@@ -787,6 +787,15 @@ drop_site_user() {
   use_site "${slug}"
 }
 
+# "run" and "run-global" take a fourth word, "pty", for the panel's interactive terminal: the command
+# gets a real terminal (it can ask a question and read the answer) and more time to wait for one.
+IO_MODE=--pipe
+MAX_SECONDS=60
+if [[ "${4:-}" == pty ]]; then
+  IO_MODE=--pty
+  MAX_SECONDS=900
+fi
+
 case "${ACTION}" in
   site)
     slug_ok "${TARGET}" || die "invalid slug"
@@ -1072,7 +1081,7 @@ PHP
       home="${SITE_HOME}"
       writable="${root} ${SITE_HOME}"
     fi
-    exec systemd-run --quiet --pipe --wait --collect \
+    exec systemd-run --quiet ${IO_MODE} --wait --collect \
       --uid="${SITE_USER}" --gid="$(id -gn "${SITE_USER}")" \
       --working-directory="${root}" \
       --property=UnsetEnvironment=yes \
@@ -1084,7 +1093,7 @@ PHP
       --property=PrivateTmp=yes \
       --property=ReadWritePaths="${writable}" \
       --property=NoNewPrivileges=yes \
-      --property=RuntimeMaxSec=60 \
+      --property=RuntimeMaxSec=${MAX_SECONDS} \
       /bin/bash -lc "$3"
     ;;
   run-global)
@@ -1101,7 +1110,7 @@ PHP
     [[ -d "${root}" ]] || die "path is not a folder"
     if site_users_enabled; then
       if [[ "${root}" == /var/www ]]; then
-        exec systemd-run --quiet --pipe --wait --collect \
+        exec systemd-run --quiet ${IO_MODE} --wait --collect \
           --uid=nobody --gid=nogroup \
           --working-directory="${root}" \
           --property=UnsetEnvironment=yes \
@@ -1112,7 +1121,7 @@ PHP
           --property=ProtectHome=yes \
           --property=PrivateTmp=yes \
           --property=NoNewPrivileges=yes \
-          --property=RuntimeMaxSec=60 \
+          --property=RuntimeMaxSec=${MAX_SECONDS} \
           /bin/bash -lc "$3"
       fi
       slug="${root#/var/www/}"
@@ -1125,7 +1134,7 @@ PHP
         home="${SITE_HOME}"
         writable="/var/www/${slug} ${SITE_HOME}"
       fi
-      exec systemd-run --quiet --pipe --wait --collect \
+      exec systemd-run --quiet ${IO_MODE} --wait --collect \
         --uid="${SITE_USER}" --gid="$(id -gn "${SITE_USER}")" \
         --working-directory="${root}" \
         --property=UnsetEnvironment=yes \
@@ -1137,10 +1146,10 @@ PHP
         --property=PrivateTmp=yes \
         --property=ReadWritePaths="${writable}" \
         --property=NoNewPrivileges=yes \
-        --property=RuntimeMaxSec=60 \
+        --property=RuntimeMaxSec=${MAX_SECONDS} \
         /bin/bash -lc "$3"
     fi
-    exec systemd-run --quiet --pipe --wait --collect \
+    exec systemd-run --quiet ${IO_MODE} --wait --collect \
       --uid="${SITE_USER}" --gid="${SITE_USER}" \
       --working-directory="${root}" \
       --property=UnsetEnvironment=yes \
@@ -1152,7 +1161,7 @@ PHP
       --property=PrivateTmp=yes \
       --property=ReadWritePaths=/var/www \
       --property=NoNewPrivileges=yes \
-      --property=RuntimeMaxSec=60 \
+      --property=RuntimeMaxSec=${MAX_SECONDS} \
       /bin/bash -lc "$3"
     ;;
   nginx-log)

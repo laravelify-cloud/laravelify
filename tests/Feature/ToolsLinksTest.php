@@ -79,8 +79,7 @@ class ToolsLinksTest extends TestCase
         Livewire::test(Terminal::class)
             ->set('command', 'pm2 list')
             ->call('run')
-            ->assertSet('exitCode', 0)
-            ->assertSet('output', 'No PM2 apps are running.');
+            ->assertDispatched('terminal-text', command: 'pm2 list', text: 'No PM2 apps are running.', exit: 0);
     }
 
     public function test_phpmyadmin_opens_with_a_one_time_token_and_sets_up_sign_in(): void

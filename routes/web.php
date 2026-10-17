@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DatabaseExportController;
+use App\Http\Controllers\DeploymentLogController;
 use App\Http\Controllers\GithubAppHookController;
 use App\Http\Controllers\GithubAppManifestController;
 use App\Http\Controllers\GithubHookController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\HeartbeatController;
 use App\Http\Controllers\MonitoringLiveController;
 use App\Http\Controllers\PanelTaskController;
 use App\Http\Controllers\PhpMyAdminController;
+use App\Http\Controllers\TerminalSessionController;
 use App\Http\Controllers\WebsiteFileController;
 use App\Livewire\Account\Security as AccountSecurity;
 use App\Livewire\Auth\Login;
@@ -18,6 +20,7 @@ use App\Livewire\Dashboard;
 use App\Livewire\Database\Index as DatabaseIndex;
 use App\Livewire\Database\Show as DatabaseShow;
 use App\Livewire\Database\Table as DatabaseTable;
+use App\Livewire\Deployments\Index as DeploymentsIndex;
 use App\Livewire\Groups\Form as GroupForm;
 use App\Livewire\Groups\Index as GroupIndex;
 use App\Livewire\Groups\Show as GroupShow;
@@ -74,6 +77,9 @@ Route::get('/groups/{group}', GroupShow::class)->name('groups.show');
 Route::get('/websites/{website}', WebsiteShow::class)->name('websites.show');
 Route::get('/websites/{website}/files/download', WebsiteFileController::class)->name('websites.files.download');
 
+Route::get('/deployments', DeploymentsIndex::class)->name('deployments.index');
+Route::get('/deployments/{deployment}/log', DeploymentLogController::class)->name('deployments.log');
+
 Route::get('/monitoring', MonitoringIndex::class)->name('monitoring.index');
 Route::get('/monitoring/server', MonitoringServer::class)->name('monitoring.server');
 Route::get('/monitoring/server/live', [MonitoringLiveController::class, 'server'])->name('monitoring.server.live');
@@ -90,6 +96,9 @@ Route::get('/files', FileManager::class)->name('files.index');
 Route::get('/files/download', [WebsiteFileController::class, 'global'])->name('files.download');
 Route::get('/tasks/{panelTask}/download', [PanelTaskController::class, 'download'])->name('tasks.download');
 Route::get('/terminal', ToolsTerminal::class)->name('terminal.index');
+Route::get('/terminal/sessions/{session}/output', [TerminalSessionController::class, 'output'])->name('terminal.sessions.output');
+Route::post('/terminal/sessions/{session}/input', [TerminalSessionController::class, 'input'])->name('terminal.sessions.input');
+Route::post('/terminal/sessions/{session}/stop', [TerminalSessionController::class, 'stop'])->name('terminal.sessions.stop');
 Route::get('/database', DatabaseIndex::class)->name('database.index');
 Route::post('/database/export', DatabaseExportController::class)->name('database.export');
 Route::get('/database/{database}', DatabaseShow::class)->where('database', '[A-Za-z0-9_-]+')->name('database.show');

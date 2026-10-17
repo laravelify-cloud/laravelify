@@ -52,6 +52,48 @@ class SiteCommand
         return $this->execute(['run-global', $folder, $command]);
     }
 
+    /**
+     * The command line for an interactive (terminal) run: the same sandbox and folder rules as run()
+     * and runGlobal(), with the command getting a real terminal and up to 15 minutes.
+     *
+     * @return list<string>
+     */
+    public function interactiveArguments(?Website $website, string $directory, string $command): array
+    {
+        $command = $this->clean($command);
+
+        if (! $this->commands->supportsHostCommands()) {
+            throw new RuntimeException('Host commands are disabled on this machine.');
+        }
+
+        if ($website) {
+            $arguments = ['run', app(SitePaths::class)->root($website), $command, 'pty'];
+        } else {
+            $paths = app(SitePaths::class);
+            $sitesRoot = realpath((string) config('laravelify.sites_root'));
+
+            if ($sitesRoot === false || ! is_dir($sitesRoot)) {
+                throw new RuntimeException('The sites folder does not exist on this machine.');
+            }
+
+            $folder = $paths->resolveIn($sitesRoot, $directory);
+
+            if (! is_dir($folder)) {
+                throw new RuntimeException('That folder does not exist.');
+            }
+
+            $arguments = ['run-global', $folder, $command, 'pty'];
+        }
+
+        $argv = [base_path('scripts/host-apply.sh'), ...$arguments];
+
+        if (function_exists('posix_geteuid') && posix_geteuid() !== 0) {
+            array_unshift($argv, 'sudo', '-n');
+        }
+
+        return $argv;
+    }
+
     private function clean(string $command): string
     {
         $command = trim(str_replace("\0", '', $command));
