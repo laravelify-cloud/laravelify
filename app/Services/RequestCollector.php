@@ -128,6 +128,11 @@ class RequestCollector
         $minutes = [];
 
         foreach ($rows as $row) {
+            // A WebSocket (101) is logged when it closes, with how long it stayed open: not a slow request.
+            if ($row['status'] === 101) {
+                continue;
+            }
+
             $key = substr($row['at'], 0, 16).':00';
             $minute = $minutes[$key] ?? ['requests' => 0, 'client_errors' => 0, 'server_errors' => 0, 'duration_sum' => 0, 'duration_max' => 0, 'histogram' => LatencyHistogram::empty()];
             $minute['requests']++;

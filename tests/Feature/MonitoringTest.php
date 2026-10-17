@@ -98,6 +98,23 @@ class MonitoringTest extends TestCase
         $this->assertSame(5, SiteRequest::query()->count());
     }
 
+    public function test_a_websocket_that_stays_open_is_not_counted_as_a_slow_request(): void
+    {
+        $website = Website::factory()->create();
+
+        File::put(SiteSecurity::metricsLog($website), implode('
+', [
+            $this->line('/api/orders', 200, 0.120),
+            $this->line('/app/abc123?protocol=7', 101, 777.5),
+        ]).'
+');
+
+        $this->assertSame(2, app(RequestCollector::class)->collect($website));
+
+        $minute = RequestMinute::query()->sole();
+        $this->assertSame([1, 120], [$minute->requests, $minute->duration_max]);
+    }
+
     public function test_routes_group_ids_and_the_threat_detector_knows_common_attacks(): void
     {
         $this->assertSame('/orders/{id}/items/{uuid}', RequestCollector::route('/orders/42/items/9b2e1c7e-4a1f-4c8e-9d6f-0a1b2c3d4e5f'));
