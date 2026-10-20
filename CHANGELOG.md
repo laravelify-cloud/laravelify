@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.53] - 2026-10-20
+
+- **Fixed: the panel installs on PHP 8.4.** Composer is locked to Symfony 8.1, which needs PHP 8.4.1 or newer. Choosing only PHP 8.3 installed that version and then ran Composer on it, so "Installing the panel" stopped. PHP 8.4 is now added unless 8.4 or 8.5 was already chosen, and the panel runs on 8.4 (or 8.5). Website PHP versions are unchanged.
+
 ## [0.3.0-beta.52] - 2026-10-20
 
 - **Fixed: the panel install uses the PHP it just installed.** On a server that already had another PHP (for example 8.5) as the `php` command, Composer kept using that one. Its CLI was missing the `dom` extension, so "Installing the panel" stopped with `tijsverkoyen/css-to-inline-styles requires ext-dom`. Composer, `artisan`, and the installer scripts now run on the chosen panel PHP (8.4, otherwise 8.3, otherwise 8.5), and that binary becomes the system `php`. Updates do the same.

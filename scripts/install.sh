@@ -178,7 +178,9 @@ on_exit() {
 }
 trap on_exit EXIT
 
-# The versions to install. The panel itself needs PHP 8.3 or newer.
+# The versions to install. Websites may use 8.0 to 8.5. The panel's Composer
+# lock needs PHP 8.4.1 or newer (Symfony 8.1), so 8.4 is added unless 8.4 or
+# 8.5 was already chosen.
 PHP_VERSIONS="${LARAVELIFY_PHP_VERSIONS:-8.0 8.1 8.2 8.3 8.4 8.5}"
 PHP_VERSIONS="$(tr ',' ' ' <<<"$PHP_VERSIONS" | xargs -n1 | sort -uV | xargs)"
 for version in $PHP_VERSIONS; do
@@ -187,9 +189,9 @@ for version in $PHP_VERSIONS; do
     exit 1
   fi
 done
-if [[ ! " $PHP_VERSIONS " =~ \ 8\.[345]\  ]]; then
+if [[ ! " $PHP_VERSIONS " =~ \ 8\.[45]\  ]]; then
   PHP_VERSIONS="$(xargs -n1 <<<"$PHP_VERSIONS 8.4" | sort -uV | xargs)"
-  PHP_ADDED_NOTE="PHP 8.4 added: the panel itself needs PHP 8.3 or newer."
+  PHP_ADDED_NOTE="PHP 8.4 added: the panel itself needs PHP 8.4 or newer."
 fi
 
 NODE_VERSIONS="${LARAVELIFY_NODE_VERSIONS:-20 22 24}"
@@ -510,12 +512,11 @@ for version in $PHP_VERSIONS; do
   install_php "${version}"
 done
 
-# The panel runs on a PHP this install provisioned (8.3 or newer), so Composer
-# sees ext-dom and the other extensions. Prefer 8.4, then 8.3, then 8.5, and
-# only among the versions requested above. A PHP already on the server is not
-# used: its CLI often lacks those extensions.
+# The panel runs on PHP 8.4 or 8.5 from this install. 8.3 is too old for the
+# locked Symfony 8.1 packages. A PHP already on the server is not used: its
+# CLI often lacks ext-dom.
 PANEL_PHP=""
-for version in 8.4 8.3 8.5; do
+for version in 8.4 8.5; do
   if [[ " $PHP_VERSIONS " == *" $version "* && -x "/usr/bin/php${version}" ]]; then
     PANEL_PHP="$version"
     break

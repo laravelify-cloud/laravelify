@@ -105,7 +105,7 @@ curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- --php=8.3,8
 
 | Option | Description |
 | --- | --- |
-| `--php=8.3,8.4` | PHP-FPM versions (8.0 to 8.5). The panel needs 8.3 or newer; 8.4 is added if none is chosen. |
+| `--php=8.3,8.4` | PHP-FPM versions (8.0 to 8.5). The panel needs 8.4 or newer; 8.4 is added if neither 8.4 nor 8.5 is chosen. |
 | `--node=22,24` | Node.js majors (20, 22, 24). The newest is the system Node.js. |
 | `--panel-domain=HOST` | The panel's domain (otherwise asked) |
 | `--phpmyadmin-domain=HOST` | phpMyAdmin's domain (otherwise asked) |
