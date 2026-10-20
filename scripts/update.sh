@@ -13,7 +13,27 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 APP_ROOT="${LARAVELIFY_ROOT:-/opt/laravelify}"
+# The panel's own pool is the PHP Composer and artisan must use. Defaulting to
+# php8.4 fails when the install only provisioned 8.3, and a bare `composer`
+# follows whatever `php` was already on the server.
+if [[ -z "${LARAVELIFY_PHP:-}" ]]; then
+  for conf in /etc/php/*/fpm/pool.d/laravelify.conf; do
+    if [[ -f "$conf" ]]; then
+      version="${conf#/etc/php/}"
+      LARAVELIFY_PHP="php${version%%/*}"
+      break
+    fi
+  done
+fi
 PHP_BIN="${LARAVELIFY_PHP:-php8.4}"
+if ! command -v "$PHP_BIN" >/dev/null 2>&1; then
+  for version in 8.4 8.3 8.5; do
+    if command -v "php${version}" >/dev/null 2>&1; then
+      PHP_BIN="php${version}"
+      break
+    fi
+  done
+fi
 LARAVELIFY_REPO="${LARAVELIFY_REPO:-laravelify-cloud/laravelify}"
 LARAVELIFY_VERSION="${LARAVELIFY_VERSION:-latest}"
 DEV_SOURCE="/mnt/c/Users/ADMIN/Herd/new-ff-apply-apps/laravelify"
@@ -88,7 +108,7 @@ chmod 755 "${APP_ROOT}"/scripts/*.sh
 
 cd "${APP_ROOT}"
 export COMPOSER_ALLOW_SUPERUSER=1
-composer install --no-dev --optimize-autoloader --no-interaction --no-ansi
+"$(command -v "$PHP_BIN")" "$(command -v composer)" install --no-dev --optimize-autoloader --no-interaction --no-ansi
 "${PHP_BIN}" artisan view:clear --no-ansi
 "${PHP_BIN}" artisan config:clear --no-ansi
 "${PHP_BIN}" artisan route:clear --no-ansi

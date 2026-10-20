@@ -510,18 +510,38 @@ for version in $PHP_VERSIONS; do
   install_php "${version}"
 done
 
+# The panel runs on a PHP this install provisioned (8.3 or newer), so Composer
+# sees ext-dom and the other extensions. Prefer 8.4, then 8.3, then 8.5, and
+# only among the versions requested above. A PHP already on the server is not
+# used: its CLI often lacks those extensions.
 PANEL_PHP=""
-for version in 8.4 8.3 8.5 8.2 8.1 8.0; do
-  if [[ -x "/usr/bin/php${version}" ]]; then
+for version in 8.4 8.3 8.5; do
+  if [[ " $PHP_VERSIONS " == *" $version "* && -x "/usr/bin/php${version}" ]]; then
     PANEL_PHP="$version"
-    update-alternatives --install /usr/bin/php php "/usr/bin/php${version}" 84
     break
   fi
 done
+if [[ -z "$PANEL_PHP" ]]; then
+  for version in 8.4 8.3 8.5 8.2 8.1 8.0; do
+    if [[ -x "/usr/bin/php${version}" ]]; then
+      PANEL_PHP="$version"
+      break
+    fi
+  done
+fi
 
 if [[ -z "$PANEL_PHP" ]]; then
   echo "No PHP CLI was installed." >&2
   exit 1
+fi
+
+PHP_BIN="/usr/bin/php${PANEL_PHP}"
+# Ondrej registers each PHP at priority 80+minor (php8.5 is 85). A priority of
+# 84 leaves that binary as `php`, and Composer's shebang follows it.
+update-alternatives --install /usr/bin/php php "$PHP_BIN" 100 || true
+update-alternatives --set php "$PHP_BIN" || true
+if ! "$PHP_BIN" -m | grep -qx dom; then
+  apt-get install -y "php${PANEL_PHP}-xml"
 fi
 
 step "Installing MySQL 8.4"
@@ -603,7 +623,7 @@ n "$NODE_BASE" || true
 if ! command -v composer >/dev/null 2>&1; then
   step "Installing Composer"
   curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php
-  php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+  "$PHP_BIN" /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
   rm -f /tmp/composer-setup.php
 fi
 
@@ -611,7 +631,7 @@ step "Setting up MySQL (root password, utf8mb4)"
 install -d -m 700 /tmp/laravelify-install
 printf '%s' "$MYSQL_ROOT_PASSWORD" > /tmp/laravelify-install/password
 chmod 600 /tmp/laravelify-install/password
-php <<'PHP'
+"$PHP_BIN" <<'PHP'
 <?php
 $password = file_get_contents('/tmp/laravelify-install/password');
 $quoted = str_replace(['\\', '"'], ['\\\\', '\\"'], $password);
@@ -634,7 +654,7 @@ else
 fi
 
 if [[ -f /etc/phpmyadmin/config-db.php && -f /usr/share/phpmyadmin/sql/create_tables.sql ]]; then
-  php "$APP_ROOT/scripts/configure-phpmyadmin.php" /tmp/laravelify-install/password
+  "$PHP_BIN" "$APP_ROOT/scripts/configure-phpmyadmin.php" /tmp/laravelify-install/password
 fi
 
 install -d /etc/mysql/mysql.conf.d
@@ -717,7 +737,7 @@ if [[ ! -s /tmp/laravelify-install/setup-token ]]; then
 fi
 SETUP_TOKEN="$(cat /tmp/laravelify-install/setup-token)"
 
-PANEL_DOMAIN="$PANEL_DOMAIN" php <<'PHP'
+PANEL_DOMAIN="$PANEL_DOMAIN" "$PHP_BIN" <<'PHP'
 <?php
 $path = "/opt/laravelify/.env";
 $password = file_get_contents("/tmp/laravelify-install/password");
@@ -759,14 +779,15 @@ file_put_contents($path, $contents);
 PHP
 
 cd "$APP_ROOT"
-composer install --no-dev --optimize-autoloader --no-interaction --no-ansi
+export COMPOSER_ALLOW_SUPERUSER=1
+"$PHP_BIN" "$(command -v composer)" install --no-dev --optimize-autoloader --no-interaction --no-ansi
 if ! grep -q '^APP_KEY=base64:' .env; then
-  php artisan key:generate --force --no-ansi
+  "$PHP_BIN" artisan key:generate --force --no-ansi
 fi
-php artisan migrate --force --no-ansi
+"$PHP_BIN" artisan migrate --force --no-ansi
 
 step "Saving the server settings and the tunnel"
-PHPMYADMIN_DOMAIN="$PHPMYADMIN_DOMAIN" PANEL_DOMAIN="$PANEL_DOMAIN" PANEL_PHP="$PANEL_PHP" php <<'PHP'
+PHPMYADMIN_DOMAIN="$PHPMYADMIN_DOMAIN" PANEL_DOMAIN="$PANEL_DOMAIN" PANEL_PHP="$PANEL_PHP" "$PHP_BIN" <<'PHP'
 <?php
 require "vendor/autoload.php";
 $app = require "bootstrap/app.php";

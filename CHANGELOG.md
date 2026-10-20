@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.52] - 2026-10-20
+
+- **Fixed: the panel install uses the PHP it just installed.** On a server that already had another PHP (for example 8.5) as the `php` command, Composer kept using that one. Its CLI was missing the `dom` extension, so "Installing the panel" stopped with `tijsverkoyen/css-to-inline-styles requires ext-dom`. Composer, `artisan`, and the installer scripts now run on the chosen panel PHP (8.4, otherwise 8.3, otherwise 8.5), and that binary becomes the system `php`. Updates do the same.
+
 ## [0.3.0-beta.51] - 2026-10-17
 
 - **A step-by-step installer.** The install command now shows a settings summary, then one line per step with a spinner while it runs and a check mark with its time when it is done (Downloaded Laravelify, Installing PHP 8.4, Installing MySQL 8.4, Starting the Cloudflare tunnel, …). What the commands print goes to `/var/log/laravelify-install.log` (root only). When a step fails, the installer stops there and shows the last lines of that log. It ends with a summary: the setup link, the Cloudflare hostnames to add, phpMyAdmin, and how to update. Updating with the install command shows the same steps.
