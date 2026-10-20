@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.55] - 2026-10-20
+
+- **Fixed: opening phpMyAdmin in the panel failed.** The page rewrote phpMyAdmin to the panel's PHP pool (`laravelify.sock`) and then refused that file, because only `php8.x-fpm.sock` was accepted. phpMyAdmin may use the panel pool. A website still cannot.
+
 ## [0.3.0-beta.54] - 2026-10-20
 
 - **Fixed: Create the superadmin reloaded the page and saved nothing.** Continue did not create the account. The setup form was outside the Livewire component, so the browser reloaded the same page. The fields are inside the component now, and Continue creates the account and goes on to the authenticator step.

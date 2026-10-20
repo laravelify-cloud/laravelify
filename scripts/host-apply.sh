@@ -309,12 +309,15 @@ trusted_source() {
 # Statements are split the way nginx reads them (quotes, escapes, "#" comments at a word start,
 # several statements on a line), so nothing hides inside a quoted string or behind a comment.
 validate_nginx() {
-  local file="$1" socket=""
+  local file="$1" socket="" allow_panel=0
   # A site with its own user only talks to its own pool; never another site's or the panel's.
-  if site_has_own_user; then
+  # phpMyAdmin is the exception: it runs in the panel's pool (pass "panel" as the second argument).
+  if [[ "${2:-}" == "panel" ]]; then
+    allow_panel=1
+  elif site_has_own_user; then
     socket="unix:/run/php/site-${SLUG_IN_CHECK}.sock"
   fi
-  awk -v socket="${socket}" '
+  awk -v socket="${socket}" -v allow_panel="${allow_panel}" '
     function fail(message) { printf "error: nginx config: %s\n", message > "/dev/stderr"; bad = 1 }
     function flush() {
       if (inword) { words[++count] = word }
@@ -335,8 +338,10 @@ validate_nginx() {
           fail("include " value ": includes stay under /etc/nginx")
         }
       } else if (directive == "fastcgi_pass" && value ~ /^unix:/) {
-        if (socket != "" ? value != socket : value !~ /^unix:\/run\/php\/php8\.[0-9]+-fpm\.sock$/) {
-          fail("fastcgi_pass " value ": use " (socket != "" ? socket : "the PHP-FPM socket of a PHP version"))
+        if (socket != "" && value != socket) {
+          fail("fastcgi_pass " value ": use " socket)
+        } else if (socket == "" && value !~ /^unix:\/run\/php\/php8\.[0-9]+-fpm\.sock$/ && !(allow_panel == 1 && value == "unix:/run/php/laravelify.sock")) {
+          fail("fastcgi_pass " value ": use the PHP-FPM socket of a PHP version")
         }
       } else if (directive ~ /_(temp|cache)_path$/) {
         if (value ~ /\.\./ || value !~ /^\/var\/(cache|lib)\/nginx\//) {
@@ -943,7 +948,7 @@ UNIT
     ;;
   phpmyadmin)
     trusted_source "${RENDERED}/services/phpmyadmin.conf"
-    validate_nginx "${RENDERED}/services/phpmyadmin.conf"
+    validate_nginx "${RENDERED}/services/phpmyadmin.conf" panel
     ensure_dirs /etc/nginx/sites-available /etc/nginx/sites-enabled
     write_file 644 "${RENDERED}/services/phpmyadmin.conf" /etc/nginx/sites-available/laravelify-phpmyadmin.conf
     ln -sfn /etc/nginx/sites-available/laravelify-phpmyadmin.conf /etc/nginx/sites-enabled/laravelify-phpmyadmin.conf
