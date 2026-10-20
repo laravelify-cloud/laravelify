@@ -156,4 +156,41 @@ class SecurityHardeningTest extends TestCase
 
         $this->assertSame(1, User::query()->count());
     }
+
+    public function test_the_setup_form_fields_are_inside_the_livewire_component(): void
+    {
+        config(['laravelify.setup_token' => 'install-secret-token']);
+
+        $html = $this->get('/setup?token=install-secret-token')->assertOk()->getContent();
+
+        $marker = strpos($html, 'wire:id=');
+        $this->assertNotFalse($marker);
+        $tagStart = strrpos(substr($html, 0, $marker), '<');
+        preg_match('/<([a-zA-Z0-9]+)/', substr($html, $tagStart), $matches);
+        $tag = $matches[1];
+        $cursor = strpos($html, '>', $tagStart) + 1;
+        $depth = 1;
+
+        while ($depth > 0) {
+            $nextOpen = stripos($html, '<'.$tag, $cursor);
+            $nextClose = stripos($html, '</'.$tag, $cursor);
+            $this->assertNotFalse($nextClose);
+
+            if ($nextOpen !== false && $nextOpen < $nextClose) {
+                $depth++;
+                $cursor = $nextOpen + strlen($tag) + 1;
+
+                continue;
+            }
+
+            $depth--;
+            $cursor = $nextClose + strlen($tag) + 3;
+        }
+
+        $inner = substr($html, $tagStart, $cursor - $tagStart);
+
+        $this->assertStringContainsString('wire:model="name"', $inner);
+        $this->assertStringContainsString('wire:model="password"', $inner);
+        $this->assertStringContainsString('wire:submit="save"', $inner);
+    }
 }

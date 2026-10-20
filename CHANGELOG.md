@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.54] - 2026-10-20
+
+- **Fixed: Create the superadmin reloaded the page and saved nothing.** Continue did not create the account. The setup form was outside the Livewire component, so the browser reloaded the same page. The fields are inside the component now, and Continue creates the account and goes on to the authenticator step.
+
 ## [0.3.0-beta.53] - 2026-10-20
 
 - **Fixed: the panel installs on PHP 8.4.** Composer is locked to Symfony 8.1, which needs PHP 8.4.1 or newer. Choosing only PHP 8.3 installed that version and then ran Composer on it, so "Installing the panel" stopped. PHP 8.4 is now added unless 8.4 or 8.5 was already chosen, and the panel runs on 8.4 (or 8.5). Website PHP versions are unchanged.
