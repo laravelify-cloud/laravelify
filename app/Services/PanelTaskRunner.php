@@ -118,6 +118,7 @@ class PanelTaskRunner
             'backup.inspect' => $this->backups->inspectTask($task, $progress),
             'backup.export' => $this->backups->exportTask($task, $progress),
             'websites.switch' => $this->switch->switchTask($task),
+            'websites.delete' => $this->switch->deleteTask($task),
             default => throw new RuntimeException('Unknown task.'),
         };
     }

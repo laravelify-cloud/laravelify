@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.57] - 2026-10-20
+
+- **Fixed: deleting a website showed a 502, then worked the second time.** Removing nginx, PM2, and the Cloudflare tunnel ran inside the page request. The panel is served through that same tunnel, so Cloudflare showed Bad gateway while the delete was still going, and the next try found the slow part already done. Deleting now runs in the background. The page stays open and says when it is finished.
+
 ## [0.3.0-beta.56] - 2026-10-20
 
 - **MySQL for Node.js backends.** The Database card on a site's General tab, and "Create a MySQL database" when adding a site, now appear for Node servers (Node.js, Express, NestJS, Next.js, Nuxt, SvelteKit) as well as PHP. Provisioning writes `DATABASE_URL` and `DB_*` into the site's existing `.env`, and the database user can connect over `127.0.0.1`, which Prisma and other Node drivers use. Static sites stay without a database.

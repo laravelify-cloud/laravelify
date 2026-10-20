@@ -155,6 +155,21 @@ class GroupsAndWebsitesBulkTest extends TestCase
         $this->assertModelMissing($one);
         $this->assertModelMissing($two);
         $this->assertModelExists($three);
+        $this->assertSame('websites.delete', PanelTask::query()->latest('id')->value('kind'));
+    }
+
+    public function test_deleting_a_website_from_its_page_returns_before_the_host_work_when_the_queue_is_busy(): void
+    {
+        Queue::fake();
+        $website = Website::factory()->create(['name' => 'Devetlisen']);
+
+        Livewire::test(WebsiteShow::class, ['website' => $website])
+            ->set('confirmName', 'Devetlisen')
+            ->call('destroy')
+            ->assertRedirect(route('groups.show', $website->group));
+
+        $this->assertModelExists($website);
+        Queue::assertPushed(\App\Jobs\RunPanelTask::class);
     }
 
     public function test_only_empty_groups_are_deleted_in_bulk(): void

@@ -69,7 +69,9 @@
                                 </a>
                             </td>
                             <td>
-                                @if (in_array($website->id, $switching, true))
+                                @if (in_array($website->id, $deleting, true))
+                                    <span class="status-badge is-switching"><span class="task-spinner"></span> Deleting…</span>
+                                @elseif (in_array($website->id, $switching, true))
                                     <span class="status-badge is-switching"><span class="task-spinner"></span> Switching…</span>
                                 @elseif ($website->enabled)
                                     <span class="status-badge" style="--status-color: var(--color-success)">On</span>

@@ -49,6 +49,28 @@ trait SwitchesWebsites
         $task->isFinished() ? $this->pollTasks() : $this->toast($label.' in the background. Follow each website below.', 'info');
     }
 
+    /**
+     * Delete websites in the queue. The page returns at once, so Cloudflare does not time out
+     * while nginx and the tunnel (which also serves this panel) are updated.
+     *
+     * @param  list<int>  $websiteIds
+     */
+    protected function startDelete(array $websiteIds, string $label): void
+    {
+        if ($websiteIds === []) {
+            $this->toast('Nothing selected.', 'warning');
+
+            return;
+        }
+
+        $task = app(PanelTaskRunner::class)->start('websites.delete', self::switchScope(), $label, [
+            'website_ids' => array_values($websiteIds),
+        ]);
+
+        $this->dispatch('bulk-done');
+        $task->isFinished() ? $this->pollTasks() : $this->toast($label.'. This page stays open while that finishes.', 'info');
+    }
+
     public function pollTasks(): void
     {
         $finished = PanelTask::query()->where('scope', self::switchScope())
@@ -88,7 +110,7 @@ trait SwitchesWebsites
      */
     protected function switchingWebsiteIds(Collection $tasks): array
     {
-        $active = $tasks->filter->isActive();
+        $active = $tasks->filter(fn (PanelTask $task) => $task->isActive() && $task->kind === 'websites.switch');
 
         if ($active->isEmpty()) {
             return [];
@@ -101,6 +123,26 @@ trait SwitchesWebsites
         return Website::query()
             ->where(fn ($query) => $query->whereIn('group_id', $groupIds)->orWhereIn('id', $websiteIds))
             ->whereNotIn('id', $done)->pluck('id')->all();
+    }
+
+    /**
+     * Websites a running delete has not finished, so their rows show it.
+     *
+     * @param  Collection<int, PanelTask>  $tasks
+     * @return list<int>
+     */
+    protected function deletingWebsiteIds(Collection $tasks): array
+    {
+        $active = $tasks->filter(fn (PanelTask $task) => $task->isActive() && $task->kind === 'websites.delete');
+
+        if ($active->isEmpty()) {
+            return [];
+        }
+
+        $websiteIds = $active->flatMap(fn (PanelTask $task) => (array) ($task->payload['website_ids'] ?? []))->all();
+        $done = $active->flatMap(fn (PanelTask $task) => array_column((array) ($task->result['lines'] ?? []), 'id'))->all();
+
+        return Website::query()->whereKey($websiteIds)->whereNotIn('id', $done)->pluck('id')->all();
     }
 
     /**

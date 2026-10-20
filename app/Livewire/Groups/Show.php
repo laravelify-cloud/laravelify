@@ -5,8 +5,6 @@ namespace App\Livewire\Groups;
 use App\Livewire\Concerns\SwitchesWebsites;
 use App\Livewire\PanelComponent;
 use App\Models\Group;
-use App\Services\WebsiteSwitch;
-use Throwable;
 
 class Show extends PanelComponent
 {
@@ -56,32 +54,20 @@ class Show extends PanelComponent
     }
 
     /**
-     * Delete the chosen websites, after typing "delete".
+     * Delete the chosen websites in the background, after typing "delete".
      *
      * @param  list<int>  $ids
      */
-    public function deleteWebsites(WebsiteSwitch $switch, array $ids): void
+    public function deleteWebsites(array $ids): void
     {
         if (! $this->confirmed('delete')) {
             return;
         }
 
-        $deleted = 0;
-        $errors = [];
+        $websites = $this->group->websites()->whereKey($ids)->orderBy('name')->get();
+        $names = $websites->count() === 1 ? $websites->first()->name : $websites->count().' websites';
 
-        foreach ($this->group->websites()->whereKey($ids)->get() as $website) {
-            try {
-                $switch->delete($website);
-                $deleted++;
-            } catch (Throwable $exception) {
-                $errors[] = $website->name.': '.$exception->getMessage();
-            }
-        }
-
-        $this->dispatch('bulk-done');
-        $this->toast($errors === []
-            ? 'Deleted '.$deleted.' '.($deleted === 1 ? 'website' : 'websites').'. Their folders in /var/www are kept.'
-            : 'Some websites could not be deleted: '.implode(' · ', $errors), $errors === [] ? 'success' : 'error');
+        $this->startDelete($websites->modelKeys(), 'Deleting '.$names);
     }
 
     public function render()
@@ -92,6 +78,7 @@ class Show extends PanelComponent
             'tasks' => $tasks,
             'tasksActive' => $tasks->contains(fn ($task) => $task->isActive()),
             'switching' => $this->switchingWebsiteIds($tasks),
+            'deleting' => $this->deletingWebsiteIds($tasks),
             'websites' => $this->group->websites()->orderBy('name')->get(),
         ])->layout('layouts.app')->title($this->group->name);
     }

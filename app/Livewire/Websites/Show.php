@@ -8,6 +8,7 @@ use App\Models\Deployment;
 use App\Models\GithubApp;
 use App\Models\Website;
 use App\Services\CloudflareRoutes;
+use App\Services\PanelTaskRunner;
 use App\Services\ConfigRenderer;
 use App\Services\DatabaseProvisioner;
 use App\Support\EnvFile;
@@ -574,40 +575,23 @@ class Show extends PanelComponent
         }
     }
 
-    public function destroy(HostWriter $hostWriter, ConfigRenderer $renderer, CloudflareRoutes $cloudflare): void
+    public function destroy(PanelTaskRunner $tasks): void
     {
         if (! $this->confirmed($this->website->name)) {
             return;
         }
 
-        $tunnel = $this->website->tunnel;
-        $domains = $this->website->hostnames();
         $group = $this->website->group;
+        $name = $this->website->name;
 
-        try {
-            $hostWriter->removeWebsite($this->website);
-        } catch (Throwable $exception) {
-            $this->addError('website', $exception->getMessage());
-            $this->toast($exception->getMessage(), 'error');
+        // The queue removes nginx, PM2, and the tunnel. Doing that in this request drops the
+        // panel's own Cloudflare connection and the browser shows a 502.
+        $tasks->start('websites.delete', 'websites', 'Deleting '.$name, [
+            'website_ids' => [$this->website->id],
+        ]);
 
-            return;
-        }
-
-        $this->website->delete();
-
-        try {
-            $renderer->refreshTunnel($tunnel);
-
-            if ($tunnel) {
-                $cloudflare->forget($tunnel, $domains);
-            }
-
-            $this->toastAfterRedirect('Website deleted.');
-        } catch (Throwable $exception) {
-            $this->toastAfterRedirect('Website deleted. The Cloudflare tunnel file was not updated: '.$exception->getMessage(), 'error');
-        }
-
-        $this->redirect(route('groups.show', $group));
+        $this->toastAfterRedirect($name.' is being deleted. Its folder in /var/www is kept.');
+        $this->redirect(route('groups.show', $group), navigate: true);
     }
 
     public function render()

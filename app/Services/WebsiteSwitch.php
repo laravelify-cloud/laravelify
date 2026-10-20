@@ -107,13 +107,86 @@ class WebsiteSwitch
     {
         $tunnel = $website->tunnel;
         $domains = $website->hostnames();
-        $this->host->removeWebsite($website);
-        $website->delete();
+        $this->removeLocally($website);
 
         if ($tunnel) {
-            $this->renderer->refreshTunnel($tunnel);
             $this->cloudflare->forget($tunnel, $domains);
+            $this->renderer->refreshTunnel($tunnel->fresh());
         }
+    }
+
+    /**
+     * Delete websites in the queue. Stopping nginx, PM2, and the tunnel can take longer than
+     * Cloudflare will wait on the page request, and the panel itself is served through that
+     * tunnel, so doing it in the request shows a 502 even when the delete goes on to finish.
+     *
+     * @return array{message: string, failed: bool, lines: list<array{id: int, label: string, ok: bool, note: string}>}
+     */
+    public function deleteTask(PanelTask $task): array
+    {
+        $ids = array_map('intval', (array) ($task->payload['website_ids'] ?? []));
+        $websites = Website::query()->whereKey($ids)->orderBy('name')->get();
+        $lines = [];
+        /** @var array<int, array{tunnel: \App\Models\CloudflareTunnel, domains: list<string>}> $tunnels */
+        $tunnels = [];
+
+        foreach ($websites->values() as $index => $website) {
+            $task->report((int) floor($index / max(1, $websites->count()) * 100), 'Deleting '.$website->name.' ('.($index + 1).' of '.$websites->count().')', true);
+
+            try {
+                $tunnel = $website->tunnel;
+                $domains = $website->hostnames();
+                $this->removeLocally($website);
+
+                if ($tunnel) {
+                    $tunnels[$tunnel->id]['tunnel'] = $tunnel;
+                    foreach ($domains as $domain) {
+                        $tunnels[$tunnel->id]['domains'][] = $domain;
+                    }
+                }
+
+                $lines[] = ['id' => $website->id, 'label' => $website->name, 'ok' => true, 'note' => 'Deleted'];
+            } catch (Throwable $exception) {
+                $lines[] = ['id' => $website->id, 'label' => $website->name, 'ok' => false, 'note' => Str::limit($exception->getMessage(), 300)];
+            }
+
+            $task->forceFill(['result' => ['lines' => $lines]])->save();
+        }
+
+        foreach ($tunnels as $item) {
+            try {
+                $domains = array_values(array_unique($item['domains']));
+                $this->cloudflare->forget($item['tunnel'], $domains);
+                $this->renderer->refreshTunnel($item['tunnel']->fresh());
+            } catch (Throwable $exception) {
+                $lines[] = ['id' => 0, 'label' => $item['tunnel']->name, 'ok' => false, 'note' => 'Deleted, but the tunnel was not updated: '.Str::limit($exception->getMessage(), 240)];
+            }
+        }
+
+        $failed = count(array_filter($lines, fn (array $line) => ! $line['ok'] && $line['id'] !== 0));
+        $tunnelNote = collect($lines)->first(fn (array $line) => $line['id'] === 0 && ! $line['ok']);
+        $count = $websites->count();
+        $sites = $count === 1 ? '1 website' : $count.' websites';
+
+        return [
+            'message' => match (true) {
+                $count === 0 => 'No websites to delete.',
+                $failed === 0 && $tunnelNote === null => 'Deleted '.$sites.'. Their folders in /var/www are kept.',
+                $failed === 0 => 'Deleted '.$sites.'. '.$tunnelNote['note'],
+                default => $failed.' of '.$sites.' could not be deleted.',
+            },
+            'failed' => $failed > 0,
+            'lines' => $lines,
+        ];
+    }
+
+    /**
+     * Take the site off nginx, Supervisor, and PM2, then delete its panel record. The folder stays.
+     */
+    private function removeLocally(Website $website): void
+    {
+        $this->host->removeWebsite($website);
+        $website->delete();
     }
 
     /**
