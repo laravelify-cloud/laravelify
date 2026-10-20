@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CloudflareTunnel;
 use App\Models\Website;
+use App\Support\EnvFile;
 use App\Support\Redirects;
 
 class ConfigRenderer
@@ -788,12 +789,17 @@ ENV;
     private function nodeEnv(Website $website): string
     {
         $port = $website->port ?: 3000;
-
-        return <<<ENV
+        $content = <<<ENV
 NODE_ENV=production
 PORT={$port}
 HOSTNAME=127.0.0.1
 ENV;
+
+        if ($website->provision_database && $website->db_name) {
+            $content = EnvFile::set($content, app(DatabaseProvisioner::class)->envValues($website));
+        }
+
+        return $content;
     }
 
     private function staticEnv(Website $website): string

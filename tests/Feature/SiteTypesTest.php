@@ -479,6 +479,68 @@ class SiteTypesTest extends TestCase
         $this->get(route('groups.show', $react->group))->assertOk()->assertSee('React')->assertSee('Static (built with Node 24)');
     }
 
+    public function test_a_node_backend_can_get_a_mysql_database(): void
+    {
+        $this->signIn();
+
+        $node = Website::factory()->create([
+            'type' => 'node',
+            'slug' => 'devetlisen-api',
+            'php_version' => null,
+            'node_version' => '22',
+            'port' => 4000,
+            'process_config' => '',
+            'env_content' => "JWT_SECRET=keep-me\n",
+            'deploy_path' => $this->root.'/api',
+        ]);
+
+        $runner = new class extends CommandRunner
+        {
+            /** @var list<string> */
+            public array $commands = [];
+
+            public function supportsHostCommands(): bool
+            {
+                return true;
+            }
+
+            public function run(array $command, ?string $cwd = null, array $env = [], ?callable $onOutput = null): CommandResult
+            {
+                $this->commands[] = implode(' ', $command);
+
+                return new CommandResult(true, false, $command, '', 0);
+            }
+        };
+        $this->app->instance(CommandRunner::class, $runner);
+
+        Livewire::test(WebsiteShow::class, ['website' => $node])
+            ->assertSee('A MySQL database and user for this site.')
+            ->call('provisionDatabase')
+            ->assertHasNoErrors();
+
+        $node->refresh();
+        $this->assertTrue($node->provision_database);
+        $this->assertSame('lv_devetlisen_api', $node->db_name);
+        $this->assertStringContainsString('JWT_SECRET=keep-me', (string) $node->env_content);
+        $this->assertStringContainsString('DATABASE_URL=mysql://'.$node->db_username.':'.$node->db_password.'@127.0.0.1:3306/'.$node->db_name, (string) $node->env_content);
+
+        $sql = collect($runner->commands)->first(fn (string $line): bool => str_contains($line, 'CREATE DATABASE'));
+        $this->assertIsString($sql);
+        $this->assertStringContainsString("@'127.0.0.1'", $sql);
+
+        $react = Website::factory()->create([
+            'type' => 'react',
+            'php_version' => null,
+            'node_version' => '22',
+            'process_config' => '',
+            'deploy_path' => $this->root.'/react-db',
+        ]);
+        Livewire::test(WebsiteShow::class, ['website' => $react])
+            ->assertDontSee('A MySQL database and user for this site.')
+            ->call('provisionDatabase');
+        $this->assertNull($react->fresh()->db_name);
+    }
+
     private function signIn(): void
     {
         $this->actingAs(User::factory()->create([

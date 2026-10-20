@@ -10,6 +10,7 @@ use App\Models\Website;
 use App\Services\CloudflareRoutes;
 use App\Services\ConfigRenderer;
 use App\Services\DatabaseProvisioner;
+use App\Support\EnvFile;
 use App\Services\HostWriter;
 use App\Services\ServerProcesses;
 use App\Services\SiteSecurity;
@@ -359,14 +360,18 @@ class Show extends PanelComponent
 
     public function provisionDatabase(DatabaseProvisioner $databases): void
     {
-        if (! $this->website->isPhp()) {
+        if (! $this->website->isPhp() && ! $this->website->isNode()) {
             return;
         }
 
         if (! $this->website->db_name) {
             $this->website->fill($databases->credentials($this->website->slug));
             $this->website->provision_database = true;
-            $this->website->env_content = app(ConfigRenderer::class)->env($this->website);
+            // PHP gets its usual template. A Node app already has its own .env, so only the
+            // database variables are added (DATABASE_URL for Prisma and the other drivers).
+            $this->website->env_content = $this->website->isNode()
+                ? EnvFile::set((string) $this->website->env_content, $databases->envValues($this->website))
+                : app(ConfigRenderer::class)->env($this->website);
             $this->website->save();
             $this->env_content = (string) $this->website->env_content;
         }

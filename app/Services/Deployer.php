@@ -81,7 +81,7 @@ class Deployer
             $this->checkout($website, $log);
 
             // The database comes before the install, which runs the migrations against it.
-            if ($website->isPhp() && $website->provision_database) {
+            if (($website->isPhp() || $website->isNode()) && $website->provision_database) {
                 $this->keepDatabaseCredentials($website, $log);
                 $log->line($this->databases->create($website));
             }
@@ -193,20 +193,13 @@ class Deployer
      */
     private function keepDatabaseCredentials(Website $website, DeploymentLogger $log): void
     {
-        $values = [
-            'DB_CONNECTION' => 'mysql',
-            'DB_HOST' => '127.0.0.1',
-            'DB_PORT' => '3306',
-            'DB_DATABASE' => (string) $website->db_name,
-            'DB_USERNAME' => (string) $website->db_username,
-            'DB_PASSWORD' => (string) $website->db_password,
-        ];
+        $values = $this->databases->envValues($website);
         $content = (string) $website->env_content;
         $fixed = EnvFile::set($content, $values);
 
         if (EnvFile::values($content, array_keys($values)) !== EnvFile::values($fixed, array_keys($values))) {
             $website->update(['env_content' => $fixed]);
-            $log->line('Set DB_* in .env to the database the panel made for this site.');
+            $log->line('Set the database login in .env to the database the panel made for this site.');
         }
     }
 

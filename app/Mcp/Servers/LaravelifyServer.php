@@ -75,8 +75,8 @@ use Laravel\Mcp\Server\Attributes\Version;
     1. list-sources: the connected GitHub Apps (private repositories, auto deploy on every push) and the Cloudflare tunnels (HTTPS for domains).
     2. Pick the type from the project's files (composer.json with laravel/framework → laravel; package.json with next → nextjs; vite + react → react; and so on). Use list-site-types when unsure.
     3. create-website with a group, name, type, repository, branch, and either a domain plus cloudflare_tunnel_id (and include_www when the user wants www too),
-       or nothing for a free HTTP port. Laravel and PHP apps that need MySQL: create_database true. Pass the app's required settings in env ("KEY=value").
-       DB_* values from an old .env are left out: the site uses the database the panel made.
+       or nothing for a free HTTP port. Laravel, PHP, and Node servers that need MySQL: create_database true. Pass the app's required settings in env ("KEY=value").
+       DATABASE_URL and DB_* values from an old .env are left out: the site uses the database the panel made. Node apps get DATABASE_URL.
     4. get-deployment every 10–20 seconds until finished. On failure read log_tail (and get-logs), fix the cause (env, build command, branch), and deploy-website again.
     5. Private files the app needs (like storage/app/private keys from a backup): upload-file. Data from an old server: put the dump in the site folder, then
        import-database (reset true when the migrations already made the tables; ask first: it empties the database).

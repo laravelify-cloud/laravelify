@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.56] - 2026-10-20
+
+- **MySQL for Node.js backends.** The Database card on a site's General tab, and "Create a MySQL database" when adding a site, now appear for Node servers (Node.js, Express, NestJS, Next.js, Nuxt, SvelteKit) as well as PHP. Provisioning writes `DATABASE_URL` and `DB_*` into the site's existing `.env`, and the database user can connect over `127.0.0.1`, which Prisma and other Node drivers use. Static sites stay without a database.
+
 ## [0.3.0-beta.55] - 2026-10-20
 
 - **Fixed: opening phpMyAdmin in the panel failed.** The page rewrote phpMyAdmin to the panel's PHP pool (`laravelify.sock`) and then refused that file, because only `php8.x-fpm.sock` was accepted. phpMyAdmin may use the panel pool. A website still cannot.

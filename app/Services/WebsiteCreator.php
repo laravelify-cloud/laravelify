@@ -123,7 +123,7 @@ class WebsiteCreator
             'reverb_port' => $isLaravel && $input['enable_reverb']
                 ? Website::nextPort('reverb_port', (int) config('laravelify.reverb_port_start'))
                 : null,
-            'provision_database' => $isPhp && $input['provision_database'],
+            'provision_database' => ($isPhp || $isNode) && $input['provision_database'],
             'deploy_path' => $root.'/'.$slug,
             'webhook_secret' => bin2hex(random_bytes(20)),
         ]);

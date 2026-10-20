@@ -231,7 +231,7 @@
                 </form>
             </x-layer-card>
 
-            @if ($website->isPhp())
+            @if ($website->isPhp() || $website->isNode())
                 <x-layer-card title="Database" helper="A MySQL database and user for this site." x-show="tab === 'general'" x-cloak>
                     <x-slot:actions>
                         <button class="btn" type="button" wire:click="provisionDatabase">{{ $website->db_name ? 'Re-provision' : 'Provision MySQL' }}</button>

@@ -33,7 +33,7 @@ class CreateWebsite extends Tool
 
         // A database made by the panel keeps its own login; DB_* from an old server would lock it out.
         if ($request->get('create_database', false)) {
-            $ignoredDatabaseKeys = array_values(array_intersect(array_keys($env), ['DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD']));
+            $ignoredDatabaseKeys = array_values(array_intersect(array_keys($env), ['DATABASE_URL', 'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD']));
             $env = array_diff_key($env, array_flip($ignoredDatabaseKeys));
         }
         $group = $this->group((string) $request->get('group', ''));
@@ -224,7 +224,7 @@ class CreateWebsite extends Tool
             'build_command' => $schema->string()->description('Override the build command (one line).'),
             'start_command' => $schema->string()->description('Node servers: override the start command (one line).'),
             'output_dir' => $schema->string()->description('Built front-ends and static sites: the folder to serve, like dist or out. Plain PHP: the web root (default public).'),
-            'create_database' => $schema->boolean()->description('PHP sites: create a MySQL database and user and fill DB_* in .env.'),
+            'create_database' => $schema->boolean()->description('PHP and Node servers: create a MySQL database and user. PHP gets DB_* in .env; Node also gets DATABASE_URL.'),
             'enable_reverb' => $schema->boolean()->description('Laravel: run Reverb (websockets).'),
             'env' => $schema->array()->items($schema->string())->description('Extra environment variables as "KEY=value" strings, written before the first deploy.'),
             'deploy' => $schema->boolean()->description('Deploy right after creating it (default true).'),

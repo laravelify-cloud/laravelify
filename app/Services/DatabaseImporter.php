@@ -25,7 +25,7 @@ class DatabaseImporter
      */
     public function prepare(Website $website, string $relative): array
     {
-        if (! $website->isPhp() || ! $website->provision_database || blank($website->db_name) || blank($website->db_username) || blank($website->db_password)) {
+        if ((! $website->isPhp() && ! $website->isNode()) || ! $website->provision_database || blank($website->db_name) || blank($website->db_username) || blank($website->db_password)) {
             throw new RuntimeException($website->name.' has no database made by the panel. Create the website with create_database, or add one on its page.');
         }
 

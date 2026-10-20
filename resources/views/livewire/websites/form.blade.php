@@ -219,6 +219,12 @@
             </div>
             @error('node_version') <small class="error">{{ $message }}</small> @enderror
         </div>
+        @if ($runtime === 'node')
+            <label class="flex items-center gap-2">
+                <input type="checkbox" wire:model="provision_database">
+                <span>Create a MySQL database and user for this site</span>
+            </label>
+        @endif
 
         <details class="card p-3">
             <summary class="cursor-pointer text-[13.5px] font-medium">Build settings <span class="font-normal text-muted">(optional, the defaults work for most projects)</span></summary>

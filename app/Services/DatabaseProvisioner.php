@@ -22,6 +22,39 @@ class DatabaseProvisioner
         ];
     }
 
+    /**
+     * Variables written into the site .env. PHP uses DB_*. Node servers also get DATABASE_URL,
+     * which Prisma and most Node drivers read, pointing at 127.0.0.1 (TCP, not the socket).
+     *
+     * @return array<string, string>
+     */
+    public function envValues(Website $website): array
+    {
+        $values = [
+            'DB_HOST' => '127.0.0.1',
+            'DB_PORT' => '3306',
+            'DB_DATABASE' => (string) $website->db_name,
+            'DB_USERNAME' => (string) $website->db_username,
+            'DB_PASSWORD' => (string) $website->db_password,
+        ];
+
+        if ($website->isNode()) {
+            return ['DATABASE_URL' => $this->url($website)] + $values;
+        }
+
+        return ['DB_CONNECTION' => 'mysql'] + $values;
+    }
+
+    public function url(Website $website): string
+    {
+        return sprintf(
+            'mysql://%s:%s@127.0.0.1:3306/%s',
+            rawurlencode((string) $website->db_username),
+            rawurlencode((string) $website->db_password),
+            rawurlencode((string) $website->db_name),
+        );
+    }
+
     public function create(Website $website): string
     {
         if (! $website->db_name || ! $website->db_username || ! $website->db_password) {
@@ -39,9 +72,16 @@ class DatabaseProvisioner
         }
 
         $password = str_replace("'", "''", $website->db_password);
+        // localhost is the socket (PHP). 127.0.0.1 is TCP, which Node and Prisma use.
         $sql = sprintf(
-            "CREATE DATABASE IF NOT EXISTS `%s`; CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s'; ALTER USER '%s'@'localhost' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'localhost'; FLUSH PRIVILEGES;",
+            "CREATE DATABASE IF NOT EXISTS `%s`; CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s'; ALTER USER '%s'@'localhost' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'localhost'; CREATE USER IF NOT EXISTS '%s'@'127.0.0.1' IDENTIFIED BY '%s'; ALTER USER '%s'@'127.0.0.1' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'127.0.0.1'; FLUSH PRIVILEGES;",
             $website->db_name,
+            $website->db_username,
+            $password,
+            $website->db_username,
+            $password,
+            $website->db_name,
+            $website->db_username,
             $website->db_username,
             $password,
             $website->db_username,
