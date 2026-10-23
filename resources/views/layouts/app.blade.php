@@ -225,6 +225,7 @@
                     </nav>
                 </header>
                 <main class="mx-auto flex w-full max-w-[96rem] flex-col gap-5 px-4 py-5 sm:px-6 lg:py-6">
+                    <livewire:panel-worker-alert />
                     {{ $slot }}
                 </main>
             </div>

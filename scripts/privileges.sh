@@ -408,6 +408,8 @@ command=${PHP_BIN} ${APP_ROOT}/artisan queue:work --sleep=1 --tries=1 --timeout=
 directory=${APP_ROOT}
 autostart=true
 autorestart=true
+; Keep trying while MySQL restarts (an update, a reboot): never give up after 3 quick exits.
+startretries=1000
 stopasgroup=true
 killasgroup=true
 stopwaitsecs=600
@@ -423,6 +425,8 @@ command=${PHP_BIN} ${APP_ROOT}/artisan schedule:work
 directory=${APP_ROOT}
 autostart=true
 autorestart=true
+; Keep trying while MySQL restarts (an update, a reboot): never give up after 3 quick exits.
+startretries=1000
 stopasgroup=true
 killasgroup=true
 user=${PANEL_USER}

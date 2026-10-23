@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.62] - 2026-10-23
+
+- **Fixed: after an update, every deploy stayed on "Waiting".** The update restarts MySQL and the panel's background worker at about the same time. The worker started while MySQL was still down, failed a few times, and Supervisor gave up on it for good (FATAL), so nothing ran deploys any more. The worker and the scheduler now keep trying until MySQL is back, and the update starts them again as its last step.
+- **The panel tells you when its background worker stops.** A banner on every page says so, with a **Start it** button, while deploys and background tasks wait. Every minute the panel checks the worker, starts it again by itself, and sends a Telegram alert once ("Process stopped or crashing"), then again when it is back.
+
 ## [0.3.0-beta.61] - 2026-10-23
 
 - **Fixed: "Move to its own user and open VS Code" could spin forever.** The move ran inside the page request: a website restarting under PM2 (Next.js) could take longer than a request may last, and the page never got an answer. It now runs in the background like deleting a website. The page shows its progress, opens VS Code when it is done, says why when it fails, and picks a running move up again after a reload.

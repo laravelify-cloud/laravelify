@@ -3,10 +3,12 @@
 namespace App\Providers;
 
 use App\Services\DisplayTime;
+use App\Services\PanelWorker;
 use App\Services\PortAllocator;
 use App\Services\ServerProcesses;
 use App\Services\UploadLimits;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
@@ -29,6 +31,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // The panel's queue worker says it is alive (see PanelWorker: the watchdog and the banner).
+        Queue::looping(fn () => PanelWorker::beat());
+
         if (str_starts_with((string) request()->header('X-Forwarded-Proto'), 'https')) {
             URL::forceScheme('https');
         }

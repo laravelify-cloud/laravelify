@@ -298,6 +298,14 @@ UNIT;
         return $this->apply(['code-server-start', $website->slug, (string) $port, $token, $workspace]);
     }
 
+    /**
+     * Start the panel's queue worker and scheduler again (Supervisor gives up after quick failures).
+     */
+    public function startPanelWorker(): string
+    {
+        return $this->apply(['panel-worker-start']);
+    }
+
     public function codeServerStop(Website $website): string
     {
         return $this->apply(['code-server-stop', $website->slug]);

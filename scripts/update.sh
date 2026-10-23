@@ -180,4 +180,8 @@ fi
 bash "${APP_ROOT}/scripts/host-apply.sh" code-server-install >/dev/null \
   || echo "VS Code could not be installed now; it installs the first time someone opens the editor." >&2
 
+# The panel's worker and scheduler may have stopped while MySQL restarted above (Supervisor
+# marks a program FATAL after quick failures): make sure they run, or deploys wait forever.
+supervisorctl start laravelify-queue laravelify-scheduler >/dev/null 2>&1 || true
+
 echo "Panel updated."

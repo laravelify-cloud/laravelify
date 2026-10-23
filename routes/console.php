@@ -13,6 +13,9 @@ Artisan::command('inspire', function () {
 Schedule::command('laravelify:monitor')->everyMinute()->withoutOverlapping(10);
 Schedule::command('laravelify:monitor --patches')->dailyAt('06:00')->withoutOverlapping(30);
 
+// The panel's own queue worker runs every deploy: start it again when it stopped, and say so.
+Schedule::command('laravelify:watch-worker')->everyMinute()->withoutOverlapping(5);
+
 // Background tasks (zips, backup exports) and their files are removed after a day.
 Schedule::command('laravelify:prune-tasks')->hourly()->withoutOverlapping(10);
 

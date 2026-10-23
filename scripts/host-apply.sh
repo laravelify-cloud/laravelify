@@ -1126,6 +1126,12 @@ EOF
     systemctl reload nginx
     echo "started ${UNIT}"
     ;;
+  panel-worker-start)
+    # The panel's own queue worker and scheduler, when Supervisor gave up on them (FATAL after
+    # MySQL was down for a moment). Nothing else can be started this way.
+    supervisorctl start laravelify-queue laravelify-scheduler 2>&1 || true
+    supervisorctl status laravelify-queue laravelify-scheduler 2>&1 || true
+    ;;
   code-server-stop)
     slug_ok "${TARGET}" || die "invalid slug"
     systemctl stop "laravelify-code-${TARGET}" >/dev/null 2>&1 || true
