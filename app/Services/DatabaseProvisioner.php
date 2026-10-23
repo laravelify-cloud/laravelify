@@ -13,11 +13,27 @@ class DatabaseProvisioner
      */
     public function credentials(string $slug): array
     {
-        $base = 'lv_'.substr(str_replace('-', '_', $slug), 0, 20);
+        $name = str_replace('-', '_', $slug);
+
+        // Short slugs keep their readable names. A long one is cut, so a short hash of the whole
+        // slug keeps it apart from another that starts the same (shop and shop-development).
+        for ($attempt = 0; ; $attempt++) {
+            $hash = substr(sha1($slug.($attempt > 0 ? '#'.$attempt : '')), 0, 6);
+            $database = strlen($name) <= 20 && $attempt === 0 ? 'lv_'.$name : 'lv_'.substr($name, 0, 13).'_'.$hash;
+            $user = strlen($database) <= 16 ? $database.'_u' : substr($name, 0, 9).'_'.$hash.'_u';
+
+            // Never a name another website already uses: creating it would take over that one's
+            // database and reset its user's password.
+            $taken = Website::query()->where('db_name', $database)->orWhere('db_username', $user)->exists();
+
+            if (! $taken) {
+                break;
+            }
+        }
 
         return [
-            'db_name' => $base,
-            'db_username' => substr($base, 0, 16).'_u',
+            'db_name' => $database,
+            'db_username' => $user,
             'db_password' => Str::password(24, symbols: false),
         ];
     }
@@ -42,7 +58,24 @@ class DatabaseProvisioner
             return ['DATABASE_URL' => $this->url($website)] + $values;
         }
 
-        return ['DB_CONNECTION' => 'mysql'] + $values;
+        return ['DB_CONNECTION' => 'mysql'] + $values + self::redisValues($website);
+    }
+
+    /**
+     * Websites share the server's Redis. Laravel names its keys after APP_NAME, which an
+     * environment copies from its main website, so each site gets prefixes of its own: its
+     * cache, sessions and queues never mix with another's.
+     *
+     * @return array<string, string>
+     */
+    public static function redisValues(Website $website): array
+    {
+        $prefix = str_replace('-', '_', (string) $website->slug);
+
+        return [
+            'REDIS_PREFIX' => $prefix.'_database_',
+            'CACHE_PREFIX' => $prefix.'_cache_',
+        ];
     }
 
     public function url(Website $website): string

@@ -56,7 +56,7 @@
                 const path = organization
                     ? 'organizations/' + encodeURIComponent(organization) + '/settings/apps/new'
                     : 'settings/apps/new';
-                const permissions = { contents: 'read', metadata: 'read', emails: 'read' };
+                const permissions = { contents: 'write', administration: 'write', metadata: 'read', emails: 'read' };
                 const events = ['push'];
 
                 const form = document.createElement('form');

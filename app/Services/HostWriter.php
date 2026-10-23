@@ -274,6 +274,45 @@ UNIT;
     /**
      * Check every nginx config with nginx -t.
      */
+    /**
+     * Open a website at <panel>/p/<token>/, proxied to the site's own nginx server.
+     */
+    public function writePanelPreview(Website $website, string $token, int $port, string $host): string
+    {
+        return $this->apply(['panel-preview', $website->slug, $token, (string) $port, $host]);
+    }
+
+    /**
+     * Install code-server once for the server, in the background (a download of about 120 MB):
+     * "installed", "installing <MB>", or "started".
+     */
+    public function codeServerInstall(): string
+    {
+        return is_file('/opt/code-server/bin/code-server') && is_file('/etc/nginx/laravelify-panel.d/00-code-auth.conf') && is_file('/opt/graphify/bin/graphify')
+            ? 'installed'
+            : trim($this->apply(['code-server-install-start', 'all']));
+    }
+
+    public function codeServerStart(Website $website, int $port, string $token, string $workspace): string
+    {
+        return $this->apply(['code-server-start', $website->slug, (string) $port, $token, $workspace]);
+    }
+
+    public function codeServerStop(Website $website): string
+    {
+        return $this->apply(['code-server-stop', $website->slug]);
+    }
+
+    public function codeServerStatus(Website $website): string
+    {
+        return $this->apply(['code-server-status', $website->slug]);
+    }
+
+    public function removePanelPreview(Website $website): string
+    {
+        return $this->apply(['panel-preview-remove', $website->slug]);
+    }
+
     public function nginxTest(): string
     {
         return $this->apply(['nginx-test', 'all']);

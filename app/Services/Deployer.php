@@ -142,6 +142,10 @@ class Deployer
 
         $repository = $this->authenticatedRepository($website);
 
+        if (($seeded = $this->examples->seed($website, $this->site, $repository)) !== null) {
+            $log->line($seeded);
+        }
+
         if (is_dir($path.'/.git')) {
             // Never trust the stored origin: it may hold an expired GitHub App token from
             // an earlier clone. Keep origin token-free and fetch with a fresh token each time.
@@ -510,6 +514,15 @@ class Deployer
     }
 
     private function authenticatedRepository(Website $website): string
+    {
+        return self::repositoryWithToken($website);
+    }
+
+    /**
+     * The repository URL with a fresh GitHub App (or saved) token, for one git command.
+     * Never store it: the token is short-lived and secret.
+     */
+    public static function repositoryWithToken(Website $website): string
     {
         $repository = (string) $website->repository;
         $token = null;

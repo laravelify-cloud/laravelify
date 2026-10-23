@@ -69,6 +69,19 @@ class GithubAppDeployTest extends TestCase
         $this->assertSame(1, Deployment::query()->where('website_id', $this->website->id)->count());
     }
 
+    public function test_a_push_the_code_editor_already_deployed_is_not_deployed_again(): void
+    {
+        $sha = str_repeat('b', 40);
+        $this->website->deployments()->create(['status' => 'success', 'trigger' => 'editor', 'commit_sha' => $sha, 'branch' => 'main', 'log' => '']);
+
+        $this->deliver('push', ['ref' => 'refs/heads/main', 'after' => $sha, 'repository' => ['full_name' => 'acme/shop']])
+            ->assertOk()
+            ->assertJson(['ignored' => true, 'deployment_ids' => []]);
+
+        $this->assertSame(1, Deployment::query()->where('website_id', $this->website->id)->count());
+        $this->assertSame('Push of bbbbbbb from the code editor. Already deployed.', $this->website->fresh()->last_webhook_result);
+    }
+
     public function test_other_app_events_do_not_replace_the_deploy_status(): void
     {
         $this->website->recordWebhook('Queued deploy #7 for abc1234.');

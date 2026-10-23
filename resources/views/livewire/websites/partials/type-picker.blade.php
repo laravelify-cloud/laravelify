@@ -17,6 +17,7 @@
 
 <div
     class="flex flex-col gap-3"
+    x-on:type-detected.window="tab = $event.detail.group; query = ''"
     x-data="{
         tab: @js($selectedGroup),
         query: '',

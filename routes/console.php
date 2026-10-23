@@ -19,6 +19,9 @@ Schedule::command('laravelify:prune-tasks')->hourly()->withoutOverlapping(10);
 // Interactive terminal sessions (their output and input files) are forgotten after a day.
 Schedule::call(fn () => app(TerminalSessions::class)->prune())->name('terminal-prune')->hourly();
 
+// VS Code editors: git's GitHub token lasts an hour, so running editors get a fresh one.
+Schedule::command('laravelify:code-server-credentials')->everyThirtyMinutes()->withoutOverlapping(10);
+
 // Backups: starts every schedule that is due this minute (Backups in the sidebar).
 Schedule::command('laravelify:run-backups')->everyMinute()->withoutOverlapping(5);
 

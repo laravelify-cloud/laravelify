@@ -1,4 +1,16 @@
-<form class="card flex flex-col gap-4 p-4" wire:submit="save">
+<form class="card flex flex-col gap-4 p-4" wire:submit="save" x-data="formDraft(@js('laravelify.website-draft.'.$group->id), @js(\App\Livewire\Websites\Form::DRAFT_FIELDS))">
+    {{-- A draft of this form is kept in the browser as you type; after a reload it can be restored. --}}
+    <div class="draft-banner" x-show="offer" x-cloak role="status">
+        <x-menu-icon name="refresh" class="size-4 shrink-0" />
+        <p class="min-w-0 flex-1">
+            <b>You have an unsaved draft</b>
+            <span class="text-muted" x-text="summary()"></span>
+        </p>
+        <button type="button" class="btn btn-sm" @click="discard()">Start new</button>
+        <button type="button" class="btn btn-sm btn-primary" @click="restore()">Restore draft</button>
+    </div>
+    <p class="draft-saved text-muted" x-show="savedAt && ! offer" x-cloak x-text="'Draft saved ' + savedAt"></p>
+
     <p class="text-muted">Adding to {{ $group->name }}. PHP sites run on PHP-FPM (Laravel also gets Supervisor workers), Node servers run under PM2, and front-end builds are served by nginx.</p>
 
     <section class="card relative flex flex-col gap-3 p-4">
@@ -61,21 +73,39 @@
                 </div>
                 <a class="btn" href="{{ route('sources.index') }}" wire:navigate>+ Add GitHub App</a>
             </div>
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
-                <div class="field relative min-w-0 flex-1" x-data="{ open: false, q: '', repos: @js($repositories) }" @click.outside="open = false">
-                    <span>Repository</span>
-                    <button class="input text-left" type="button" @click="open = !open">
-                        <span x-text="(repos.find(repo => repo.clone_url === $wire.selectedRepository) || {}).name || 'Select a repository'"></span>
-                    </button>
-                    <div class="card repo-menu" x-cloak x-show="open" x-transition.opacity>
-                        <input class="input" x-model="q" placeholder="Search repositories..." @click.stop>
-                        <template x-for="repo in repos.filter(repo => repo.name.toLowerCase().includes(q.toLowerCase()))" :key="repo.clone_url">
-                            <button class="repo-option" type="button" @click="$wire.selectedRepository = repo.clone_url; open = false" x-text="repo.name"></button>
-                        </template>
-                    </div>
-                    @error('repository') <small class="error">{{ $message }}</small> @enderror
+            <div class="repo-picker" x-data="repoPicker(@js($repositories))">
+                <div class="repo-picker-search">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.3-4.3" /></svg>
+                    <input x-ref="search" x-model="q" @input="index = 0" @keydown="keys($event)" placeholder="Search {{ count($repositories) }} repositories by name, owner or language…" autocomplete="off" spellcheck="false" x-init="$nextTick(() => $el.focus())">
+                    <span class="repo-picker-count" x-text="results().length + ' / ' + repos.length"></span>
                 </div>
-                <button class="btn btn-primary" type="button" wire:click="loadRepository">Load repository</button>
+                <div class="repo-picker-list" x-ref="list" role="listbox">
+                    <template x-for="(repo, i) in results()" :key="repo.clone_url">
+                        <button type="button" class="repo-row" role="option" :class="{ 'is-active': i === index, 'is-selected': repo.clone_url === $wire.selectedRepository }" @mouseenter="index = i" @click="pick(repo)">
+                            <span class="repo-row-icon" :title="repo.private ? 'Private' : 'Public'">
+                                <svg x-show="repo.private" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+                                <svg x-show="! repo.private" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2z" /><path d="M4 19a2 2 0 0 1 2-2h12" /></svg>
+                            </span>
+                            <span class="repo-row-main">
+                                <span class="repo-row-name"><span class="text-muted" x-text="repo.name.split('/')[0] + ' / '"></span><b x-text="repo.name.split('/').slice(1).join('/')"></b></span>
+                                <span class="repo-row-desc" x-show="repo.description" x-text="repo.description"></span>
+                            </span>
+                            <span class="repo-row-meta">
+                                <span x-show="repo.language" class="repo-row-lang"><i :style="'background:' + color(repo.language)"></i><span x-text="repo.language"></span></span>
+                                <span class="repo-row-branch"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="9" r="2" /><path d="M6 7v10M18 11c0 4-6 3-12 6" /></svg><span x-text="repo.branch"></span></span>
+                                <span x-show="repo.pushed_at" x-text="ago(repo.pushed_at)"></span>
+                                <span class="repo-row-badge" x-text="repo.private ? 'Private' : 'Public'"></span>
+                            </span>
+                        </button>
+                    </template>
+                    <p class="repo-picker-empty" x-show="results().length === 0">No repository matches “<span x-text="q"></span>”. Is the GitHub App installed on it?</p>
+                </div>
+                <div class="repo-picker-foot">
+                    <span class="text-muted">↑↓ to move · Enter to load · click a repository to load it</span>
+                    @error('repository') <small class="error">{{ $message }}</small> @enderror
+                    <span class="loader-spinner" wire:loading wire:target="loadRepository" style="width: 14px; height: 14px; border-width: 2px"></span>
+                    <span class="text-muted" wire:loading wire:target="loadRepository">Reading the repository…</span>
+                </div>
             </div>
         @endif
     </section>
@@ -99,8 +129,51 @@
             <button type="button" :aria-pressed="access === 'port'" x-on:click="access = 'port'; $wire.domain = ''">HTTP port</button>
         </div>
 
-        <div class="flex flex-col gap-2" x-show="access === 'domain'">
-            <input class="input" wire:model="domain" placeholder="example.com">
+        <div class="flex flex-col gap-2" x-show="access === 'domain'" x-data="domainPicker()" x-init="load()">
+            <div class="domain-input" @click.outside="suggest = false">
+                <input class="input" wire:model.live.debounce.300ms="domain" x-model="value" @focus="suggest = true" @keydown.escape="suggest = false" placeholder="app.example.com" autocomplete="off" spellcheck="false">
+                <div class="domain-suggest card" x-show="suggest && matches().length" x-cloak>
+                    <p class="domain-suggest-head">Already in Cloudflare</p>
+                    <template x-for="record in matches()" :key="record.name">
+                        <button type="button" class="domain-suggest-row" @click="value = record.name; $wire.set('domain', record.name); suggest = false">
+                            <span class="font-mono" x-text="record.name"></span>
+                            <span class="domain-tag" :class="record.website ? 'is-site' : ''" x-text="record.website ? 'website: ' + record.website : record.type + ' → ' + record.content"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
+            {{-- What the typed name is now: free, in DNS already, or a website's --}}
+            <p class="domain-state" x-show="value.trim() !== ''" x-cloak :class="'is-' + state().kind">
+                <span x-text="state().icon"></span>
+                <span x-text="state().text"></span>
+            </p>
+
+            <div class="domain-zones" x-show="zones.length" x-cloak>
+                <span class="text-[12px] text-muted">Random free subdomain on</span>
+                <template x-for="zone in zones" :key="zone.name">
+                    <button type="button" class="chip" @click="$wire.randomDomain(zone.name).then(() => value = $wire.domain)" :title="'Make a random subdomain of ' + zone.name">
+                        <x-menu-icon name="refresh" class="size-3.5" /> <span x-text="zone.name"></span>
+                    </button>
+                </template>
+                <button type="button" class="text-[12px] text-muted hover:text-ink" @click="taken = ! taken" x-text="(taken ? 'Hide' : 'Show') + ' used subdomains (' + total() + ')'"></button>
+                <button type="button" class="text-[12px] text-muted hover:text-ink" @click="load(true)" title="Read Cloudflare again">Refresh</button>
+            </div>
+            <div class="domain-taken card" x-show="taken" x-cloak>
+                <template x-for="zone in zones" :key="'t' + zone.name">
+                    <div>
+                        <p class="domain-suggest-head" x-text="zone.name + ' · ' + zone.records.length + ' names'"></p>
+                        <template x-for="record in zone.records" :key="record.name">
+                            <div class="domain-suggest-row">
+                                <span class="font-mono" x-text="record.name"></span>
+                                <span class="domain-tag" :class="record.website ? 'is-site' : ''" x-text="record.website ? 'website: ' + record.website : record.type + ' → ' + record.content"></span>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+            <small class="text-muted" x-show="loading" x-cloak>Reading your domains from Cloudflare…</small>
+            <small class="error" x-show="error" x-cloak x-text="error"></small>
             <small class="text-muted">Needed for a Cloudflare tunnel.</small>
             @error('domain') <small class="error">{{ $message }}</small> @enderror
 
@@ -131,9 +204,10 @@
         <div x-show="access === 'port'" x-cloak>
             <div class="flex gap-2">
                 <input class="input min-w-0 flex-1" wire:model="http_port" inputmode="numeric" placeholder="8081">
+                <button class="btn" type="button" wire:click="randomPort" title="Pick a random port no website or app uses"><x-menu-icon name="refresh" class="size-4" /> Random free port</button>
                 @include('livewire.websites.partials.ports-modal', ['model' => 'http_port'])
             </div>
-            <small class="text-muted">Leave empty for the next free port from 8081. The site opens on http://{{ \App\Support\ServerAddress::publicIp() ?? 'SERVER_IP' }}:port, and the port is opened in the firewall (ufw).</small>
+            <small class="text-muted">Leave empty for the next free port from 8081, or pick a random free one. The site opens on http://{{ \App\Support\ServerAddress::publicIp() ?? 'SERVER_IP' }}:port, and the port is opened in the firewall (ufw).</small>
             @error('http_port') <small class="error">{{ $message }}</small> @enderror
         </div>
     </div>
@@ -142,16 +216,43 @@
         <div class="field">
             <span>Source</span>
             <div class="segmented self-start" role="group" aria-label="Where the code comes from">
-                <button type="button" aria-pressed="{{ $use_example ? 'false' : 'true' }}" wire:click="$set('use_example', false)">Git repository</button>
-                <button type="button" aria-pressed="{{ $use_example ? 'true' : 'false' }}" wire:click="$set('use_example', true)">Example project</button>
+                <button type="button" aria-pressed="{{ $use_example || $create_repository ? 'false' : 'true' }}" wire:click="chooseSource('git')">Git repository</button>
+                <button type="button" aria-pressed="{{ $use_example ? 'true' : 'false' }}" wire:click="chooseSource('example')">Example project</button>
+                @if ($sources->isNotEmpty())
+                    <button type="button" aria-pressed="{{ $create_repository ? 'true' : 'false' }}" wire:click="chooseSource('new')">New GitHub repository</button>
+                @endif
             </div>
             @if ($use_example)
                 <small class="text-muted">A small working {{ $definition['label'] }} app, ready to deploy. No repository needed.</small>
+            @elseif ($create_repository)
+                <small class="text-muted">Laravelify creates a new repository with the {{ $definition['label'] }} example, pushes it and deploys it. Edit it later in the code editor: every push deploys again.</small>
             @endif
         </div>
+
+        @if ($create_repository)
+            <div class="grid gap-3 sm:grid-cols-2">
+                <label class="field">
+                    <span>GitHub App</span>
+                    <select class="input" wire:model="github_app_id">
+                        <option value="">Choose a GitHub App</option>
+                        @foreach ($sources as $source)
+                            <option value="{{ $source->id }}">{{ $source->name }}{{ $source->organization ? ' ('.$source->organization.')' : '' }}</option>
+                        @endforeach
+                    </select>
+                    <small class="text-muted">The repository is made in the organization the app is installed on.</small>
+                    @error('github_app_id') <small class="error">{{ $message }}</small> @enderror
+                </label>
+                <label class="field">
+                    <span>Repository name</span>
+                    <input class="input" wire:model="new_repository_name" placeholder="{{ \Illuminate\Support\Str::slug($name) ?: 'my-project' }}">
+                    <label class="flex items-center gap-2 text-[12.5px] text-muted"><input type="checkbox" wire:model="new_repository_private"> Private repository</label>
+                    @error('new_repository_name') <small class="error">{{ $message }}</small> @enderror
+                </label>
+            </div>
+        @endif
     @endif
 
-    @unless ($use_example && $hasExample)
+    @unless (($use_example || $create_repository) && $hasExample)
     <label class="field">
         <span>Git repository</span>
         <input class="input" wire:model="repository" placeholder="https://github.com/org/repo.git">

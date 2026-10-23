@@ -859,6 +859,7 @@ if [[ ! -s /tmp/laravelify-install/tunnel-slug ]]; then
 fi
 
 step "Configuring nginx for the panel"
+install -d -m 0755 /etc/nginx/laravelify-panel.d
 cat > /etc/nginx/sites-available/laravelify-panel.conf <<EOF
 server {
     listen 80 default_server;
@@ -869,6 +870,9 @@ server {
     index index.php;
     # Big uploads in the file manager: nginx and PHP accept up to 256 MB.
     client_max_body_size 256M;
+
+    # Website previews at /p/<token>/ (scripts/host-apply.sh panel-preview).
+    include /etc/nginx/laravelify-panel.d/*.conf;
 
     location / {
         try_files \$uri \$uri/ /index.php?\$query_string;
@@ -903,6 +907,12 @@ chmod 755 "$APP_ROOT"/scripts/*.sh
 # programs, and sets the owners and permissions of the panel's files.
 LARAVELIFY_ROOT="$APP_ROOT" LARAVELIFY_PHP="php${PANEL_PHP}" bash "$APP_ROOT/scripts/privileges.sh"
 bash "$APP_ROOT/scripts/host-apply.sh" phpmyadmin-hide all || true
+
+step "Installing VS Code for the websites (code-server)"
+# Downloaded once here, so the code editor opens at once the first time. graphify (the AI
+# agents' project map) comes with it.
+bash "$APP_ROOT/scripts/host-apply.sh" code-server-install >/dev/null \
+  || echo "VS Code could not be installed now; it installs the first time someone opens the editor." >&2
 
 step "Starting the Cloudflare tunnel"
 if ! command -v cloudflared >/dev/null 2>&1; then

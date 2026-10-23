@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\CloudflareTunnel;
+use App\Models\GithubApp;
 use App\Models\Group;
 use App\Models\Website;
 use App\Support\BuildOutput;
@@ -12,6 +14,7 @@ use Closure;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -28,6 +31,7 @@ class WebsiteCreator
         private WebsiteDomains $domains,
         private CloudflareRoutes $cloudflare,
         private ExampleRepositories $examples,
+        private GithubAppClient $github,
     ) {}
 
     /**
@@ -58,7 +62,7 @@ class WebsiteCreator
                 ? ['nullable']
                 : ['integer', 'between:80,65535', Rule::unique('websites', 'http_port'), Rule::notIn([8000, 3306, 6379])],
             'repository' => ['nullable', 'string', 'max:500'],
-            'branch' => $input['use_example'] ? ['nullable'] : ['required', 'string', 'max:120'],
+            'branch' => $input['use_example'] || $input['create_repository'] ? ['nullable'] : ['required', 'string', 'max:120'],
             'php_version' => $runtime === SiteTypes::RUNTIME_PHP ? ['required', Rule::in(config('laravelify.php_versions'))] : ['nullable'],
             'node_version' => $usesNode ? ['required', Rule::in(config('laravelify.node_versions'))] : ['nullable'],
             'install_command' => $command,
@@ -76,6 +80,12 @@ class WebsiteCreator
         ])->validate();
 
         $domain = $input['domain'] !== '' ? strtolower((string) $input['domain']) : null;
+
+        // A domain without a tunnel gets no route and no DNS record: when none was chosen, the
+        // domain goes through the server's own tunnel (the one the panel is reached through).
+        if ($domain !== null && $input['cloudflare_tunnel_id'] === '' && ($tunnel = CloudflareTunnel::query()->oldest('id')->first())) {
+            $input['cloudflare_tunnel_id'] = (string) $tunnel->id;
+        }
         $aliases = $this->aliasesFor($domain, $input);
         $this->domains->validate(null, $domain, $aliases);
 
@@ -94,7 +104,8 @@ class WebsiteCreator
         }
 
         $slug = Slugs::unique(Website::class, (string) $input['name']);
-        $useExample = $input['use_example'] && Examples::has($validated['type']);
+        $created = $input['create_repository'] ? $this->createRepository($validated['type'], $slug, $input) : null;
+        $useExample = $created === null && $input['use_example'] && Examples::has($validated['type']);
         $root = rtrim((string) config('laravelify.sites_root'), '/');
         $isLaravel = $validated['type'] === 'laravel';
         $isPhp = $runtime === SiteTypes::RUNTIME_PHP;
@@ -110,8 +121,13 @@ class WebsiteCreator
             'domain' => $domain,
             'aliases' => $aliases === [] ? null : $aliases,
             'http_port' => $httpPort,
-            'repository' => $useExample ? $this->examples->pathFor($slug) : ($input['repository'] !== '' ? $input['repository'] : null),
-            'branch' => $useExample ? 'main' : $input['branch'],
+            'repository' => match (true) {
+                $created !== null => $created['clone_url'],
+                $useExample => $this->examples->pathFor($slug),
+                default => $input['repository'] !== '' ? $input['repository'] : null,
+            },
+            'branch' => $useExample || $created !== null ? 'main' : $input['branch'],
+            'seed_example' => $created !== null,
             'php_version' => $isPhp ? $input['php_version'] : null,
             'node_version' => $usesNode ? $input['node_version'] : null,
             'install_command' => $usesNode && $input['install_command'] !== '' ? $input['install_command'] : null,
@@ -136,6 +152,14 @@ class WebsiteCreator
         $website->save();
 
         try {
+            // A folder left by a deleted website of the same name belongs to the shared user again;
+            // a new website has no visitors yet, so it takes the folder over with its own user now.
+            $sites = app(SiteUser::class);
+
+            if ($sites->perSiteUsers() && is_dir((string) $website->deploy_path) && ! $sites->for($website)->isOwn()) {
+                $this->host->separateSite($website);
+            }
+
             $this->host->writeWebsite($website);
             $this->renderer->refreshTunnel($website->tunnel);
             $error = null;
@@ -145,7 +169,46 @@ class WebsiteCreator
 
         $cloudflare = $error === null ? $this->cloudflare->sync($website) : ['configured' => false, 'lines' => [], 'note' => null];
 
+        // The new repository is still empty: the first deploy pushes the example to it.
+        if ($created !== null && $error === null) {
+            // Fresh from the database: columns left to their defaults (enabled) are not on the model yet.
+            $website->refresh()->queueDeployment('create');
+        }
+
         return ['website' => $website, 'error' => $error, 'cloudflare' => $cloudflare];
+    }
+
+    /**
+     * Make the new, empty GitHub repository a website made from an example deploys from.
+     *
+     * @param  array<string, mixed>  $input
+     * @return array{name: string, clone_url: string, branch: string}
+     *
+     * @throws ValidationException
+     */
+    private function createRepository(string $type, string $slug, array $input): array
+    {
+        if (! Examples::has($type)) {
+            throw ValidationException::withMessages(['type' => 'There is no example project for this framework.']);
+        }
+
+        $app = $input['github_app_id'] !== '' ? GithubApp::query()->find((int) $input['github_app_id']) : null;
+
+        if (! $app?->isConnected()) {
+            throw ValidationException::withMessages(['github_app_id' => 'Choose a connected GitHub App.']);
+        }
+
+        $name = $input['new_repository_name'] !== '' ? $input['new_repository_name'] : $slug;
+
+        if (! preg_match('/^[A-Za-z0-9._-]{1,100}$/', $name) || in_array($name, ['.', '..'], true)) {
+            throw ValidationException::withMessages(['new_repository_name' => 'Use letters, numbers, dots, dashes and underscores.']);
+        }
+
+        try {
+            return $this->github->createRepository($app, $name, $input['new_repository_private']);
+        } catch (RuntimeException $exception) {
+            throw ValidationException::withMessages(['new_repository_name' => $exception->getMessage()]);
+        }
     }
 
     /**
@@ -173,16 +236,18 @@ class WebsiteCreator
     {
         $strings = ['name' => '', 'type' => 'laravel', 'domain' => '', 'http_port' => '', 'repository' => '', 'branch' => 'main',
             'php_version' => '8.4', 'node_version' => '22', 'install_command' => '', 'build_command' => '', 'start_command' => '',
-            'public_dir' => '', 'cloudflare_tunnel_id' => '', 'github_app_id' => ''];
+            'public_dir' => '', 'cloudflare_tunnel_id' => '', 'github_app_id' => '', 'new_repository_name' => ''];
 
         foreach ($strings as $key => $default) {
             $value = $input[$key] ?? null;
             $input[$key] = $value === null ? $default : trim((string) $value);
         }
 
-        foreach (['use_example', 'enable_reverb', 'provision_database', 'include_www'] as $key) {
+        foreach (['use_example', 'enable_reverb', 'provision_database', 'include_www', 'create_repository'] as $key) {
             $input[$key] = (bool) ($input[$key] ?? false);
         }
+
+        $input['new_repository_private'] = (bool) ($input['new_repository_private'] ?? true);
 
         if ($input['public_dir'] === '' && $input['type'] === 'php') {
             $input['public_dir'] = 'public';

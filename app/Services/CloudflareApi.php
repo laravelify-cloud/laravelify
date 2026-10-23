@@ -114,6 +114,49 @@ class CloudflareApi
     }
 
     /**
+     * The zones (domains) the token can see.
+     *
+     * @return list<array{id: string, name: string}>
+     */
+    public function zones(): array
+    {
+        $zones = $this->request('GET', '/zones', ['per_page' => 50, 'status' => 'active']);
+
+        return array_values(array_map(
+            fn (array $zone): array => ['id' => (string) $zone['id'], 'name' => (string) $zone['name']],
+            array_filter((array) $zones, fn ($zone) => is_array($zone) && isset($zone['id'], $zone['name'])),
+        ));
+    }
+
+    /**
+     * Every host name with a record in a zone (A, AAAA, CNAME), with where it points.
+     *
+     * @return list<array{name: string, type: string, content: string}>
+     */
+    public function hostnames(string $zone): array
+    {
+        $names = [];
+
+        for ($page = 1; $page <= 5; $page++) {
+            $records = (array) $this->request('GET', "/zones/{$zone}/dns_records", ['per_page' => 500, 'page' => $page]);
+
+            foreach ($records as $record) {
+                if (is_array($record) && in_array($record['type'] ?? '', ['A', 'AAAA', 'CNAME'], true)) {
+                    $names[] = ['name' => strtolower((string) $record['name']), 'type' => (string) $record['type'], 'content' => (string) ($record['content'] ?? '')];
+                }
+            }
+
+            if (count($records) < 500) {
+                break;
+            }
+        }
+
+        usort($names, fn (array $a, array $b): int => strcmp($a['name'], $b['name']));
+
+        return $names;
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     public function dnsRecords(string $zone, string $name): array

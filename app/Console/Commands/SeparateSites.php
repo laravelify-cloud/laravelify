@@ -101,7 +101,7 @@ class SeparateSites extends Command
             throw $exception;
         }
 
-        if ($answeredBefore && $website->enabled && ! $this->answers($website)) {
+        if ($answeredBefore && $website->enabled && ! $this->answersSoon($website)) {
             $this->undoAfterFailure($website, $hostWriter, $switch);
 
             throw new RuntimeException('it stopped answering with its own user, so it runs as www-data again. Check its logs, then try again.');
@@ -173,6 +173,23 @@ class SeparateSites extends Command
     /**
      * Whether the site answers below HTTP 500 (false when it has no address to check).
      */
+    /**
+     * After the move: PHP-FPM opens the site's new pool a couple of seconds later (its reload
+     * waits until the request that asked for it has finished), so give it a moment.
+     */
+    private function answersSoon(Website $website, int $seconds = 10): bool
+    {
+        for ($try = 0; $try < $seconds; $try++) {
+            if ($this->answers($website)) {
+                return true;
+            }
+
+            sleep(1);
+        }
+
+        return false;
+    }
+
     private function answers(Website $website): bool
     {
         $url = $website->checkUrl();

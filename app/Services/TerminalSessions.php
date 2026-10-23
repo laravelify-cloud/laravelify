@@ -28,7 +28,7 @@ class TerminalSessions
      *
      * @param  int|string|null  $userId  Who started it; only they can read or write it.
      */
-    public function start(?Website $website, string $directory, string $command, int|string|null $userId, int $columns = 120, int $rows = 30): string
+    public function start(?Website $website, string $directory, string $command, int|string|null $userId, int $columns = 120, int $rows = 30, bool $shell = false): string
     {
         if (! Process::isPtySupported()) {
             throw new RuntimeException('This machine cannot give commands a terminal.');
@@ -36,12 +36,12 @@ class TerminalSessions
 
         $columns = max(20, min($columns, 400));
         $rows = max(5, min($rows, 200));
-        $argv = $this->commands->interactiveArguments($website, $directory, $this->prepared($command, $columns, $rows));
+        $argv = $this->commands->interactiveArguments($website, $directory, $this->prepared($command, $columns, $rows), $shell);
         $id = Str::random(32);
         $folder = $this->folder($id);
 
         File::ensureDirectoryExists($folder, 0700);
-        File::put($folder.'/meta.json', (string) json_encode(['argv' => $argv, 'user' => $userId, 'command' => $command, 'started' => time()]));
+        File::put($folder.'/meta.json', (string) json_encode(['argv' => $argv, 'user' => $userId, 'command' => $command, 'started' => time(), 'shell' => $shell]));
         File::put($folder.'/out', '');
         File::put($folder.'/in', '');
 

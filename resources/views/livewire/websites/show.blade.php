@@ -91,6 +91,101 @@
                 </div>
             </div>
 
+            @if (app(\App\Services\ProjectWorkspace::class)->supports($website))
+                <a class="app-tab" href="{{ route('websites.vscode', $website) }}" target="_blank" rel="noopener" title="VS Code with the AI chat, terminal and Git. Commit and push to deploy; it stops by itself after 30 minutes idle.">
+                    <x-menu-icon name="files" class="size-3.5 opacity-70" />
+                    Code editor
+                    <x-menu-icon name="external" class="size-3 opacity-60" />
+                </a>
+            @endif
+
+            {{-- Preview: the site at a random path of the panel's own address --}}
+            @php
+                $previews = app(\App\Services\PanelPreview::class);
+                $previewUrl = $previews->url($website);
+                $previewMode = $previews->mode($website);
+                $canSubdomain = $previews->canUseSubdomain($website);
+            @endphp
+            @if ($previewUrl || $website->domain || $website->http_port)
+                <div class="relative" x-data="{ open: false }" @click.outside="open = false" @keydown.escape.window="open = false">
+                    <button class="app-tab" type="button" @click="open = !open" :aria-expanded="open" aria-haspopup="menu" title="Preview through the panel's address">
+                        <span class="preview-dot {{ $previewUrl ? 'is-on' : '' }}"></span>
+                        Preview
+                        <x-menu-icon name="chevron-down" class="chevron" />
+                    </button>
+                    <div
+                        class="dropdown dropdown-right"
+                        role="menu"
+                        x-cloak
+                        x-show="open"
+                        x-transition:enter="dropdown-in"
+                        x-transition:enter-start="dropdown-from"
+                        x-transition:enter-end="dropdown-to"
+                        x-transition:leave="dropdown-out"
+                        x-transition:leave-start="dropdown-to"
+                        x-transition:leave-end="dropdown-from"
+                        style="width: 22rem"
+                    >
+                        @if ($previewUrl)
+                            <a class="dropdown-option" role="menuitem" href="{{ $previewUrl }}" target="_blank" rel="noreferrer" @click="open = false">
+                                <span class="tag-success">On</span>
+                                <span class="min-w-0 flex-1 truncate font-mono text-[12px]">{{ preg_replace('#^https?://#', '', $previewUrl) }}</span>
+                                <x-menu-icon name="external" class="ml-auto size-3.5" />
+                            </a>
+                            <button class="dropdown-option" role="menuitem" type="button" @click="copyToClipboard(@js($previewUrl), 'Preview link copied.'); open = false">
+                                <x-menu-icon name="copy" />
+                                <span class="flex-1">Copy preview link</span>
+                            </button>
+                            <p class="preview-kind">{{ $previewMode === 'subdomain' ? 'Own subdomain through the Cloudflare tunnel: the app runs exactly as on its domain.' : 'A path of the panel\'s address: apps that build their own links may leave it.' }}</p>
+                            <div class="dropdown-sep"></div>
+                            <button class="dropdown-option" role="menuitem" type="button" wire:click="enablePreview(true)" @click="open = false" title="The old link stops working">
+                                <x-menu-icon name="refresh" />
+                                <span class="flex-1">New random address</span>
+                            </button>
+                            @if ($previewMode === 'path' && $canSubdomain)
+                                <button class="dropdown-option" role="menuitem" type="button" wire:click="enablePreview(true, 'subdomain')" @click="open = false">
+                                    <x-menu-icon name="external" />
+                                    <span class="flex-1">Switch to a random subdomain</span>
+                                </button>
+                            @elseif ($previewMode === 'subdomain')
+                                <button class="dropdown-option" role="menuitem" type="button" wire:click="enablePreview(true, 'path')" @click="open = false">
+                                    <x-menu-icon name="external" />
+                                    <span class="flex-1">Switch to a panel path (/p/…)</span>
+                                </button>
+                            @endif
+                            <button class="dropdown-option text-danger" role="menuitem" type="button" wire:click="disablePreview" @click="open = false">
+                                <x-menu-icon name="pause" />
+                                <span class="flex-1">Turn off preview</span>
+                            </button>
+                        @else
+                            <div class="preview-intro">
+                                <b>Preview is off</b>
+                                <p>Opens this website at a random, hard-to-guess address, handy before its domain or DNS is ready. Anyone with the link can open it.</p>
+                            </div>
+                            @if ($canSubdomain)
+                                <button class="dropdown-option is-rich" role="menuitem" type="button" wire:click="enablePreview(false, 'subdomain')" @click="open = false">
+                                    <x-menu-icon name="play" class="size-4" />
+                                    <span class="option-text">
+                                        <span class="option-title">Random subdomain <span class="tag-success">Best</span></span>
+                                        <span class="option-desc">Like calm-river-4f2a.yourdomain.com, through the Cloudflare tunnel.</span>
+                                    </span>
+                                </button>
+                            @endif
+                            <button class="dropdown-option is-rich" role="menuitem" type="button" wire:click="enablePreview(false, 'path')" @click="open = false">
+                                <x-menu-icon name="play" class="size-4" />
+                                <span class="option-text">
+                                    <span class="option-title">Panel path</span>
+                                    <span class="option-desc font-mono">{{ preg_replace('#^https?://#', '', rtrim((string) config('app.url'), '/')) }}/p/…</span>
+                                </span>
+                            </button>
+                            @unless ($canSubdomain)
+                                <p class="preview-kind">Save a Cloudflare API token (Settings → Cloudflare) to preview on a random subdomain instead: apps then work exactly as on their own domain.</p>
+                            @endunless
+                        @endif
+                    </div>
+                </div>
+            @endif
+
             {{-- Deploy --}}
             <div class="split-action" x-data="{ open: false }" @click.outside="open = false" @keydown.escape.window="open = false">
                 <button class="btn btn-primary" type="button" wire:click="deploy" @disabled($deploying) title="{{ $deploying ? 'A deploy is already running' : 'Deploy the latest commit' }}">
@@ -133,6 +228,8 @@
 
     @error('website') <p class="error">{{ $message }}</p> @enderror
     @error('deploy') <p class="error">{{ $message }}</p> @enderror
+
+    <livewire:websites.environments :website="$website" :key="'environments-'.$website->id" />
 
     <div class="grid items-start gap-8 xl:grid-cols-[210px_minmax(0,1fr)]">
         {{-- Grouped settings sidebar --}}
@@ -227,6 +324,12 @@
                             @endforeach
                         </select>
                         @error('cloudflare_tunnel_id') <small class="error">{{ $message }}</small> @enderror
+                        @if ($website->domain && ! $website->cloudflare_tunnel_id && $tunnels->isNotEmpty())
+                            <small class="tunnel-warning">
+                                <x-menu-icon name="danger" class="size-3.5 shrink-0" />
+                                <span>No tunnel: {{ $website->domain }} gets no tunnel route and no DNS record, so it does not open. Choose {{ $tunnels->first()->name }} and save; the route and record are added for you.</span>
+                            </small>
+                        @endif
                     </label>
                 </form>
             </x-layer-card>

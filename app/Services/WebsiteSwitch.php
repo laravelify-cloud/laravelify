@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CloudflareTunnel;
 use App\Models\Group;
 use App\Models\PanelTask;
 use App\Models\Website;
@@ -127,7 +128,7 @@ class WebsiteSwitch
         $ids = array_map('intval', (array) ($task->payload['website_ids'] ?? []));
         $websites = Website::query()->whereKey($ids)->orderBy('name')->get();
         $lines = [];
-        /** @var array<int, array{tunnel: \App\Models\CloudflareTunnel, domains: list<string>}> $tunnels */
+        /** @var array<int, array{tunnel: CloudflareTunnel, domains: list<string>}> $tunnels */
         $tunnels = [];
 
         foreach ($websites->values() as $index => $website) {
@@ -185,6 +186,24 @@ class WebsiteSwitch
      */
     private function removeLocally(Website $website): void
     {
+        // Its preview subdomain (tunnel route and DNS record) goes too; the /p/ one goes with remove-site.
+        if ($website->preview_host) {
+            try {
+                app(PanelPreview::class)->disable($website);
+            } catch (Throwable) {
+                // Cloudflare unreachable: the stale route only answers 404 from now on.
+            }
+        }
+
+        // So does its Live Server's address (remove-site stops the editor itself).
+        if ($website->live_host) {
+            try {
+                app(LiveServer::class)->stop($website);
+            } catch (Throwable) {
+                // As above.
+            }
+        }
+
         $this->host->removeWebsite($website);
         $website->delete();
     }

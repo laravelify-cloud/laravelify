@@ -237,6 +237,9 @@
         @include('layouts.partials.monitoring')
         @include('layouts.partials.select')
         @include('layouts.partials.toast')
+        @if (session('clear-draft'))
+            <script>try { localStorage.removeItem(@js(session('clear-draft'))); } catch (e) {}</script>
+        @endif
         @livewireScripts
     </body>
 </html>

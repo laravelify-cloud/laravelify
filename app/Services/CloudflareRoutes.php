@@ -145,7 +145,24 @@ class CloudflareRoutes
     }
 
     /**
-     * @param  array<string, string>  $desired  hostname => origin service
+     * Route one host name of the tunnel straight to an origin (with the Host header the origin
+     * expects), and give it its DNS record; or take both away again. Used by website previews.
+     *
+     * @return array{configured: bool, lines: list<array{host: string, route: string, dns: string, ok: bool}>, note: ?string}
+     */
+    public function route(CloudflareTunnel $tunnel, string $host, string $service, ?string $hostHeader, bool $remove = false): array
+    {
+        $rule = ['service' => $service];
+
+        if ($hostHeader !== null) {
+            $rule['originRequest'] = ['httpHostHeader' => $hostHeader];
+        }
+
+        return $remove ? $this->reconcile($tunnel, [], [$host]) : $this->reconcile($tunnel, [$host => $rule], []);
+    }
+
+    /**
+     * @param  array<string, string|array{service: string, originRequest?: array<string, mixed>}>  $desired  hostname => origin service (or rule)
      * @param  list<string>  $removed
      * @return array{configured: bool, lines: list<array{host: string, route: string, dns: string, ok: bool}>, note: ?string}
      */
@@ -221,13 +238,14 @@ class CloudflareRoutes
 
         foreach ($desired as $host => $service) {
             $index = collect($rules)->search(fn (array $rule): bool => strtolower((string) $rule['hostname']) === $host);
+            $wanted = ['hostname' => $host, ...(is_array($service) ? $service : ['service' => $service])];
 
             if ($index === false) {
-                $rules[] = ['hostname' => $host, 'service' => $service];
+                $rules[] = $wanted;
                 $status[$host] = 'added';
                 $changed = true;
-            } elseif (($rules[$index]['service'] ?? null) !== $service) {
-                $rules[$index]['service'] = $service;
+            } elseif (($rules[$index]['service'] ?? null) !== $wanted['service'] || ($rules[$index]['originRequest'] ?? null) != ($wanted['originRequest'] ?? ($rules[$index]['originRequest'] ?? null))) {
+                $rules[$index] = array_merge($rules[$index], $wanted);
                 $status[$host] = 'updated';
                 $changed = true;
             } else {

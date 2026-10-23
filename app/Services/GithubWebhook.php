@@ -72,6 +72,14 @@ class GithubWebhook
         }
 
         $sha = is_string($payload['after'] ?? null) ? $payload['after'] : null;
+
+        // The code editor deploys its own pushes right away, so their webhook is not needed.
+        if ($sha !== null && $website->deployments()->where('trigger', 'editor')->where('commit_sha', $sha)->exists()) {
+            $website->recordWebhook('Push of '.substr($sha, 0, 7).' from the code editor. Already deployed.');
+
+            return ['ok' => true, 'ignored' => true, 'reason' => 'already deployed from the editor'];
+        }
+
         $deployment = $website->queueDeployment('webhook', $sha, [
             'commit_message' => data_get($payload, 'head_commit.message'),
             'commit_author' => data_get($payload, 'head_commit.author.name') ?? data_get($payload, 'pusher.name'),

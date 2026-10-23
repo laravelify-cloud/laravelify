@@ -1,0 +1,34 @@
+/* The VS Code launcher page (while a site's VS Code starts). Codicons: VS Code's own icon font (MIT). */
+@import '@vscode/codicons/dist/codicon.css';
+
+.vsc-muted { color: #9d9d9d; }
+.vsc-button { display: inline-flex; align-items: center; justify-content: center; width: 100%; height: 28px; border-radius: 2px; background: var(--vsc-accent); color: #fff !important; font-size: 13px; }
+.vsc-button:hover { background: #026ec1; }
+.vsc-button { gap: 6px; }
+.vsc-button-secondary { display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 14px; border-radius: 2px; background: #313131; color: var(--vsc-fg); font-size: 13px; }
+.vsc-button-secondary:hover { background: #3c3c3c; }
+.vsc-launch { display: grid; place-items: center; min-height: 100vh; padding: 24px; background: #1f1f1f; color: #cccccc; font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+.vsc-launch-card { display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(520px, 100%); text-align: center; }
+.vsc-launch-logo { font-size: 72px !important; color: #3794ff; }
+.vsc-launch h1 { font-size: 18px; font-weight: 600; color: #fff; }
+.vsc-launch-step { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.vsc-launch-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; color: #9d9d9d; font-size: 12.5px; }
+.vsc-launch-error { display: flex; gap: 8px; padding: 10px 12px; border: 1px solid #5a1d1d; border-radius: 6px; background: #2b1515; color: #f48771; text-align: left; }
+.vsc-launch-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.vsc-launch .vsc-button-secondary, .vsc-launch .vsc-button { text-decoration: none; }
+.vsc-launch-bar { width: 320px; max-width: 100%; height: 4px; margin: 10px auto 6px; border-radius: 2px; background: #333; overflow: hidden; }
+.vsc-launch-bar span { display: block; height: 100%; background: #0078d4; transition: width .6s; }
+.vsc-launch-steps { display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 8px; padding: 6px; border: 1px solid #2b2b2b; border-radius: 8px; background: #181818; text-align: left; }
+.vsc-launch-steps li { display: flex; gap: 10px; padding: 10px; border-radius: 6px; }
+.vsc-launch-steps li.is-active { background: #222; }
+.vsc-launch-steps li.is-waiting { opacity: .55; }
+.vsc-step-icon { display: grid; place-items: center; width: 20px; height: 20px; flex-shrink: 0; }
+.vsc-step-icon .codicon { font-size: 16px; }
+.vsc-launch-steps li.is-done .vsc-step-icon { color: #89d185; }
+.vsc-launch-steps li.is-active .vsc-step-icon { color: #3794ff; }
+.vsc-step-body { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 4px; }
+.vsc-step-body b { font-weight: 600; color: #e7e7e7; }
+.vsc-step-body small { color: #9d9d9d; font-size: 12px; }
+.vsc-step-body .vsc-launch-bar { width: 100%; margin: 4px 0 0; }
+.vsc-launch-bar span.is-unknown { width: 30% !important; animation: vsc-indeterminate 1.4s ease-in-out infinite; }
+@keyframes vsc-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(330%); } }

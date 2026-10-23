@@ -5,6 +5,8 @@ namespace App\Livewire\Groups;
 use App\Livewire\Concerns\SwitchesWebsites;
 use App\Livewire\PanelComponent;
 use App\Models\Group;
+use App\Models\Website;
+use Illuminate\Support\Collection;
 
 class Show extends PanelComponent
 {
@@ -70,6 +72,23 @@ class Show extends PanelComponent
         $this->startDelete($websites->modelKeys(), 'Deleting '.$names);
     }
 
+    /**
+     * Each main website followed by its environments (development, staging…).
+     *
+     * @return Collection<int, Website>
+     */
+    private function groupedWebsites(): Collection
+    {
+        $websites = $this->group->websites()->orderBy('name')->get();
+        $children = $websites->whereNotNull('parent_id')->groupBy('parent_id');
+        $ids = $websites->pluck('id')->flip();
+
+        return $websites
+            ->filter(fn (Website $website) => $website->parent_id === null || ! isset($ids[$website->parent_id]))
+            ->flatMap(fn (Website $website) => [$website, ...($children[$website->id] ?? [])])
+            ->values();
+    }
+
     public function render()
     {
         $tasks = $this->switchTasks();
@@ -79,7 +98,7 @@ class Show extends PanelComponent
             'tasksActive' => $tasks->contains(fn ($task) => $task->isActive()),
             'switching' => $this->switchingWebsiteIds($tasks),
             'deleting' => $this->deletingWebsiteIds($tasks),
-            'websites' => $this->group->websites()->orderBy('name')->get(),
+            'websites' => $this->groupedWebsites(),
         ])->layout('layouts.app')->title($this->group->name);
     }
 }

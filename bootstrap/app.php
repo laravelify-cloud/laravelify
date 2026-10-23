@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AccessGateController;
+use App\Http\Controllers\CodeEditorGateController;
 use App\Http\Middleware\PanelAccess;
 use App\Http\Middleware\PanelGate;
 use App\Http\Middleware\SecurityHeaders;
@@ -18,6 +19,12 @@ return Application::configure(basePath: dirname(__DIR__))
         then: function (): void {
             // nginx asks here before phpMyAdmin pages. No web middleware: no session, no panel login.
             Route::get('/_access/phpmyadmin', AccessGateController::class)->name('access.phpmyadmin');
+            // nginx asks here before VS Code pages: the panel session says who is signed in. It
+            // answers 204 or 401 itself, so the panel's login redirects are left out.
+            Route::get('/_access/code', CodeEditorGateController::class)
+                ->middleware('web')
+                ->withoutMiddleware([PanelGate::class, PanelAccess::class])
+                ->name('access.code');
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
@@ -40,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'hooks/github/*',
             'hooks/github-app/*',
+            'hooks/live/*',
             'hooks/heartbeat/*',
         ]);
     })

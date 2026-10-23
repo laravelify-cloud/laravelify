@@ -24,7 +24,8 @@ class RunTerminalSession extends Command
         }
 
         $input = new InputStream;
-        $process = new Process($meta['argv'], null, null, null, 960);
+        // A minute more than the sandbox gives the command: 15 minutes, or 4 hours for the code editor's shell.
+        $process = new Process($meta['argv'], null, null, null, ($meta['shell'] ?? false) ? 14460 : 960);
         $process->setPty(true);
         $process->setInput($input);
         $process->start();

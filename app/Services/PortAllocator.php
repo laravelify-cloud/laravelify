@@ -35,6 +35,26 @@ class PortAllocator
     }
 
     /**
+     * A free port picked at random in a range: not a website's, not listening, not reserved.
+     */
+    public function random(int $from = 8100, int $to = 8999): int
+    {
+        $taken = $this->taken();
+
+        for ($attempt = 0; $attempt < 200; $attempt++) {
+            $port = random_int($from, $to);
+
+            if (! isset($taken[$port]) && $this->holder($port) === null) {
+                $this->claimed[] = $port;
+
+                return $port;
+            }
+        }
+
+        return $this->next($from);
+    }
+
+    /**
      * Who holds a port, or null when it is free.
      */
     public function holder(int $port): ?string

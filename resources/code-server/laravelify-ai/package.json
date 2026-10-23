@@ -1,0 +1,129 @@
+{
+    "name": "laravelify-ai",
+    "displayName": "Laravelify AI",
+    "description": "Chat with Claude, Cursor and Copilot in VS Code, sign in from a dialog, and switch agents in the middle of a task without losing the work.",
+    "publisher": "laravelify",
+    "version": "2.1.1",
+    "license": "MIT",
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "categories": [
+        "AI",
+        "Chat",
+        "Other"
+    ],
+    "main": "./extension.js",
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "laravelifyAi",
+                    "title": "AI Agents",
+                    "icon": "media/sparkle.svg"
+                }
+            ]
+        },
+        "views": {
+            "laravelifyAi": [
+                {
+                    "type": "webview",
+                    "id": "laravelifyAi.agents",
+                    "name": "Chat"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "laravelifyAi.newChat",
+                "title": "New Chat",
+                "category": "AI Agents",
+                "icon": "$(add)"
+            },
+            {
+                "command": "laravelifyAi.login",
+                "title": "Sign in to an Agentâ€¦",
+                "category": "AI Agents",
+                "icon": "$(account)"
+            },
+            {
+                "command": "laravelifyAi.addFile",
+                "title": "Add to AI Chat",
+                "category": "AI Agents"
+            },
+            {
+                "command": "laravelifyAi.addSelection",
+                "title": "Add to Chat",
+                "category": "AI Agents",
+                "icon": "$(comment-discussion)"
+            },
+            {
+                "command": "laravelifyAi.quickEdit",
+                "title": "Quick Edit",
+                "category": "AI Agents",
+                "icon": "$(sparkle)"
+            },
+            {
+                "command": "laravelifyAi.live",
+                "title": "Go Live (Live Server)",
+                "category": "AI Agents",
+                "icon": "$(broadcast)"
+            }
+        ],
+        "menus": {
+            "view/title": [
+                {
+                    "command": "laravelifyAi.newChat",
+                    "when": "view == laravelifyAi.agents",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "laravelifyAi.login",
+                    "when": "view == laravelifyAi.agents",
+                    "group": "navigation@2"
+                }
+            ],
+            "explorer/context": [
+                {
+                    "command": "laravelifyAi.addFile",
+                    "group": "laravelifyAi@1"
+                }
+            ],
+            "editor/title/context": [
+                {
+                    "command": "laravelifyAi.addFile",
+                    "group": "laravelifyAi@1"
+                }
+            ],
+            "editor/context": [
+                {
+                    "command": "laravelifyAi.addSelection",
+                    "when": "editorHasSelection",
+                    "group": "0_laravelifyAi@1"
+                },
+                {
+                    "command": "laravelifyAi.quickEdit",
+                    "when": "editorHasSelection",
+                    "group": "0_laravelifyAi@2"
+                }
+            ]
+        },
+        "keybindings": [
+            {
+                "command": "laravelifyAi.addSelection",
+                "key": "ctrl+l",
+                "mac": "cmd+l",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "laravelifyAi.quickEdit",
+                "key": "ctrl+i",
+                "mac": "cmd+i",
+                "when": "editorTextFocus && editorHasSelection"
+            }
+        ]
+    }
+}

@@ -56,9 +56,11 @@ class SiteCommand
      * The command line for an interactive (terminal) run: the same sandbox and folder rules as run()
      * and runGlobal(), with the command getting a real terminal and up to 15 minutes.
      *
+     * A shell run (the code editor's terminal) may stay open for four hours.
+     *
      * @return list<string>
      */
-    public function interactiveArguments(?Website $website, string $directory, string $command): array
+    public function interactiveArguments(?Website $website, string $directory, string $command, bool $shell = false): array
     {
         $command = $this->clean($command);
 
@@ -67,7 +69,7 @@ class SiteCommand
         }
 
         if ($website) {
-            $arguments = ['run', app(SitePaths::class)->root($website), $command, 'pty'];
+            $arguments = ['run', app(SitePaths::class)->root($website), $command, $shell ? 'pty-shell' : 'pty'];
         } else {
             $paths = app(SitePaths::class);
             $sitesRoot = realpath((string) config('laravelify.sites_root'));

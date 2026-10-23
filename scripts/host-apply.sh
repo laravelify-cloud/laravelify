@@ -194,7 +194,18 @@ site_pool_file() {
 }
 
 reload_fpm() {
-  systemctl reload "php$1-fpm" >/dev/null 2>&1 || systemctl restart "php$1-fpm"
+  # The panel itself may run on this PHP-FPM, inside the very request that called us. The reload
+  # runs 2 seconds later, after that request has answered (waiting for it here would wait for our
+  # own request), and lets running requests finish (process_control_timeout; 0 kills them).
+  local conf="/etc/php/$1/fpm/php-fpm.conf"
+  if [[ -f "${conf}" ]] && ! grep -qE '^process_control_timeout\s*=\s*[1-9]' "${conf}"; then
+    sed -i -E '/^;?process_control_timeout\s*=/d' "${conf}"
+    sed -i -E 's/^\[global\]$/[global]\nprocess_control_timeout = 30s/' "${conf}"
+  fi
+  systemd-run --quiet --collect --on-active=2s --timer-property=AccuracySec=100ms \
+      systemctl reload "php$1-fpm" >/dev/null 2>&1 \
+    || systemctl --no-block reload "php$1-fpm" >/dev/null 2>&1 \
+    || systemctl --no-block restart "php$1-fpm"
 }
 
 write_site_pool() {
@@ -231,6 +242,8 @@ POOL
       die "php-fpm${version} rejected the pool of ${slug}"
     fi
     reload_fpm "${version}"
+  elif [[ ! -S "/run/php/site-${slug}.sock" ]]; then
+    reload_fpm "${version}"
   fi
   rm -f -- "${tmp}"
   # The pool of the PHP version the site used before goes away.
@@ -241,11 +254,9 @@ POOL
     rm -f -- "${other}"
     reload_fpm "${old_version}" || true
   done
-  for _ in $(seq 1 40); do
-    [[ -S "/run/php/site-${slug}.sock" ]] && return 0
-    sleep 0.25
-  done
-  die "the PHP-FPM socket of ${slug} did not appear"
+  # The pool passed php-fpm -t above; its socket appears when the delayed reload runs, after
+  # this request answers (waiting for it here would hold up that reload: see reload_fpm).
+  return 0
 }
 
 remove_site_pool() {
@@ -799,6 +810,10 @@ MAX_SECONDS=60
 if [[ "${4:-}" == pty ]]; then
   IO_MODE=--pty
   MAX_SECONDS=900
+elif [[ "${4:-}" == pty-shell ]]; then
+  # The code editor's terminal: a shell (or Claude Code / Cursor Agent) the person works in.
+  IO_MODE=--pty
+  MAX_SECONDS=14400
 fi
 
 case "${ACTION}" in
@@ -868,6 +883,270 @@ case "${ACTION}" in
     install_site_nginx "${TARGET}" "${SRC}"
     nginx -t
     systemctl reload nginx
+    ;;
+  panel-preview)
+    # A site opened through the panel's own address, at /p/<token>/. Built here from checked
+    # arguments, never from a rendered file: panel-preview <slug> <token> <port> <host>.
+    slug_ok "${TARGET}" || die "invalid slug"
+    TOKEN="${3:-}"; UPSTREAM_PORT="${4:-}"; UPSTREAM_HOST="${5:-}"
+    [[ "${TOKEN}" =~ ^[a-z0-9]{32}$ ]] || die "invalid preview token"
+    [[ "${UPSTREAM_PORT}" =~ ^[0-9]{2,5}$ ]] && (( UPSTREAM_PORT >= 80 && UPSTREAM_PORT <= 65535 )) || die "invalid port"
+    [[ "${UPSTREAM_HOST}" =~ ^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$ ]] || die "invalid host"
+    PREVIEW_DIR=/etc/nginx/laravelify-panel.d
+    install -d -m 0755 "${PREVIEW_DIR}"
+    # Apps build some paths at run time ("/login" in JavaScript, fetch("/api/…")), which leave
+    # /p/<token>/. A request from a preview page (its Referer) to any other panel path is sent
+    # back into the same preview; 307 keeps the method and body of form posts and API calls.
+    cat > /etc/nginx/conf.d/laravelify-preview-referer.conf <<'EOF'
+map $http_referer $laravelify_preview_from {
+    "~^https?://[^/]+/p/([a-z0-9]{32})/" $1;
+    default "";
+}
+map "$laravelify_preview_from:$uri" $laravelify_preview_back {
+    "~^([a-z0-9]{32}):(?!/p/)" /p/$1;
+    default "";
+}
+EOF
+    cat > "${PREVIEW_DIR}/00-preview-referer.conf" <<'EOF'
+# Redirects keep the scheme the browser used (the tunnel reaches nginx over plain HTTP).
+absolute_redirect off;
+if ($laravelify_preview_back) {
+    return 307 $laravelify_preview_back$request_uri;
+}
+EOF
+    PREVIEW_FILE="${PREVIEW_DIR}/preview-${TARGET}.conf"
+    PREVIEW_OLD="$(mktemp)"
+    [[ -f "${PREVIEW_FILE}" ]] && cp "${PREVIEW_FILE}" "${PREVIEW_OLD}"
+    HOST_PATTERN="${UPSTREAM_HOST//./\\.}"
+    # Apps build links and redirects for their own domain and for paths from "/": both are
+    # rewritten into /p/<token>/ so the browser stays in the preview (redirects, cookies, and
+    # the URLs in HTML, CSS and JavaScript responses).
+    cat > "${PREVIEW_FILE}" <<EOF
+location /p/${TOKEN}/ {
+    proxy_pass http://127.0.0.1:${UPSTREAM_PORT}/;
+    proxy_http_version 1.1;
+    proxy_set_header Host ${UPSTREAM_HOST};
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Forwarded-Prefix /p/${TOKEN};
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Accept-Encoding "";
+    proxy_read_timeout 120;
+    # The return trip above needs the page's full address in the Referer.
+    proxy_hide_header Referrer-Policy;
+    add_header Referrer-Policy "same-origin" always;
+
+    absolute_redirect off;
+    proxy_redirect ~^https?://${HOST_PATTERN}(?::\d+)?(/.*)?\$ /p/${TOKEN}\$1;
+    proxy_redirect / /p/${TOKEN}/;
+    proxy_cookie_path / /p/${TOKEN}/;
+    proxy_cookie_domain ${UPSTREAM_HOST} \$host;
+
+    sub_filter_once off;
+    sub_filter_types text/css application/javascript text/javascript application/json;
+    sub_filter "https://${UPSTREAM_HOST}/" "/p/${TOKEN}/";
+    sub_filter "http://${UPSTREAM_HOST}/" "/p/${TOKEN}/";
+    sub_filter '"https://${UPSTREAM_HOST}"' '"/p/${TOKEN}"';
+    sub_filter '"http://${UPSTREAM_HOST}"' '"/p/${TOKEN}"';
+    sub_filter 'href="//' 'href="//';
+    sub_filter 'src="//' 'src="//';
+    sub_filter 'href="/' 'href="/p/${TOKEN}/';
+    sub_filter 'src="/' 'src="/p/${TOKEN}/';
+    sub_filter 'action="/' 'action="/p/${TOKEN}/';
+    sub_filter 'srcset="/' 'srcset="/p/${TOKEN}/';
+    sub_filter 'url(/' 'url(/p/${TOKEN}/';
+    sub_filter '"/build/' '"/p/${TOKEN}/build/';
+    sub_filter '"/_next/' '"/p/${TOKEN}/_next/';
+    sub_filter '"/_nuxt/' '"/p/${TOKEN}/_nuxt/';
+    sub_filter '"/assets/' '"/p/${TOKEN}/assets/';
+}
+EOF
+    if ! nginx -t 2>/dev/null; then
+      if [[ -s "${PREVIEW_OLD}" ]]; then cp "${PREVIEW_OLD}" "${PREVIEW_FILE}"; else rm -f "${PREVIEW_FILE}"; fi
+      rm -f "${PREVIEW_OLD}"
+      # Never leave nginx unable to start: the shared return-trip files go too when they are the problem.
+      if ! nginx -t 2>/dev/null; then
+        rm -f /etc/nginx/conf.d/laravelify-preview-referer.conf "${PREVIEW_DIR}/00-preview-referer.conf"
+      fi
+      die "nginx rejected the preview location"
+    fi
+    rm -f "${PREVIEW_OLD}"
+    systemctl reload nginx
+    ;;
+  code-server-install)
+    # VS Code in the browser (code-server, MIT), one copy for the server in /opt/code-server.
+    # Each website runs its own as its own user (code-server-start), reached through the panel.
+    if [[ ! -x /opt/code-server/bin/code-server ]]; then
+      echo "Installing code-server..."
+      # The installer keeps its download in $XDG_CACHE_HOME (it resumes a broken download there);
+      # the background service that runs this has no HOME of its own.
+      export HOME=/root XDG_CACHE_HOME=/var/cache/laravelify
+      install -d -m 0755 "${XDG_CACHE_HOME}"
+      curl -fsSL https://code-server.dev/install.sh | sh -s -- --method=standalone --prefix=/opt/code-server >/dev/null
+      [[ -x /opt/code-server/bin/code-server ]] || die "code-server could not be installed"
+    fi
+    # graphify (MIT): the project map the AI agents read first. Its own Python, via uv, in
+    # /opt/graphify, readable by every website user. Code maps need no AI and no API key.
+    if [[ ! -x /opt/graphify/bin/graphify ]]; then
+      echo "Installing graphify..."
+      export HOME=/root
+      install -d -m 0755 /opt/graphify/bin /var/cache/laravelify
+      if [[ ! -x /opt/graphify/bin/uv ]]; then
+        curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/opt/graphify/bin UV_NO_MODIFY_PATH=1 sh >/dev/null 2>&1 || true
+      fi
+      UV_TOOL_DIR=/opt/graphify/tools UV_TOOL_BIN_DIR=/opt/graphify/bin UV_PYTHON_INSTALL_DIR=/opt/graphify/python \
+        UV_CACHE_DIR=/var/cache/laravelify/uv /opt/graphify/bin/uv tool install --quiet graphifyy >/dev/null 2>&1 \
+        || echo "graphify could not be installed; the AI agents work without the project map." >&2
+      chmod -R a+rX /opt/graphify 2>/dev/null || true
+    fi
+    install -d -m 0755 /etc/nginx/laravelify-panel.d
+    # nginx asks the panel (with the visitor's cookies) before every request to an editor:
+    # only a signed-in panel user gets through; anyone else is sent to the login page.
+    cat > /etc/nginx/laravelify-panel.d/00-code-auth.conf <<'EOF'
+location = /_laravelify/code-auth {
+    internal;
+    proxy_pass http://127.0.0.1/_access/code;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Original-URI $request_uri;
+    proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+}
+location @laravelify_code_login {
+    return 302 /login;
+}
+EOF
+    nginx -t 2>/dev/null && systemctl reload nginx
+    # Right after unpacking, node can still be "busy" (being written) for a moment.
+    for _ in 1 2 3 4 5; do
+      /opt/code-server/bin/code-server --version 2>/dev/null | head -1 | grep . && break
+      sleep 1
+    done
+    true
+    ;;
+  code-server-install-start)
+    # The download is large and can be slow: install in the background and answer at once.
+    # Prints "installed", "installing <MB downloaded>", or "started".
+    if [[ -x /opt/code-server/bin/code-server && -f /etc/nginx/laravelify-panel.d/00-code-auth.conf && -x /opt/graphify/bin/graphify ]]; then
+      echo "installed"
+    elif systemctl is-active --quiet laravelify-code-server-install || pgrep -f 'code-server-.*\.tar\.gz\.incomplete' >/dev/null; then
+      size=$( (du -cm /var/cache/laravelify/code-server/*.incomplete /root/.cache/code-server/*.incomplete 2>/dev/null || true) | tail -1 | cut -f1)
+      # The full size, from the release the installer is fetching (asked once, then remembered).
+      total_file=/var/cache/laravelify/code-server.total
+      file="$(ls /var/cache/laravelify/code-server/*.incomplete /root/.cache/code-server/*.incomplete 2>/dev/null | head -1 || true)"
+      if [[ ! -s "${total_file}" && "${file}" =~ code-server-([0-9.]+)-linux-([a-z0-9]+)\.tar\.gz\.incomplete$ ]]; then
+        install -d -m 0755 /var/cache/laravelify
+        url="https://github.com/coder/code-server/releases/download/v${BASH_REMATCH[1]}/code-server-${BASH_REMATCH[1]}-linux-${BASH_REMATCH[2]}.tar.gz"
+        bytes="$(curl -sIL --max-time 10 "${url}" | tr -d '\r' | awk 'tolower($1) == "content-length:" { n = $2 } END { print n + 0 }')"
+        (( bytes > 0 )) && echo $(( bytes / 1048576 )) > "${total_file}"
+      fi
+      echo "installing ${size:-0} $(cat "${total_file}" 2>/dev/null || echo 0)"
+    else
+      systemctl reset-failed laravelify-code-server-install >/dev/null 2>&1 || true
+      systemd-run --quiet --unit=laravelify-code-server-install --collect /bin/bash "${ROOT}/scripts/host-apply.sh" code-server-install all
+      echo "started"
+    fi
+    ;;
+  code-server-start)
+    # code-server-start <slug> <port> <token> <workspace>: VS Code for one website, as its own
+    # user, in the same sandbox as its terminal, on 127.0.0.1 only; nginx serves it at /code/<token>/.
+    slug_ok "${TARGET}" || die "invalid slug"
+    PORT="${3:-}"; TOKEN="${4:-}"; WORKSPACE="${5:-}"
+    [[ "${PORT}" =~ ^[0-9]{4,5}$ ]] && (( PORT >= 1024 && PORT <= 65535 )) || die "invalid port"
+    [[ "${TOKEN}" =~ ^[a-z0-9]{32}$ ]] || die "invalid token"
+    [[ -x /opt/code-server/bin/code-server ]] || die "code-server is not installed"
+    use_site "${TARGET}"
+    site_has_own_user || die "VS Code needs the website to have its own user. Move it first (Security → own user)."
+    [[ "${WORKSPACE}" == "${SITE_HOME}/workspaces/${TARGET}" ]] || die "invalid workspace"
+    [[ -d "${WORKSPACE}" && ! -L "${WORKSPACE}" ]] || die "the workspace does not exist yet"
+    UNIT="laravelify-code-${TARGET}"
+    systemctl stop "${UNIT}" >/dev/null 2>&1 || true
+    systemctl reset-failed "${UNIT}" >/dev/null 2>&1 || true
+    systemd-run --quiet --unit="${UNIT}" --collect \
+      --uid="${SITE_USER}" --gid="$(id -gn "${SITE_USER}")" \
+      --working-directory="${WORKSPACE}" \
+      --property=UnsetEnvironment=yes \
+      --setenv=PATH="${SITE_HOME}/.local/bin:/opt/graphify/bin:${PATH_SAFE}" \
+      --setenv=HOME="${SITE_HOME}" \
+      --setenv=LANG=C.UTF-8 \
+      --setenv=SHELL=/bin/bash \
+      --property=ProtectSystem=strict \
+      --property=ProtectHome=yes \
+      --property=PrivateTmp=yes \
+      --property=ReadWritePaths="${SITES_ROOT}/${TARGET} ${SITE_HOME}" \
+      --property=NoNewPrivileges=yes \
+      --property=MemoryMax=1536M \
+      /opt/code-server/bin/code-server \
+        --bind-addr "127.0.0.1:${PORT}" --auth none \
+        --disable-telemetry --disable-update-check --disable-workspace-trust \
+        --abs-proxy-base-path "/code/${TOKEN}" \
+        --app-name "Laravelify Code" \
+        --idle-timeout-seconds 1800 \
+        --user-data-dir "${SITE_HOME}/.code-server/data" \
+        --extensions-dir "${SITE_HOME}/.code-server/extensions" \
+        "${WORKSPACE}"
+    CONF="/etc/nginx/laravelify-panel.d/code-${TARGET}.conf"
+    # The editor's tab icon and install (PWA) icons are the panel's, not code-server's.
+    PANEL_PUBLIC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/public"
+    MEDIA="/code/${TOKEN}/_static/src/browser/media"
+    ICONS=""
+    for pair in favicon.ico:favicon.ico favicon.svg:favicon.svg favicon-dark-support.svg:favicon.svg \
+      pwa-icon-192.png:android-chrome-192x192.png pwa-icon-512.png:android-chrome-512x512.png \
+      pwa-icon-maskable-192.png:android-chrome-192x192.png pwa-icon-maskable-512.png:maskable-icon-512x512.png; do
+      if [[ -f "${PANEL_PUBLIC}/${pair#*:}" ]]; then
+        ICONS+="location = ${MEDIA}/${pair%%:*} { alias ${PANEL_PUBLIC}/${pair#*:}; add_header Cache-Control \"public, max-age=86400\"; }"$'\n'
+      fi
+    done
+    cat > "${CONF}" <<EOF
+${ICONS}
+location /code/${TOKEN}/ {
+    auth_request /_laravelify/code-auth;
+    error_page 401 = @laravelify_code_login;
+    proxy_pass http://127.0.0.1:${PORT}/;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_read_timeout 86400;
+    proxy_send_timeout 86400;
+    client_max_body_size 256M;
+    # Cloudflare (Web Analytics, Rocket Loader) must not inject scripts into VS Code's pages and
+    # webviews: their content security policy blocks them and the console fills with errors.
+    add_header Cache-Control "no-transform" always;
+}
+EOF
+    if ! nginx -t 2>/dev/null; then
+      rm -f "${CONF}"
+      systemctl stop "${UNIT}" >/dev/null 2>&1 || true
+      die "nginx rejected the editor location"
+    fi
+    systemctl reload nginx
+    echo "started ${UNIT}"
+    ;;
+  code-server-stop)
+    slug_ok "${TARGET}" || die "invalid slug"
+    systemctl stop "laravelify-code-${TARGET}" >/dev/null 2>&1 || true
+    rm -f "/etc/nginx/laravelify-panel.d/code-${TARGET}.conf"
+    nginx -t >/dev/null 2>&1 && systemctl reload nginx
+    echo "stopped"
+    ;;
+  code-server-status)
+    # "<active|inactive> <seconds since VS Code was last used, or -1>"
+    slug_ok "${TARGET}" || die "invalid slug"
+    use_site "${TARGET}"
+    state="$(systemctl is-active "laravelify-code-${TARGET}" 2>/dev/null || true)"
+    beat="${SITE_HOME}/.local/share/code-server/heartbeat"
+    age=-1
+    [[ -f "${beat}" ]] && age=$(( $(date +%s) - $(stat -c %Y "${beat}") ))
+    echo "${state:-inactive} ${age}"
+    ;;
+  panel-preview-remove)
+    slug_ok "${TARGET}" || die "invalid slug"
+    rm -f "/etc/nginx/laravelify-panel.d/preview-${TARGET}.conf"
+    nginx -t && systemctl reload nginx
     ;;
   cloudflared)
     slug_ok "${TARGET}" || die "invalid slug"
@@ -1331,6 +1610,8 @@ PHP
     ;;
   remove-site)
     slug_ok "${TARGET}" || die "invalid slug"
+    systemctl stop "laravelify-code-${TARGET}" >/dev/null 2>&1 || true
+    rm -f "/etc/nginx/laravelify-panel.d/code-${TARGET}.conf"
     # The folder stays (as before), owned by the shared user again; the site's own user goes.
     drop_site_user "${TARGET}"
     remove_site_pool "${TARGET}"
@@ -1340,6 +1621,7 @@ PHP
       "/etc/nginx/laravelify-security/${TARGET}.conf" \
       "/etc/nginx/laravelify-security/${TARGET}.htpasswd" \
       "/etc/nginx/conf.d/laravelify-security-${TARGET}.conf" \
+      "/etc/nginx/laravelify-panel.d/preview-${TARGET}.conf" \
       "/etc/supervisor/conf.d/laravelify-${TARGET}.conf" \
       "/var/log/laravelify/${TARGET}.metrics.log" \
       "${PM2_APPS}/${TARGET}.config.cjs"

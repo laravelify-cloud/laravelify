@@ -19,6 +19,8 @@ class Website extends Model
 
     protected $fillable = [
         'group_id',
+        'parent_id',
+        'environment',
         'cloudflare_tunnel_id',
         'github_app_id',
         'name',
@@ -53,6 +55,16 @@ class Website extends Model
         'last_webhook_at',
         'last_webhook_result',
         'hide_from_search',
+        'seed_example',
+        'preview_token',
+        'preview_host',
+        'preview_tunnel_id',
+        'code_server_port',
+        'code_server_token',
+        'live_key',
+        'live_host',
+        'live_port',
+        'live_tunnel_id',
         'block_crawlers',
         'basic_auth_enabled',
         'basic_auth_user',
@@ -72,6 +84,7 @@ class Website extends Model
         'basic_auth_hash',
         'basic_auth_password',
         'db_password',
+        'live_key',
     ];
 
     /**
@@ -81,6 +94,7 @@ class Website extends Model
     {
         return [
             'enabled' => 'boolean',
+            'seed_example' => 'boolean',
             'aliases' => 'array',
             'redirects' => 'array',
             'enable_reverb' => 'boolean',
@@ -197,6 +211,32 @@ class Website extends Model
     public function group(): BelongsTo
     {
         return $this->belongsTo(Group::class);
+    }
+
+    /**
+     * The main website this one is an environment of (development, staging…).
+     *
+     * @return BelongsTo<Website, $this>
+     */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(Website::class, 'parent_id');
+    }
+
+    /**
+     * @return HasMany<Website, $this>
+     */
+    public function environments(): HasMany
+    {
+        return $this->hasMany(Website::class, 'parent_id')->orderBy('name');
+    }
+
+    /**
+     * The name shown for this website's environment: its own, or "production" for a main website.
+     */
+    public function environmentName(): string
+    {
+        return $this->environment ?: ($this->parent_id ? 'environment' : 'production');
     }
 
     /**

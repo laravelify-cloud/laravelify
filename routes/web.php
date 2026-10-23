@@ -6,6 +6,7 @@ use App\Http\Controllers\GithubAppHookController;
 use App\Http\Controllers\GithubAppManifestController;
 use App\Http\Controllers\GithubHookController;
 use App\Http\Controllers\HeartbeatController;
+use App\Http\Controllers\LiveServerHookController;
 use App\Http\Controllers\MonitoringLiveController;
 use App\Http\Controllers\PanelTaskController;
 use App\Http\Controllers\PhpMyAdminController;
@@ -51,6 +52,7 @@ use App\Livewire\Tunnels\Index as TunnelIndex;
 use App\Livewire\Tunnels\Show as TunnelShow;
 use App\Livewire\Websites\Form as WebsiteForm;
 use App\Livewire\Websites\Show as WebsiteShow;
+use App\Livewire\Websites\VsCode as WebsiteVsCode;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -76,6 +78,7 @@ Route::get('/groups/{group}', GroupShow::class)->name('groups.show');
 
 Route::get('/websites/{website}', WebsiteShow::class)->name('websites.show');
 Route::get('/websites/{website}/files/download', WebsiteFileController::class)->name('websites.files.download');
+Route::get('/websites/{website}/vscode', WebsiteVsCode::class)->name('websites.vscode');
 
 Route::get('/deployments', DeploymentsIndex::class)->name('deployments.index');
 Route::get('/deployments/{deployment}/log', DeploymentLogController::class)->name('deployments.log');
@@ -136,6 +139,11 @@ Route::match(['get', 'post', 'head'], '/hooks/heartbeat/{token}', HeartbeatContr
 
 Route::post('/hooks/github/{website:slug}', GithubHookController::class)
     ->name('hooks.github');
+
+Route::post('/hooks/live/{website:slug}/{action}', LiveServerHookController::class)
+    ->whereIn('action', ['start', 'stop'])
+    ->middleware('throttle:30,1')
+    ->name('hooks.live');
 
 Route::post('/hooks/github-app/{githubApp:slug}', GithubAppHookController::class)
     ->name('hooks.github-app');

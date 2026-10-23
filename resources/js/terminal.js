@@ -33,6 +33,30 @@ const THEME = {
     brightWhite: '#c0caf5',
 };
 
+/** The integrated terminal colors of VS Code's Dark Modern theme, for the code editor. */
+export const VSCODE_THEME = {
+    background: '#181818',
+    foreground: '#cccccc',
+    cursor: '#cccccc',
+    selectionBackground: '#264f78',
+    black: '#000000',
+    red: '#cd3131',
+    green: '#0dbc79',
+    yellow: '#e5e510',
+    blue: '#2472c8',
+    magenta: '#bc3fbc',
+    cyan: '#11a8cd',
+    white: '#e5e5e5',
+    brightBlack: '#666666',
+    brightRed: '#f14c4c',
+    brightGreen: '#23d18b',
+    brightYellow: '#f5f543',
+    brightBlue: '#3b8eea',
+    brightMagenta: '#d670d6',
+    brightCyan: '#29b8db',
+    brightWhite: '#e5e5e5',
+};
+
 /** Keystrokes as base64 of their UTF-8 bytes, so nothing between here and the terminal alters them. */
 function encode(text) {
     let binary = '';
@@ -63,16 +87,16 @@ function bytes(base64) {
  */
 export function createTerminal(host, options = {}) {
     const term = new Terminal({
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
-        fontSize: 13,
-        lineHeight: 1.25,
+        fontFamily: options.fontFamily || 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+        fontSize: options.fontSize || 13,
+        lineHeight: options.lineHeight || 1.25,
         cursorBlink: !!options.interactive,
-        cursorStyle: 'bar',
+        cursorStyle: options.cursorStyle || 'bar',
         disableStdin: !options.interactive,
         scrollback: 20000,
         convertEol: !!options.eol,
         allowProposedApi: true,
-        theme: THEME,
+        theme: options.theme || THEME,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -160,6 +184,14 @@ export function createTerminal(host, options = {}) {
             }
 
             return lines.join('\n').replace(/\s+$/, '');
+        },
+
+        cols() {
+            return term.cols;
+        },
+
+        rows() {
+            return term.rows;
         },
 
         /** Follow a command running on the server until it ends. */

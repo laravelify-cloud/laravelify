@@ -8,17 +8,18 @@ use App\Models\Deployment;
 use App\Models\GithubApp;
 use App\Models\Website;
 use App\Services\CloudflareRoutes;
-use App\Services\PanelTaskRunner;
 use App\Services\ConfigRenderer;
 use App\Services\DatabaseProvisioner;
-use App\Support\EnvFile;
 use App\Services\HostWriter;
+use App\Services\PanelPreview;
+use App\Services\PanelTaskRunner;
 use App\Services\ServerProcesses;
 use App\Services\SiteSecurity;
 use App\Services\WebsiteDomains;
 use App\Services\WebsiteRedirects;
 use App\Services\WebsiteSwitch;
 use App\Support\BuildOutput;
+use App\Support\EnvFile;
 use App\Support\GitInput;
 use App\Support\Redirects;
 use Illuminate\Validation\Rule;
@@ -489,6 +490,29 @@ class Show extends PanelComponent
             'db_password' => $this->website->db_password,
             default => null,
         };
+    }
+
+    /**
+     * Open the site at <panel>/p/<token>/, or give the preview a new address.
+     */
+    public function enablePreview(PanelPreview $preview, bool $newAddress = false, ?string $mode = null): void
+    {
+        try {
+            $url = $preview->enable($this->website, $newAddress, in_array($mode, ['subdomain', 'path'], true) ? $mode : null);
+            $this->toast('Preview ready at '.$url.($preview->mode($this->website) === 'subdomain' ? ' A new DNS name can take a minute to answer.' : ''));
+        } catch (Throwable $exception) {
+            $this->toast('Could not turn on the preview: '.$exception->getMessage(), 'error');
+        }
+    }
+
+    public function disablePreview(PanelPreview $preview): void
+    {
+        try {
+            $preview->disable($this->website);
+            $this->toast('Preview turned off.');
+        } catch (Throwable $exception) {
+            $this->toast('Could not turn off the preview: '.$exception->getMessage(), 'error');
+        }
     }
 
     public function toggleAutoDeploy(): void

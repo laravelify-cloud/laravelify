@@ -61,6 +61,10 @@ class ExampleRepositories
 
         $target = $site->home().'/examples/'.$website->slug;
         $legacy = $this->legacyPath((string) $website->slug);
+        // Where it was before: the panel's storage (older versions), or the shared user's home
+        // (a website moved to its own user since), commits and all.
+        $previous = rtrim((string) $website->repository, '/');
+        $from = is_dir($legacy.'/.git') ? $legacy : ($previous !== $target && is_dir($previous.'/.git') ? $previous : null);
 
         if ($website->repository !== $target) {
             $website->update(['repository' => $target]);
@@ -72,21 +76,48 @@ class ExampleRepositories
             return null;
         }
 
-        $fromLegacy = is_dir($legacy.'/.git');
-
-        if (! $fromLegacy && ! Examples::has((string) $website->type)) {
+        if ($from === null && ! Examples::has((string) $website->type)) {
             throw new RuntimeException('There is no example for '.$website->type.'. Set a Git repository instead.');
         }
 
-        $this->copy($fromLegacy ? $legacy : Examples::path((string) $website->type), $target, $site);
+        $this->copy($from ?? Examples::path((string) $website->type), $target, $site);
 
-        if (! $fromLegacy) {
+        if ($from === null) {
             $this->commit($target, $site);
         }
 
         File::deleteDirectory($legacy);
 
         return 'Made the example repository in '.$target.'.';
+    }
+
+    /**
+     * Push the example to the website's new, empty GitHub repository, once. The push URL
+     * carries a short-lived token: it is passed to git only and kept out of the log.
+     */
+    public function seed(Website $website, SiteUser $site, string $pushUrl): ?string
+    {
+        if (! $website->seed_example) {
+            return null;
+        }
+
+        if (! Examples::has((string) $website->type)) {
+            throw new RuntimeException('There is no example for '.$website->type.'. Push code to '.$website->repository.' instead.');
+        }
+
+        $target = $site->home().'/seeds/'.$website->slug;
+        $this->copy(Examples::path((string) $website->type), $target, $site);
+        $this->commit($target, $site);
+        $result = $this->files->exec(['git', '-C', $target, 'push', '-q', '--', $pushUrl, 'HEAD:refs/heads/'.$website->branch], null, null, $site);
+        $this->files->delete($target);
+
+        if (! $result->ok) {
+            throw new RuntimeException('Could not push the example to '.$website->repository.': '.str_replace($pushUrl, (string) $website->repository, $result->output));
+        }
+
+        $website->update(['seed_example' => false]);
+
+        return 'Pushed the '.$website->type.' example to '.$website->repository.'.';
     }
 
     /**

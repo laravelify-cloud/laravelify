@@ -63,9 +63,15 @@
                         <tr wire:key="website-{{ $website->id }}" :class="selected.includes({{ $website->id }}) && 'is-selected'">
                             <td><input type="checkbox" aria-label="Select {{ $website->name }}" :checked="selected.includes({{ $website->id }})" @change="selected = $event.target.checked ? [...selected, {{ $website->id }}] : selected.filter((id) => id !== {{ $website->id }})"></td>
                             <td>
-                                <a @class(['flex items-center gap-2.5 font-medium hover:text-accent', 'opacity-60' => ! $website->enabled]) href="{{ route('websites.show', $website) }}" wire:navigate>
+                                <a @class(['flex items-center gap-2.5 font-medium hover:text-accent', 'opacity-60' => ! $website->enabled, 'env-child' => $website->parent_id]) href="{{ route('websites.show', $website) }}" wire:navigate>
+                                    @if ($website->parent_id)
+                                        <span class="env-child-line" aria-hidden="true"></span>
+                                    @endif
                                     <span class="stat-icon size-7"><x-menu-icon name="{{ $website->definition()['icon'] }}" class="size-4" /></span>
                                     {{ $website->name }}
+                                    @if ($website->parent_id || $websites->contains('parent_id', $website->id))
+                                        <span class="env-pill">{{ $website->environmentName() }} · {{ $website->branch }}</span>
+                                    @endif
                                 </a>
                             </td>
                             <td>

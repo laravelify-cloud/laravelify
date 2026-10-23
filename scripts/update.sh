@@ -153,4 +153,31 @@ while read -r package; do
   fi
 done < <(dpkg-query -W -f='${Package}\n' 'php[0-9].[0-9]-fpm' 2>/dev/null)
 
+# Website previews at <panel>/p/<token>/ are nginx locations in /etc/nginx/laravelify-panel.d,
+# included by the panel's server block. Older installs get the include once.
+PANEL_NGINX=/etc/nginx/sites-available/laravelify-panel.conf
+install -d -m 0755 /etc/nginx/laravelify-panel.d
+if [[ -f "${PANEL_NGINX}" ]] && ! grep -q 'laravelify-panel.d' "${PANEL_NGINX}"; then
+  cp "${PANEL_NGINX}" "${PANEL_NGINX}.bak"
+  sed -i '0,/client_max_body_size 256M;/s//client_max_body_size 256M;\n\n    # Website previews at \/p\/<token>\/ (scripts\/host-apply.sh panel-preview).\n    include \/etc\/nginx\/laravelify-panel.d\/*.conf;/' "${PANEL_NGINX}"
+  if nginx -t >/dev/null 2>&1; then
+    systemctl reload nginx || true
+  else
+    mv "${PANEL_NGINX}.bak" "${PANEL_NGINX}"
+    echo "Could not add website previews to the panel's nginx config." >&2
+  fi
+  rm -f "${PANEL_NGINX}.bak"
+fi
+
+# Previews are rebuilt with the current rules (redirect and link rewriting).
+"${PHP_BIN}" "${APP_ROOT}/artisan" laravelify:refresh-previews --no-ansi || true
+
+# VS Code for the websites (code-server) and the AI agents' project map (graphify), downloaded
+# here once instead of the first time someone opens the editor. Nothing happens when installed.
+if [[ ! -x /opt/code-server/bin/code-server || ! -x /opt/graphify/bin/graphify ]]; then
+  echo "Installing VS Code (code-server) for the websites..."
+fi
+bash "${APP_ROOT}/scripts/host-apply.sh" code-server-install >/dev/null \
+  || echo "VS Code could not be installed now; it installs the first time someone opens the editor." >&2
+
 echo "Panel updated."
