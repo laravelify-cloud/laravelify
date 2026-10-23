@@ -135,6 +135,13 @@ The panel lives in `/opt/laravelify`, websites in `/var/www/<slug>`, and the ins
 - **Example projects** for every framework to try a deploy in a minute.
 - **One-click MySQL database** per site, `.env` editor with secrets hidden, nginx editor with a config test and automatic rollback, Supervisor and PM2 process editors.
 
+### 🧑‍💻 VS Code, AI agents, and Live Server
+
+- **VS Code for every website**: a full VS Code ([code-server](https://github.com/coder/code-server)) in the browser, running as the website's own user on its own copy of the repository, with extensions, a terminal, Git, and the debugger. Commit and push to deploy. It is installed with the panel and stops by itself after 30 minutes idle.
+- **AI Agents chat** with Claude Code, Cursor Agent, and GitHub Copilot CLI: sign in from a dialog, switch agents in the middle of a task (the next one continues from a recap and a [graphify](https://github.com/Graphify-Labs/graphify) project map), effort levels, restore checkpoints, Add to Chat and Quick Edit on selected code, pasted text and images.
+- **Live Server**: Go Live runs the dev server (Next.js, Vite, Nuxt, Node, Laravel, plain PHP) and shows it on a random HTTPS address through the Cloudflare tunnel; saving a file refreshes the page, and stopping removes the address and its DNS record.
+- **Environments and previews**: production and development side by side, each with its own branch, domain, database, and Redis prefix, and previews on a random subdomain.
+
 ### 🗄️ Database tool
 
 - Browse every database and table in a fast **grid** (AG Grid Community): scroll through millions of rows (loaded from the server as you scroll), spreadsheet-style **header filters** with value counts, sort, pin, resize, and hide columns.
