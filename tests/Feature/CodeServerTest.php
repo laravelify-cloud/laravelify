@@ -113,7 +113,7 @@ class CodeServerTest extends TestCase
     public function test_the_launcher_moves_a_shared_site_to_its_own_user_and_opens_vs_code(): void
     {
         $this->actingAs(User::factory()->create(['two_factor_secret' => app(TwoFactor::class)->generateSecret(), 'two_factor_confirmed_at' => now()]));
-        $website = Website::factory()->create(['slug' => 'shop', 'repository' => 'https://github.com/acme/shop.git']);
+        $website = Website::factory()->create(['slug' => 'shop', 'type' => 'nextjs', 'repository' => 'https://github.com/acme/shop.git']);
         $editors = Mockery::mock(CodeServer::class);
         $editors->shouldReceive('unavailableReason')->andReturn('VS Code runs as the website\'s own user, and this website still runs as the shared user.', null);
         $editors->shouldReceive('canMoveToOwnUser')->andReturn(true, true, false);
@@ -123,6 +123,8 @@ class CodeServerTest extends TestCase
 
         Livewire::test(VsCode::class, ['website' => $website])
             ->assertSee('Move to its own user and open VS Code')
+            ->assertSee('its own PM2 process')
+            ->assertDontSee('PHP pool')
             ->call('moveToOwnUser')
             ->assertRedirect('https://panel.test/code/'.str_repeat('e', 32).'/');
     }

@@ -7,7 +7,7 @@
 .vsc-button { gap: 6px; }
 .vsc-button-secondary { display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 14px; border-radius: 2px; background: #313131; color: var(--vsc-fg); font-size: 13px; }
 .vsc-button-secondary:hover { background: #3c3c3c; }
-.vsc-launch { display: grid; place-items: center; min-height: 100vh; padding: 24px; background: #1f1f1f; color: #cccccc; font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+.vsc-launch { --vsc-accent: #0078d4; --vsc-fg: #cccccc; display: grid; place-items: center; min-height: 100vh; padding: 24px; background: #1f1f1f; color: #cccccc; font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
 .vsc-launch-card { display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(520px, 100%); text-align: center; }
 .vsc-launch-logo { font-size: 72px !important; color: #3794ff; }
 .vsc-launch h1 { font-size: 18px; font-weight: 600; color: #fff; }

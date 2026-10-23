@@ -6,7 +6,14 @@
         @if ($error)
             <p class="vsc-launch-error"><i class="codicon codicon-error"></i> {{ $error }}</p>
             @if ($canMove)
-                <p class="vsc-muted" style="max-width: 460px">Moving it gives the site its own Unix user, its own PHP pool, and its own workers, so it cannot touch other sites. Its workers restart once. If it stops answering afterwards, it goes back to the shared user by itself.</p>
+                @php
+                    $runs = match (\App\Support\SiteTypes::runtime($website->type)) {
+                        \App\Support\SiteTypes::RUNTIME_PHP => ['its own PHP pool and workers', 'Its workers restart once.'],
+                        \App\Support\SiteTypes::RUNTIME_NODE => ['its own PM2 process', 'Its app restarts once.'],
+                        default => ['its own files', 'Visitors notice nothing.'],
+                    };
+                @endphp
+                <p class="vsc-muted" style="max-width: 460px">Moving it gives the site its own Unix user and {{ $runs[0] }}, so it cannot touch other sites. {{ $runs[1] }} If it stops answering afterwards, it goes back to the shared user by itself.</p>
             @endif
             <div class="vsc-launch-actions">
                 <a class="vsc-button-secondary" href="{{ route('websites.show', $website) }}">Back to the website</a>

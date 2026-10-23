@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.60] - 2026-10-23
+
+- **Fixed: the VS Code launcher's buttons had no colour.** "Move to its own user and open VS Code" and "Try again" showed as plain text: their colours were defined on the removed Quick editor's page. They are blue buttons again.
+- **The move note matches the website.** It said "its own PHP pool" for every site. Node apps (Next.js, Express...) now read "its own PM2 process", PHP sites "its own PHP pool and workers", static sites "its own files".
+
 ## [0.3.0-beta.59] - 2026-10-23
 
 - **VS Code moves a website to its own user for you.** VS Code runs only for a website on its own user, and websites made before own users stay on www-data until they are moved. The launcher said to move it in the Security tab, where there was no such button. It now has **Move to its own user and open VS Code**: the website gets its own user, PHP pool, and workers (they restart once), goes back to the shared user by itself if it stops answering, and VS Code opens.
