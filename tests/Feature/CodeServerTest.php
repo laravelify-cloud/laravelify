@@ -157,6 +157,15 @@ shop: it stopped answering with its own user, so it runs as www-data again.
         $this->assertStringContainsString('it stopped answering with its own user', $task->fresh()->message);
     }
 
+    public function test_a_stopped_editor_sends_you_to_its_launcher_instead_of_a_bad_gateway(): void
+    {
+        $this->actingAs(User::factory()->create(['two_factor_secret' => app(TwoFactor::class)->generateSecret(), 'two_factor_confirmed_at' => now()]));
+        $website = Website::factory()->create(['code_server_token' => str_repeat('f', 32)]);
+
+        $this->get('/code-restart/'.str_repeat('f', 32))->assertRedirect(route('websites.vscode', $website));
+        $this->get('/code-restart/'.str_repeat('0', 32))->assertNotFound();
+    }
+
     public function test_a_running_editor_opens_at_once_without_a_restart(): void
     {
         $website = Website::factory()->create(['repository' => 'https://github.com/acme/shop.git', 'code_server_token' => str_repeat('d', 32), 'code_server_port' => 13123]);

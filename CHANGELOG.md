@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.63] - 2026-10-24
+
+- **Fixed: VS Code showed a 502 after a while.** It stops itself after 30 minutes without use, and its address then answered Bad gateway. A stopped VS Code now sends you to its launcher, which starts it again and opens it; old links and open tabs keep working.
+- **Fixed: the Live Server stopped while people only looked at the site.** It runs inside VS Code, which stopped after 30 minutes without typing. While Go Live is on, VS Code now stays running.
+- **VS Code has the site's `.env`.** It works on a git clone, and `.env` is never in git. The clone now gets a copy of the deployed site's `.env` (readable by the site's user only, never committed), for the Live Server and to read. The live site's settings stay in the Environment tab.
+
 ## [0.3.0-beta.62] - 2026-10-23
 
 - **Fixed: after an update, every deploy stayed on "Waiting".** The update restarts MySQL and the panel's background worker at about the same time. The worker started while MySQL was still down, failed a few times, and Supervisor gave up on it for good (FATAL), so nothing ran deploys any more. The worker and the scheduler now keep trying until MySQL is back, and the update starts them again as its last step.

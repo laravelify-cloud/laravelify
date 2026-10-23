@@ -1104,6 +1104,8 @@ ${ICONS}
 location /code/${TOKEN}/ {
     auth_request /_laravelify/code-auth;
     error_page 401 = @laravelify_code_login;
+    # VS Code stopped by itself (30 minutes idle): its launcher starts it again, instead of a 502.
+    error_page 502 504 = @laravelify_code_down_${TOKEN};
     proxy_pass http://127.0.0.1:${PORT}/;
     proxy_http_version 1.1;
     proxy_set_header Host \$host;
@@ -1116,6 +1118,9 @@ location /code/${TOKEN}/ {
     # Cloudflare (Web Analytics, Rocket Loader) must not inject scripts into VS Code's pages and
     # webviews: their content security policy blocks them and the console fills with errors.
     add_header Cache-Control "no-transform" always;
+}
+location @laravelify_code_down_${TOKEN} {
+    return 302 /code-restart/${TOKEN};
 }
 EOF
     if ! nginx -t 2>/dev/null; then

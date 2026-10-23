@@ -57,13 +57,27 @@ class ProjectWorkspace
             $this->files->exec(['rm', '-rf', '--', $path], null, null, $this->user($website));
             $this->must($website, $this->files->exec(['git', 'clone', '-q', '--branch', (string) $website->branch, '--', $remote, $path], null, null, $this->user($website)), $remote);
             $this->must($website, $this->git($website, ['remote', 'set-url', 'origin', (string) $website->repository]), $remote);
-
-            return;
+        } else {
+            // Local changes that were never committed stay; a branch that moved upstream is merged in only when it fast-forwards.
+            $branch = trim($this->git($website, ['symbolic-ref', '--short', '-q', 'HEAD'])->output) ?: (string) $website->branch;
+            $this->git($website, ['pull', '-q', '--ff-only', '--', $remote, $branch]);
         }
 
-        // Local changes that were never committed stay; a branch that moved upstream is merged in only when it fast-forwards.
-        $branch = trim($this->git($website, ['symbolic-ref', '--short', '-q', 'HEAD'])->output) ?: (string) $website->branch;
-        $this->git($website, ['pull', '-q', '--ff-only', '--', $remote, $branch]);
+        $this->copyEnvironment($website);
+    }
+
+    /**
+     * A .env is never in git, so the clone has none: it gets a copy of the deployed site's (once,
+     * readable by the site's user only), for the Live Server and to read. git never commits it.
+     * Changing the live site's settings stays the Environment tab's job.
+     */
+    private function copyEnvironment(Website $website): void
+    {
+        $path = $this->path($website);
+        $user = $this->user($website);
+
+        $this->files->exec(['/bin/sh', '-c', 'grep -qx ".env" "$1/.git/info/exclude" 2>/dev/null || { mkdir -p "$1/.git/info" && printf "\n.env\n" >> "$1/.git/info/exclude"; }', 'exclude', $path], null, null, $user);
+        $this->files->exec(['/bin/sh', '-c', '[ -e "$1/.env" ] || [ ! -r "$2/.env" ] || { umask 077 && cp -- "$2/.env" "$1/.env"; }', 'env', $path, (string) $website->deploy_path], null, null, $user);
     }
 
     /**

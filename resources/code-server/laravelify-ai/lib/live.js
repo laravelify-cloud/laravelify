@@ -224,6 +224,7 @@ class LiveServer {
             this.url = answer.url;
             this.state = 'live';
             this.render();
+            this.keepAwake(config);
             vscode.commands.executeCommand('simpleBrowser.show', this.url);
             const choice = await vscode.window.showInformationMessage(`Live Server: ${dev.label} is on ${this.url} (a new name can take a minute to answer).`, 'Open in the browser', 'Copy link');
 
@@ -249,7 +250,24 @@ class LiveServer {
         vscode.commands.executeCommand('simpleBrowser.show', this.url + (this.url.includes('?') ? '&' : '?') + '_reload=' + Date.now());
     }
 
+    /**
+     * VS Code stops itself after 30 minutes without requests, and the dev server with it. While
+     * the Live Server runs, people may only look at the site, so ask VS Code for a page now and
+     * then: its idle timer counts every request it answers.
+     */
+    keepAwake(config) {
+        clearInterval(this.awake);
+
+        if (!config.editor_port) return;
+
+        this.awake = setInterval(() => {
+            if (this.state !== 'live') return clearInterval(this.awake);
+            http.get({ hostname: '127.0.0.1', port: config.editor_port, path: '/', timeout: 10000 }, (response) => response.resume()).on('error', () => {});
+        }, 5 * 60000);
+    }
+
     fail(message) {
+        clearInterval(this.awake);
         vscode.window.showErrorMessage(message);
         const terminal = this.terminal;
         this.terminal = null;
@@ -259,6 +277,7 @@ class LiveServer {
     }
 
     async stop() {
+        clearInterval(this.awake);
         const wasLive = this.state === 'live';
         const terminal = this.terminal;
         this.terminal = null;

@@ -53,6 +53,7 @@ use App\Livewire\Tunnels\Show as TunnelShow;
 use App\Livewire\Websites\Form as WebsiteForm;
 use App\Livewire\Websites\Show as WebsiteShow;
 use App\Livewire\Websites\VsCode as WebsiteVsCode;
+use App\Models\Website;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -79,6 +80,13 @@ Route::get('/groups/{group}', GroupShow::class)->name('groups.show');
 Route::get('/websites/{website}', WebsiteShow::class)->name('websites.show');
 Route::get('/websites/{website}/files/download', WebsiteFileController::class)->name('websites.files.download');
 Route::get('/websites/{website}/vscode', WebsiteVsCode::class)->name('websites.vscode');
+
+// nginx sends a VS Code that stopped (30 minutes idle) here instead of a 502: its launcher starts it again.
+Route::get('/code-restart/{token}', function (string $token) {
+    $website = Website::query()->where('code_server_token', $token)->firstOrFail();
+
+    return redirect()->route('websites.vscode', $website);
+})->where('token', '[a-z0-9]{32}')->name('websites.vscode.restart');
 
 Route::get('/deployments', DeploymentsIndex::class)->name('deployments.index');
 Route::get('/deployments/{deployment}/log', DeploymentLogController::class)->name('deployments.log');

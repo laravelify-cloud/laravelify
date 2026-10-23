@@ -149,6 +149,8 @@ class CodeServer
             'host' => (string) parse_url((string) config('app.url'), PHP_URL_HOST),
             'key' => $this->live->key($website),
             'ports' => LiveServer::PORTS,
+            // The editor's own port: a running Live Server keeps it awake (its idle timeout counts requests).
+            'editor_port' => (int) $website->code_server_port,
         ], JSON_UNESCAPED_SLASHES);
 
         $dir = $user->home().'/.laravelify';

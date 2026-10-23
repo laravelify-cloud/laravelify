@@ -3,7 +3,7 @@
     "displayName": "Laravelify AI",
     "description": "Chat with Claude, Cursor and Copilot in VS Code, sign in from a dialog, and switch agents in the middle of a task without losing the work.",
     "publisher": "laravelify",
-    "version": "2.1.1",
+    "version": "2.1.2",
     "license": "MIT",
     "engines": {
         "vscode": "^1.90.0"
