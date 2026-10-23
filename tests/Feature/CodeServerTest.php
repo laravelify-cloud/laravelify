@@ -15,6 +15,7 @@ use App\Services\SiteFiles;
 use App\Services\SiteUser;
 use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
@@ -84,6 +85,7 @@ class CodeServerTest extends TestCase
         $website = Website::factory()->create(['repository' => 'https://github.com/acme/shop.git']);
         $editors = Mockery::mock(CodeServer::class);
         $editors->shouldReceive('unavailableReason')->andReturn(null);
+        $editors->shouldReceive('canMoveToOwnUser')->andReturn(false);
         $editors->shouldReceive('start')->once()->andReturn(['url' => 'https://panel.test/code/'.str_repeat('c', 32).'/?folder=%2Fw', 'installing' => null]);
         $this->app->instance(CodeServer::class, $editors);
 
@@ -99,12 +101,30 @@ class CodeServerTest extends TestCase
         $website = Website::factory()->create(['repository' => 'https://github.com/acme/shop.git']);
         $editors = Mockery::mock(CodeServer::class);
         $editors->shouldReceive('unavailableReason')->andReturn('VS Code runs as the website\'s own user.');
+        $editors->shouldReceive('canMoveToOwnUser')->andReturn(false);
         $editors->shouldNotReceive('start');
         $this->app->instance(CodeServer::class, $editors);
 
         Livewire::test(VsCode::class, ['website' => $website])
             ->assertSee('VS Code runs as the website')
             ->assertDontSee('quick editor');
+    }
+
+    public function test_the_launcher_moves_a_shared_site_to_its_own_user_and_opens_vs_code(): void
+    {
+        $this->actingAs(User::factory()->create(['two_factor_secret' => app(TwoFactor::class)->generateSecret(), 'two_factor_confirmed_at' => now()]));
+        $website = Website::factory()->create(['slug' => 'shop', 'repository' => 'https://github.com/acme/shop.git']);
+        $editors = Mockery::mock(CodeServer::class);
+        $editors->shouldReceive('unavailableReason')->andReturn('VS Code runs as the website\'s own user, and this website still runs as the shared user.', null);
+        $editors->shouldReceive('canMoveToOwnUser')->andReturn(true, true, false);
+        $editors->shouldReceive('start')->once()->andReturn(['url' => 'https://panel.test/code/'.str_repeat('e', 32).'/', 'installing' => null]);
+        $this->app->instance(CodeServer::class, $editors);
+        Artisan::shouldReceive('call')->once()->with('laravelify:separate-sites', ['--site' => ['shop']])->andReturn(0);
+
+        Livewire::test(VsCode::class, ['website' => $website])
+            ->assertSee('Move to its own user and open VS Code')
+            ->call('moveToOwnUser')
+            ->assertRedirect('https://panel.test/code/'.str_repeat('e', 32).'/');
     }
 
     public function test_a_running_editor_opens_at_once_without_a_restart(): void

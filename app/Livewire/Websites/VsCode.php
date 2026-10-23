@@ -5,6 +5,7 @@ namespace App\Livewire\Websites;
 use App\Livewire\PanelComponent;
 use App\Models\Website;
 use App\Services\CodeServer;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Throwable;
 
@@ -24,10 +25,37 @@ class VsCode extends PanelComponent
     /** The size of the download in MB (0 while unknown). */
     public int $total = 0;
 
+    /** The website still runs as the shared user, and the launcher can move it. */
+    public bool $canMove = false;
+
     public function mount(Website $website, CodeServer $editors): void
     {
         $this->website = $website;
         $this->error = $editors->unavailableReason($website);
+        $this->canMove = $editors->canMoveToOwnUser($website);
+    }
+
+    /**
+     * Move the website to its own user (as laravelify:separate-sites does: a site that stops
+     * answering goes back to the shared user), then open VS Code.
+     */
+    public function moveToOwnUser(CodeServer $editors): void
+    {
+        if (! $editors->canMoveToOwnUser($this->website)) {
+            return;
+        }
+
+        $exit = Artisan::call('laravelify:separate-sites', ['--site' => [$this->website->slug]]);
+        $this->canMove = $editors->canMoveToOwnUser($this->website);
+
+        if ($exit !== 0 || $this->canMove) {
+            $lines = array_values(array_filter(array_map('trim', explode("\n", Artisan::output()))));
+            $this->error = 'Could not move the website to its own user: '.(end($lines) ?: 'see the panel log.');
+
+            return;
+        }
+
+        $this->retry($editors);
     }
 
     public function launch(CodeServer $editors): void

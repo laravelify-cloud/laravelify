@@ -5,9 +5,16 @@
 
         @if ($error)
             <p class="vsc-launch-error"><i class="codicon codicon-error"></i> {{ $error }}</p>
+            @if ($canMove)
+                <p class="vsc-muted" style="max-width: 460px">Moving it gives the site its own Unix user, its own PHP pool, and its own workers, so it cannot touch other sites. Its workers restart once. If it stops answering afterwards, it goes back to the shared user by itself.</p>
+            @endif
             <div class="vsc-launch-actions">
                 <a class="vsc-button-secondary" href="{{ route('websites.show', $website) }}">Back to the website</a>
-                <button type="button" class="vsc-button" style="width: auto; padding: 0 14px" wire:click="retry" wire:loading.attr="disabled"><i class="codicon codicon-loading codicon-modifier-spin" wire:loading wire:target="retry"></i> Try again</button>
+                @if ($canMove)
+                    <button type="button" class="vsc-button" style="width: auto; padding: 0 14px" wire:click="moveToOwnUser" wire:loading.attr="disabled"><i class="codicon codicon-loading codicon-modifier-spin" wire:loading wire:target="moveToOwnUser"></i> <span wire:loading.remove wire:target="moveToOwnUser">Move to its own user and open VS Code</span><span wire:loading wire:target="moveToOwnUser">Moving…</span></button>
+                @else
+                    <button type="button" class="vsc-button" style="width: auto; padding: 0 14px" wire:click="retry" wire:loading.attr="disabled"><i class="codicon codicon-loading codicon-modifier-spin" wire:loading wire:target="retry"></i> Try again</button>
+                @endif
             </div>
         @else
             @php

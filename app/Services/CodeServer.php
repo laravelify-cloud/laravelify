@@ -47,10 +47,20 @@ class CodeServer
         }
 
         if (! $this->sites->for($website)->isOwn()) {
-            return 'VS Code runs as the website\'s own user. Move the website to its own user first (Security tab).';
+            return 'VS Code runs as the website\'s own user, and this website still runs as the shared user.';
         }
 
         return null;
+    }
+
+    /**
+     * Whether the launcher can move the website to its own user itself (the one thing missing).
+     */
+    public function canMoveToOwnUser(Website $website): bool
+    {
+        return $this->workspace->supports($website)
+            && ! $this->sites->for($website)->isOwn()
+            && $this->sites->perSiteUsers();
     }
 
     /**

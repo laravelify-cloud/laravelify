@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.59] - 2026-10-23
+
+- **VS Code moves a website to its own user for you.** VS Code runs only for a website on its own user, and websites made before own users stay on www-data until they are moved. The launcher said to move it in the Security tab, where there was no such button. It now has **Move to its own user and open VS Code**: the website gets its own user, PHP pool, and workers (they restart once), goes back to the shared user by itself if it stops answering, and VS Code opens.
+
 ## [0.3.0-beta.58] - 2026-10-23
 
 - **VS Code for every website.** The Code editor button on a website opens a full VS Code (code-server) in the browser, running as the website's own user in its sandbox, on its own copy of the repository. It has extensions, a terminal, Git, and the debugger, and stops by itself after 30 minutes idle. Commit and push to deploy: GitHub sites deploy through their webhook, example projects through a push hook on their local repository. code-server is installed during the panel install or update, so the first open no longer downloads it. An editor that is already running opens in under a second. The browser tab and the installed app use Laravelify's icons and name.
