@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\RunPanelTask;
 use App\Livewire\Groups\Index as GroupsIndex;
 use App\Livewire\Groups\Show as GroupShow;
 use App\Livewire\Websites\Files;
@@ -169,7 +170,7 @@ class GroupsAndWebsitesBulkTest extends TestCase
             ->assertRedirect(route('groups.show', $website->group));
 
         $this->assertModelExists($website);
-        Queue::assertPushed(\App\Jobs\RunPanelTask::class);
+        Queue::assertPushed(RunPanelTask::class);
     }
 
     public function test_only_empty_groups_are_deleted_in_bulk(): void
