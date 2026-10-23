@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Jobs\RunPanelTask;
 use App\Models\PanelTask;
 use App\Models\Website;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
@@ -119,8 +120,30 @@ class PanelTaskRunner
             'backup.export' => $this->backups->exportTask($task, $progress),
             'websites.switch' => $this->switch->switchTask($task),
             'websites.delete' => $this->switch->deleteTask($task),
+            'websites.own-user' => $this->ownUserTask($task),
             default => throw new RuntimeException('Unknown task.'),
         };
+    }
+
+    /**
+     * Move one website to its own user (for VS Code), as laravelify:separate-sites does: the
+     * website is written again and checked, and goes back to www-data if it stops answering.
+     * A Node app restarting under PM2 can take a while, so this runs here, not in a page request.
+     *
+     * @return array{message: string, failed?: bool}
+     */
+    private function ownUserTask(PanelTask $task): array
+    {
+        $website = Website::query()->find((int) ($task->payload['website_id'] ?? 0)) ?? throw new RuntimeException('That website no longer exists.');
+        $task->report(10, 'Moving '.$website->name.' to its own user…', true);
+
+        $exit = Artisan::call('laravelify:separate-sites', ['--site' => [$website->slug]]);
+        $lines = array_values(array_filter(array_map('trim', explode("\n", Artisan::output()))));
+        $moved = app(SiteUser::class)->for($website)->isOwn();
+
+        return $exit === 0 && $moved
+            ? ['message' => $website->name.' runs as its own user now.']
+            : ['message' => end($lines) ?: 'The website could not be moved to its own user.', 'failed' => true];
     }
 
     /**

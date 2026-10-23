@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.61] - 2026-10-23
+
+- **Fixed: "Move to its own user and open VS Code" could spin forever.** The move ran inside the page request: a website restarting under PM2 (Next.js) could take longer than a request may last, and the page never got an answer. It now runs in the background like deleting a website. The page shows its progress, opens VS Code when it is done, says why when it fails, and picks a running move up again after a reload.
+- **Fixed: panel commands run from a folder the panel user cannot open failed.** `sudo -u laravelify php /opt/laravelify/artisan ...` typed in `/root` stopped with "posix_spawn() failed: Permission denied" before doing anything. Commands now work from the panel's own folder when the current one is closed to them.
+
 ## [0.3.0-beta.60] - 2026-10-23
 
 - **Fixed: the VS Code launcher's buttons had no colour.** "Move to its own user and open VS Code" and "Try again" showed as plain text: their colours were defined on the removed Quick editor's page. They are blue buttons again.

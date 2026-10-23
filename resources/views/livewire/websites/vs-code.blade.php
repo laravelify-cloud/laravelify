@@ -1,9 +1,12 @@
-<div class="vsc-launch" @if (! $error) wire:init="launch" @endif>
+<div class="vsc-launch" @if (! $error && ! $moveTask) wire:init="launch" @endif>
     <div class="vsc-launch-card">
         <i class="codicon codicon-vscode vsc-launch-logo"></i>
         <h1>{{ $website->name }}</h1>
 
-        @if ($error)
+        @if ($moveTask)
+            <div class="vsc-launch-step" wire:poll.2s="checkMove"><i class="codicon codicon-loading codicon-modifier-spin"></i> {{ $moveStatus }}</div>
+            <p class="vsc-muted" style="max-width: 460px">This runs in the background and can take a minute while the app restarts. You can leave this page open; VS Code opens when it is done.</p>
+        @elseif ($error)
             <p class="vsc-launch-error"><i class="codicon codicon-error"></i> {{ $error }}</p>
             @if ($canMove)
                 @php
@@ -18,7 +21,7 @@
             <div class="vsc-launch-actions">
                 <a class="vsc-button-secondary" href="{{ route('websites.show', $website) }}">Back to the website</a>
                 @if ($canMove)
-                    <button type="button" class="vsc-button" style="width: auto; padding: 0 14px" wire:click="moveToOwnUser" wire:loading.attr="disabled"><i class="codicon codicon-loading codicon-modifier-spin" wire:loading wire:target="moveToOwnUser"></i> <span wire:loading.remove wire:target="moveToOwnUser">Move to its own user and open VS Code</span><span wire:loading wire:target="moveToOwnUser">Moving…</span></button>
+                    <button type="button" class="vsc-button" style="width: auto; padding: 0 14px" wire:click="moveToOwnUser" wire:loading.attr="disabled"><i class="codicon codicon-loading codicon-modifier-spin" wire:loading wire:target="moveToOwnUser"></i> Move to its own user and open VS Code</button>
                 @else
                     <button type="button" class="vsc-button" style="width: auto; padding: 0 14px" wire:click="retry" wire:loading.attr="disabled"><i class="codicon codicon-loading codicon-modifier-spin" wire:loading wire:target="retry"></i> Try again</button>
                 @endif

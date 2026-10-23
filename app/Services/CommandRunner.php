@@ -41,6 +41,12 @@ class CommandRunner
             return new CommandResult(true, true, $command, '[skipped] host commands are disabled', 0);
         }
 
+        // An artisan command run from a folder this user may not enter (sudo -u laravelify from
+        // /root) would fail to start anything: work from the panel's own folder then.
+        if ($cwd === null && (($here = getcwd()) === false || ! is_executable($here))) {
+            $cwd = base_path();
+        }
+
         $process = new Process($command, $cwd, array_merge($this->environment(), $env), null, 3600);
         $process->start($onOutput === null ? null : function (string $type, string $buffer) use ($onOutput): void {
             $onOutput($buffer);

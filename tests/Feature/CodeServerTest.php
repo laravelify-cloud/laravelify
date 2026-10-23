@@ -2,13 +2,16 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\RunPanelTask;
 use App\Livewire\Websites\VsCode;
+use App\Models\PanelTask;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\CodeServer;
 use App\Services\GithubAppClient;
 use App\Services\HostWriter;
 use App\Services\LiveServer;
+use App\Services\PanelTaskRunner;
 use App\Services\PortAllocator;
 use App\Services\ProjectWorkspace;
 use App\Services\SiteFiles;
@@ -16,6 +19,7 @@ use App\Services\SiteUser;
 use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
@@ -110,23 +114,47 @@ class CodeServerTest extends TestCase
             ->assertDontSee('quick editor');
     }
 
-    public function test_the_launcher_moves_a_shared_site_to_its_own_user_and_opens_vs_code(): void
+    public function test_the_launcher_moves_a_shared_site_to_its_own_user_in_the_background_then_opens_vs_code(): void
     {
+        Queue::fake();
         $this->actingAs(User::factory()->create(['two_factor_secret' => app(TwoFactor::class)->generateSecret(), 'two_factor_confirmed_at' => now()]));
         $website = Website::factory()->create(['slug' => 'shop', 'type' => 'nextjs', 'repository' => 'https://github.com/acme/shop.git']);
         $editors = Mockery::mock(CodeServer::class);
-        $editors->shouldReceive('unavailableReason')->andReturn('VS Code runs as the website\'s own user, and this website still runs as the shared user.', null);
+        $editors->shouldReceive('unavailableReason')->andReturn("VS Code runs as the website's own user, and this website still runs as the shared user.", null);
         $editors->shouldReceive('canMoveToOwnUser')->andReturn(true, true, false);
         $editors->shouldReceive('start')->once()->andReturn(['url' => 'https://panel.test/code/'.str_repeat('e', 32).'/', 'installing' => null]);
         $this->app->instance(CodeServer::class, $editors);
-        Artisan::shouldReceive('call')->once()->with('laravelify:separate-sites', ['--site' => ['shop']])->andReturn(0);
 
-        Livewire::test(VsCode::class, ['website' => $website])
+        $page = Livewire::test(VsCode::class, ['website' => $website])
             ->assertSee('Move to its own user and open VS Code')
             ->assertSee('its own PM2 process')
             ->assertDontSee('PHP pool')
             ->call('moveToOwnUser')
-            ->assertRedirect('https://panel.test/code/'.str_repeat('e', 32).'/');
+            ->assertSee('Moving the website to its own user');
+
+        $task = PanelTask::query()->sole();
+        $this->assertSame(['websites.own-user', ['website_id' => $website->id]], [$task->kind, $task->payload]);
+        Queue::assertPushed(RunPanelTask::class);
+
+        // Still running: the page keeps waiting. Finished: VS Code opens.
+        $page->call('checkMove')->assertNoRedirect();
+        $task->forceFill(['status' => PanelTask::SUCCESS])->save();
+        $page->call('checkMove')->assertRedirect('https://panel.test/code/'.str_repeat('e', 32).'/');
+    }
+
+    public function test_the_move_task_reports_when_the_website_could_not_be_moved(): void
+    {
+        $website = Website::factory()->create(['slug' => 'shop']);
+        $task = PanelTask::query()->create(['kind' => 'websites.own-user', 'scope' => 'websites:own-user:'.$website->id, 'label' => 'Move', 'payload' => ['website_id' => $website->id]]);
+        Artisan::shouldReceive('call')->once()->with('laravelify:separate-sites', ['--site' => ['shop']])->andReturn(1);
+        Artisan::shouldReceive('output')->andReturn('Creating the user lfy-shop
+shop: it stopped answering with its own user, so it runs as www-data again.
+');
+
+        app(PanelTaskRunner::class)->run($task);
+
+        $this->assertSame(PanelTask::FAILED, $task->fresh()->status);
+        $this->assertStringContainsString('it stopped answering with its own user', $task->fresh()->message);
     }
 
     public function test_a_running_editor_opens_at_once_without_a_restart(): void
