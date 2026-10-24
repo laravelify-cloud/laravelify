@@ -95,6 +95,7 @@ const icons = {
     attach: 'AttachFileOutlined',
     article: 'ArticleOutlined',
     bolt: 'BoltOutlined',
+    login: 'LoginOutlined',
 };
 
 const result = {};

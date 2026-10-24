@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.71] - 2026-10-24
+
+- **Sign AI agents in from the AI chat.** An agent that is installed but not signed in has a Sign in button. A dialog runs its sign-in on the server and shows the link to open, the device code to type (Copilot), or a box for the code the sign-in page shows (Claude), then says who is signed in. The sign-in reaches every website's VS Code within a minute. Closing the dialog stops the sign-in.
+- **Fixed: a background task line could run off the AI chat page** ("Installing GitHub Copilot CLI · running in the background"). Long lines now end in "…".
+
 ## [0.3.0-beta.70] - 2026-10-24
 
 - **AI chat in the panel.** A new AI chat page (in the sidebar) talks to Claude Code, Cursor Agent, or GitHub Copilot CLI, with the same sign-in as VS Code (sign in once in any editor). The agents manage the server only through the panel's own tools (MCP), with a token the chat makes for itself: deploy, logs, domains, environment, nginx, backups, and more. They have no shell, and they ask before deleting anything. Skills lists every tool, and `/` in the message box starts a message with one. Answers stream in with the tools they used, Stop ends one, and a chat can switch agent midway (the new one gets what was said). An agent that runs out of usage says so and suggests another.

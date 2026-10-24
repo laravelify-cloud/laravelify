@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Website;
 use App\Services\AiAssistant;
 use App\Services\SiteLogs;
+use App\Services\TerminalSessions;
 use App\Services\TwoFactor;
 use App\Support\AgentStream;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -244,6 +245,48 @@ class AiChatTest extends TestCase
         $this->assertStringStartsWith('Attached to this message:', $prompt);
         $this->assertStringContainsString("The last lines of the log \"Shop · Laravel\":\n```\nproduction.ERROR: boom\n```", $prompt);
         $this->assertStringEndsWith('Why does it fail?', $prompt);
+    }
+
+    public function test_signing_an_agent_in_shows_its_link_takes_its_code_and_finishes(): void
+    {
+        $this->signIn();
+        $assistant = Mockery::mock(AiAssistant::class);
+        $assistant->shouldReceive('loginCommand')->with('claude')->andReturn(['claude', 'auth', 'login']);
+        $assistant->shouldReceive('prepare');
+        $assistant->shouldReceive('status')->andReturn(['installed' => true, 'signedIn' => true, 'who' => 'me@example.com']);
+        $assistant->shouldReceive('skills')->andReturn([]);
+        $this->app->instance(AiAssistant::class, $assistant);
+        $sessions = Mockery::mock(TerminalSessions::class);
+        $sessions->shouldReceive('startArguments')->once()->andReturn('session-1');
+        $sessions->shouldReceive('read')->andReturn(
+            ['data' => base64_encode("\e[1mBrowser didn't open? Use the url below:\e[0m\r\nhttps://claude.ai/oauth/authorize?code=true&state=abc\r\nPaste code here if prompted > "), 'offset' => 120, 'done' => false, 'exit' => null],
+            ['data' => base64_encode("\r\nLogin successful.\r\n"), 'offset' => 140, 'done' => true, 'exit' => 0],
+        );
+        $sessions->shouldReceive('write')->once()->with('session-1', "abc#def\r", Mockery::any())->andReturn(true);
+        $this->app->instance(TerminalSessions::class, $sessions);
+
+        $component = Livewire::test(Chat::class)
+            ->call('startLogin', 'claude')
+            ->call('pollLogin')
+            ->assertSee('https://claude.ai/oauth/authorize?code=true&amp;state=abc', false)
+            ->assertSee('Paste the code the page shows')
+            ->set('loginAnswer', ' abc#def ')
+            ->call('answerLogin')
+            ->assertSee('Checking the code')
+            ->call('pollLogin')
+            ->assertSet('loginExit', 0)
+            ->assertSee('Signed in as me@example.com');
+
+        $component->call('closeLogin')->assertSet('login', null);
+    }
+
+    public function test_a_device_code_is_read_from_the_sign_in(): void
+    {
+        $state = AgentStream::login("To authenticate, visit https://github.com/login/device and enter code ABCD-1234.\n");
+
+        $this->assertSame('https://github.com/login/device', $state['url']);
+        $this->assertSame('ABCD-1234', $state['code']);
+        $this->assertFalse($state['needsInput']);
     }
 
     public function test_cursor_and_copilot_lines_are_read_too(): void

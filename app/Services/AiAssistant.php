@@ -286,6 +286,28 @@ class AiAssistant
      * @param  list<string>  $command
      * @return list<string>
      */
+    /**
+     * An agent's sign-in, as the chat's user in a terminal (the CLIs ask questions): it prints a link
+     * to open, a device code to type there, or asks for the code the page shows (Claude).
+     *
+     * @return list<string>
+     */
+    public function loginCommand(string $agent): array
+    {
+        $binary = $this->binary($agent) ?? throw new \RuntimeException(self::AGENTS[$agent]['product'].' is not installed yet.');
+        // Copilot: a device code, as its browser flow would come back to a port on this server.
+        $arguments = match ($agent) {
+            'claude' => ['auth', 'login'],
+            'cursor' => ['login'],
+            default => ['login', '--device-code'],
+        };
+
+        return $this->asUser([
+            '/bin/sh', '-c', 'cd "$HOME"; export TERM=xterm-256color COLUMNS=200 LINES=40 BROWSER=true NO_OPEN_BROWSER=1; stty cols 200 rows 40 2>/dev/null; exec "$@"',
+            'login', $binary, ...$arguments,
+        ]);
+    }
+
     public function asUser(array $command): array
     {
         $user = $this->user();

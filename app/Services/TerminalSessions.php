@@ -37,6 +37,29 @@ class TerminalSessions
         $columns = max(20, min($columns, 400));
         $rows = max(5, min($rows, 200));
         $argv = $this->commands->interactiveArguments($website, $directory, $this->prepared($command, $columns, $rows), $shell);
+
+        return $this->launch($argv, $command, $userId, $shell);
+    }
+
+    /**
+     * Start a command the panel built itself (an AI agent's sign-in, as the chat's user).
+     *
+     * @param  list<string>  $argv
+     */
+    public function startArguments(array $argv, string $label, int|string|null $userId): string
+    {
+        if (! Process::isPtySupported()) {
+            throw new RuntimeException('This machine cannot give commands a terminal.');
+        }
+
+        return $this->launch($argv, $label, $userId);
+    }
+
+    /**
+     * @param  list<string>  $argv
+     */
+    private function launch(array $argv, string $command, int|string|null $userId, bool $shell = false): string
+    {
         $id = Str::random(32);
         $folder = $this->folder($id);
 

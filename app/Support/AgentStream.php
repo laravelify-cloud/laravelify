@@ -94,6 +94,28 @@ class AgentStream
         return $out;
     }
 
+    /**
+     * What a sign-in printed so far (the PHP twin of laravelify-ai/lib/login.js): the sign-in link
+     * (the longest one), a device code to type on it, and whether it asks for a code back.
+     *
+     * @return array{text: string, url: ?string, code: ?string, needsInput: bool}
+     */
+    public static function login(string $output): array
+    {
+        $text = preg_replace(['/\x1b\]8;[^\x07\x1b]*(\x07|\x1b\\\\)/', '/\]8;;[^\s\]]*/', '/\x1b\[[0-9;?]*[A-Za-z]/', '/\x1b[()][A-Z0-9]/', '/\r/'], '', $output) ?? $output;
+        preg_match_all('/https:\/\/[^\s"\'<>\x07]+/', $text, $links);
+        $urls = array_map(fn (string $url) => rtrim($url, ').,'), $links[0]);
+        usort($urls, fn (string $a, string $b) => strlen($b) <=> strlen($a));
+        preg_match('/(?:code|enter)[^A-Z0-9\n]{0,40}\b([A-Z0-9]{4}-[A-Z0-9]{4})\b/i', $text, $code);
+
+        return [
+            'text' => $text,
+            'url' => $urls[0] ?? null,
+            'code' => $code[1] ?? null,
+            'needsInput' => preg_match('/paste (the )?(code|token)|paste code here/i', $text) === 1,
+        ];
+    }
+
     /** "deploy-website", from "mcp__laravelify__deploy-website" or "laravelify-deploy-website". */
     public static function toolName(string $name): string
     {

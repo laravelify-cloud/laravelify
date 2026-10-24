@@ -82,6 +82,8 @@
                                         </span>
                                         @if ($status !== null && ! $status['installed'])
                                             <button class="btn btn-sm" type="button" wire:click="install('{{ $id }}')"><x-menu-icon name="download" /> Install</button>
+                                        @elseif ($status !== null && ! $status['signedIn'])
+                                            <button class="btn btn-sm btn-primary" type="button" wire:click="startLogin('{{ $id }}')"><x-menu-icon name="login" /> Sign in</button>
                                         @elseif ($status !== null)
                                             <span class="ai-dot" style="--dot: var({{ $status['signedIn'] ? '--color-success' : '--color-warning' }})"></span>
                                         @endif
@@ -296,6 +298,74 @@
             </div>
         </form>
     </section>
+    {{-- Signing an agent in: its CLI's login runs on the server; the link, code, or paste box show here --}}
+    @if ($login)
+        @php
+            $product = $agents[$login]['product'];
+            $who = $statuses[$login]['who'] ?? null;
+        @endphp
+        <x-modal-frame class="modal-root-top" open="$wire.login" close="$wire.closeLogin()">
+            <div class="ai-login" @if ($loginExit === null) wire:poll.1s="pollLogin" @endif>
+                <div class="modal-head">
+                    <h2 class="flex min-w-0 items-center gap-2.5">
+                        <span class="ai-mark is-big"><x-agent-icon :agent="$login" /></span>
+                        <span class="truncate">Sign in to {{ $product }}</span>
+                    </h2>
+                    <button class="icon-btn" type="button" wire:click="closeLogin" aria-label="Close"><x-menu-icon name="close" /></button>
+                </div>
+
+                @if ($loginExit === 0)
+                    <div class="ai-login-done">
+                        <span class="ai-login-check"><x-menu-icon name="check" class="size-7" /></span>
+                        <b>Signed in{{ $who ? ' as '.$who : '' }}</b>
+                        <p>The sign-in is shared with every website's VS Code within a minute.</p>
+                    </div>
+                    <div class="modal-foot"><button class="btn btn-primary" type="button" wire:click="closeLogin">Done</button></div>
+                @elseif ($loginExit !== null)
+                    <x-callout type="danger" title="The sign-in did not finish">
+                        <pre class="ai-login-log">{{ collect(preg_split('/\R/', trim($loginState['text'])))->take(-6)->implode(PHP_EOL) ?: 'It stopped without a message.' }}</pre>
+                    </x-callout>
+                    <div class="modal-foot">
+                        <button class="btn" type="button" wire:click="closeLogin">Close</button>
+                        <button class="btn btn-primary" type="button" wire:click="startLogin('{{ $login }}')">Try again</button>
+                    </div>
+                @elseif (! $loginState['url'])
+                    <p class="ai-login-wait"><span class="task-spinner"></span> Starting the sign-in…</p>
+                @else
+                    <ol class="ai-login-steps">
+                        <li>
+                            <b>Open the sign-in page</b>
+                            <p>Sign in there with your {{ $login === 'copilot' ? 'GitHub' : ($login === 'cursor' ? 'Cursor' : 'Claude') }} account.</p>
+                            <div class="flex flex-wrap gap-2">
+                                <a class="btn btn-primary" href="{{ $loginState['url'] }}" target="_blank" rel="noopener noreferrer"><x-menu-icon name="external" /> Open sign-in page</a>
+                                <x-copy-button :text="\Illuminate\Support\Js::from($loginState['url'])" />
+                            </div>
+                        </li>
+                        @if ($loginState['code'])
+                            <li>
+                                <b>Type this code on the page</b>
+                                <div class="ai-login-code">
+                                    <code>{{ $loginState['code'] }}</code>
+                                    <x-copy-button :text="\Illuminate\Support\Js::from($loginState['code'])" />
+                                </div>
+                            </li>
+                        @endif
+                        @if ($loginState['needsInput'] && ! $loginAnswered)
+                            <li>
+                                <b>Paste the code the page shows</b>
+                                <form class="flex gap-2" wire:submit="answerLogin">
+                                    <input class="input flex-1 font-mono" wire:model="loginAnswer" placeholder="Paste the code here" autocomplete="off" spellcheck="false" aria-label="Sign-in code">
+                                    <button class="btn btn-primary" type="submit">Continue</button>
+                                </form>
+                            </li>
+                        @endif
+                    </ol>
+                    <p class="ai-login-wait"><span class="task-spinner"></span> {{ $loginAnswered ? 'Checking the code…' : 'Waiting for you to finish on the sign-in page…' }}</p>
+                @endif
+            </div>
+        </x-modal-frame>
+    @endif
+
     {{-- An image, big --}}
     <div class="ai-lightbox" x-show="lightbox" x-cloak x-transition.opacity @click="lightbox = null">
         <img :src="lightbox" alt="">

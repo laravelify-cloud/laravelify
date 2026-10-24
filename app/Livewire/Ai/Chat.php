@@ -12,6 +12,8 @@ use App\Models\Website;
 use App\Services\AiAssistant;
 use App\Services\GithubAppClient;
 use App\Services\SiteLogs;
+use App\Services\TerminalSessions;
+use App\Support\AgentStream;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -268,6 +270,86 @@ class Chat extends PanelComponent
         }
     }
 
+    /** The agent whose sign-in dialog is open. */
+    public ?string $login = null;
+
+    public ?string $loginSession = null;
+
+    public int $loginOffset = 0;
+
+    /** What the sign-in printed so far. */
+    public string $loginOutput = '';
+
+    public ?int $loginExit = null;
+
+    /** The code the sign-in page shows, to type back (Claude). */
+    public string $loginAnswer = '';
+
+    public bool $loginAnswered = false;
+
+    public function startLogin(string $agent, AiAssistant $assistant, TerminalSessions $sessions): void
+    {
+        if (! isset(AiAssistant::AGENTS[$agent])) {
+            return;
+        }
+
+        $this->closeLogin($sessions);
+        $this->login = $agent;
+
+        try {
+            $this->loginSession = $sessions->startArguments($assistant->loginCommand($agent), AiAssistant::AGENTS[$agent]['product'].' sign-in', Auth::id());
+        } catch (Throwable $exception) {
+            $this->loginOutput = $exception->getMessage();
+            $this->loginExit = 1;
+        }
+    }
+
+    /** Polled while the dialog is open: the sign-in's new output, and its end. */
+    public function pollLogin(AiAssistant $assistant, TerminalSessions $sessions): void
+    {
+        if ($this->loginSession === null || $this->loginExit !== null) {
+            return;
+        }
+
+        $read = $sessions->read($this->loginSession, $this->loginOffset, Auth::id());
+
+        if ($read === null) {
+            $this->loginExit = 1;
+
+            return;
+        }
+
+        $this->loginOutput = mb_substr($this->loginOutput.base64_decode($read['data']), -20000);
+        $this->loginOffset = $read['offset'];
+
+        if ($read['done']) {
+            $this->loginExit = (int) $read['exit'];
+            $this->loadStatuses($assistant);
+        }
+    }
+
+    public function answerLogin(TerminalSessions $sessions): void
+    {
+        $answer = trim($this->loginAnswer);
+
+        if ($this->loginSession === null || $answer === '') {
+            return;
+        }
+
+        $sessions->write($this->loginSession, $answer."\r", Auth::id());
+        $this->loginAnswer = '';
+        $this->loginAnswered = true;
+    }
+
+    public function closeLogin(TerminalSessions $sessions): void
+    {
+        if ($this->loginSession !== null && $this->loginExit === null) {
+            $sessions->stop($this->loginSession, Auth::id());
+        }
+
+        $this->reset('login', 'loginSession', 'loginOffset', 'loginOutput', 'loginExit', 'loginAnswer', 'loginAnswered');
+    }
+
     public function install(string $agent): void
     {
         if (! isset(AiAssistant::AGENTS[$agent])) {
@@ -297,6 +379,7 @@ class Chat extends PanelComponent
             'skills' => $assistant->skills(),
             'repositories' => $this->picker === 'repo' ? $this->repositoryOptions() : [],
             'logWebsites' => $this->picker === 'log' ? Website::query()->orderBy('name')->get(['id', 'name']) : collect(),
+            'loginState' => $this->login ? AgentStream::login($this->loginOutput) : null,
             'logSources' => $this->picker === 'log' && $this->logWebsite ? app(SiteLogs::class)->sources(Website::query()->findOrFail($this->logWebsite)) : [],
         ])->layout('layouts.app', ['mobile' => true])->title('AI chat');
     }
