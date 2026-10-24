@@ -150,7 +150,7 @@ class CloudflareRoutes
      *
      * @return array{configured: bool, lines: list<array{host: string, route: string, dns: string, ok: bool}>, note: ?string}
      */
-    public function route(CloudflareTunnel $tunnel, string $host, string $service, ?string $hostHeader, bool $remove = false): array
+    public function route(CloudflareTunnel $tunnel, string $host, string $service, ?string $hostHeader, bool $remove = false, bool $keepDns = false): array
     {
         $rule = ['service' => $service];
 
@@ -158,7 +158,7 @@ class CloudflareRoutes
             $rule['originRequest'] = ['httpHostHeader' => $hostHeader];
         }
 
-        return $remove ? $this->reconcile($tunnel, [], [$host]) : $this->reconcile($tunnel, [$host => $rule], []);
+        return $remove ? $this->reconcile($tunnel, [], [$host], $keepDns) : $this->reconcile($tunnel, [$host => $rule], []);
     }
 
     /**
@@ -166,7 +166,7 @@ class CloudflareRoutes
      * @param  list<string>  $removed
      * @return array{configured: bool, lines: list<array{host: string, route: string, dns: string, ok: bool}>, note: ?string}
      */
-    private function reconcile(CloudflareTunnel $tunnel, array $desired, array $removed): array
+    private function reconcile(CloudflareTunnel $tunnel, array $desired, array $removed, bool $keepDns = false): array
     {
         if (! $this->api->configured()) {
             return [
@@ -205,7 +205,7 @@ class CloudflareRoutes
         }
 
         foreach ($removed as $host) {
-            $lines[] = $this->line($host, $routeError !== null ? 'error: '.$routeError : ($routeStatus[$host] ?? 'removed'), $this->removeCname($host, $target), $routeError);
+            $lines[] = $this->line($host, $routeError !== null ? 'error: '.$routeError : ($routeStatus[$host] ?? 'removed'), $keepDns ? 'kept' : $this->removeCname($host, $target), $routeError);
         }
 
         return ['configured' => true, 'lines' => $lines, 'note' => null];

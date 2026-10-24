@@ -1,0 +1,452 @@
+/*
+ * VS Code (code-server) on phones and tablets, added by nginx to the editor's page.
+ * Touch screens get bigger targets; narrow screens show one part at a time: the side bar
+ * (Explorer, Search, AI Agents...) or the panel (terminal) fills the screen over the editor.
+ */
+
+/* Controls phone.js adds (reload button, drawer and menu headers): hidden on bigger screens, the
+   narrow rules below show them. */
+.lfy-titlebar-buttons,
+.lfy-drawer-close,
+.lfy-menu-head,
+.lfy-menu-back { display: none; }
+
+/* Touch: targets at least 44px, text that iOS does not zoom into. */
+@media (pointer: coarse) {
+    .monaco-workbench .part.activitybar .action-item:not(.monaco-menu *) { min-height: 48px; }
+    .monaco-workbench .part.activitybar .action-item:not(.monaco-menu *) > .action-label { height: 48px !important; line-height: 48px !important; }
+    .monaco-workbench .part.statusbar { height: 30px !important; }
+    .monaco-workbench .part.statusbar .statusbar-item { line-height: 30px !important; height: 30px !important; }
+    .monaco-workbench .tabs-container .tab { min-height: 40px; }
+    .monaco-workbench input, .monaco-workbench textarea { font-size: 16px !important; }
+    .monaco-workbench .monaco-action-bar .action-label { min-width: 28px; min-height: 28px; }
+}
+
+@keyframes lfy-tap-guard { from { pointer-events: none; } to { pointer-events: auto; } }
+
+/* Menus (the ☰ menu, right-click / long-press menus) on phones: finger-size rows, no keyboard
+   shortcuts, never wider than the screen, and submenus opening over their parent (indented)
+   instead of off the right edge. */
+@media (max-width: 820px), (pointer: coarse) {
+    .monaco-menu-container { max-width: calc(100vw - 12px) !important; }
+    .monaco-menu .monaco-action-bar.vertical { min-width: min(260px, calc(100vw - 24px)) !important; }
+    .monaco-menu .monaco-action-bar.vertical .action-menu-item { height: 44px !important; }
+    .monaco-menu .monaco-action-bar.vertical .action-label:not(.separator),
+    .monaco-menu .monaco-action-bar.vertical .menu-item-check,
+    .monaco-menu .monaco-action-bar.vertical .submenu-indicator { line-height: 44px !important; height: 44px !important; }
+    .monaco-menu .monaco-action-bar.vertical .action-label { font-size: 15px !important; }
+    .monaco-menu .monaco-action-bar.vertical .keybinding { display: none !important; }
+    .monaco-menu .monaco-action-bar.vertical .action-item.disabled:has(> .separator) { height: auto !important; }
+    .monaco-menu .monaco-action-bar.vertical .action-label.separator { margin: 4px 0 !important; min-height: 0 !important; height: 0 !important; }
+    /* A long-press menu opens under the finger: lifting it must not pick an item. */
+    .context-view.monaco-menu-container { animation: lfy-tap-guard .35s step-end; }
+    .monaco-menu .monaco-submenu {
+        left: 16px !important;
+        top: 8px !important;
+        max-width: calc(100vw - 40px) !important;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, .6) !important;
+        /* It opens under the finger: the tap that opened it must not also pick an item in it. */
+        animation: lfy-tap-guard .35s step-end;
+    }
+    .monaco-workbench .menubar-menu-button { min-height: 44px; }
+}
+
+@keyframes lfy-slide-from-left { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes lfy-slide-from-right { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes lfy-slide-from-bottom { from { transform: translateY(100%); } to { transform: none; } }
+
+/* Narrow screens: every menu (☰, ⚙, accounts, right-click / long-press) is a full-screen drawer
+   sliding in from the left, with a Close row on top; a submenu slides in over it from the right as
+   the next step, with a Back row. */
+@media (max-width: 820px) {
+    .monaco-workbench .monaco-menu-container,
+    .monaco-workbench .monaco-menu .monaco-submenu {
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100vw !important;
+        height: 100% !important;
+        max-width: none !important;
+        overflow: hidden !important;
+        background: var(--vscode-menu-background) !important;
+        box-shadow: none !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        z-index: 2600 !important;
+        animation: lfy-slide-from-left .22s ease-out, lfy-tap-guard .35s step-end !important;
+    }
+    .monaco-workbench .monaco-menu .monaco-submenu { animation: lfy-slide-from-right .22s ease-out, lfy-tap-guard .35s step-end !important; }
+    .monaco-workbench .monaco-menu-container > .monaco-scrollable-element,
+    .monaco-workbench .monaco-submenu > .monaco-scrollable-element {
+        height: calc(100% - 56px) !important;
+        max-height: none !important;
+        width: 100% !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        outline: 0 !important;
+        border: 0 !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+    }
+    .monaco-workbench .monaco-menu-container .monaco-menu { outline: 0 !important; border: 0 !important; box-shadow: none !important; }
+    .monaco-workbench .monaco-menu-container .monaco-menu {
+        height: auto !important;
+        max-height: none !important;
+        width: 100% !important;
+        overflow: visible !important;
+    }
+    /* Long names stay on the screen, cut with "…", instead of scrolling the menu sideways. */
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical,
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .actions-container {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+    /* Rows: 52px, 16px text, a press shows; no hover look (a finger does not hover). */
+    .monaco-workbench .monaco-menu-container { -webkit-tap-highlight-color: transparent; }
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .actions-container { padding: 6px 0 calc(16px + env(safe-area-inset-bottom)) !important; }
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-item { width: 100%; min-width: 0; }
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-menu-item {
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 0;
+        height: 52px !important;
+        margin: 0 !important;
+        padding: 0 8px 0 20px !important;
+        border-radius: 0 !important;
+        background-color: transparent !important;
+        color: var(--vscode-menu-foreground) !important;
+        outline: 0 !important;
+    }
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-menu-item:active { background-color: var(--vscode-list-hoverBackground, rgba(255, 255, 255, .08)) !important; }
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-label:not(.separator),
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .menu-item-check { height: 52px !important; line-height: 52px !important; }
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-label:not(.separator) {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 16px !important;
+        padding: 0 !important;
+    }
+    /* The ✓ of a ticked entry sits in the inset, left of its name. */
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .menu-item-check { width: 20px !important; flex: 0 0 20px !important; margin-left: -20px !important; }
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-item.disabled .action-menu-item { opacity: .45; }
+    /* Sections: a thin line, inset like the text. */
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-label.separator {
+        margin: 6px 20px !important;
+        border-bottom-color: var(--vscode-menu-separatorBackground, rgba(255, 255, 255, .1)) !important;
+    }
+    /* An entry with a submenu: a chevron on the right, drawn by us (VS Code's sits off the edge). */
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .submenu-indicator { display: none !important; }
+    .monaco-workbench .monaco-menu .monaco-action-bar.vertical .monaco-submenu-item::after {
+        content: '';
+        flex: 0 0 auto;
+        width: 8px;
+        height: 8px;
+        margin: 0 14px 0 12px;
+        border-right: 2px solid currentColor;
+        border-bottom: 2px solid currentColor;
+        transform: rotate(-45deg);
+        opacity: .55;
+    }
+    .lfy-menu-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-sizing: border-box;
+        height: 56px;
+        padding: 0 8px 0 20px;
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--vscode-menu-foreground);
+        border-bottom: 1px solid var(--vscode-menu-separatorBackground, rgba(255, 255, 255, .1));
+    }
+    .lfy-menu-head .lfy-menu-close {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, .08));
+        cursor: pointer;
+    }
+    .lfy-menu-head .lfy-menu-close:active { background: var(--vscode-toolbar-activeBackground, rgba(255, 255, 255, .16)); }
+    .lfy-menu-back {
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 56px;
+        padding: 0 16px 0 12px;
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--vscode-menu-foreground);
+        background: var(--vscode-menu-background);
+        border-bottom: 1px solid var(--vscode-menu-separatorBackground, rgba(255, 255, 255, .1));
+        cursor: pointer;
+    }
+    .lfy-menu-back .codicon { font-size: 20px !important; }
+    .lfy-menu-back:active { background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, .08)); }
+
+    /* Dialogs ("Cannot reconnect", "Save changes?") fit the screen: wrapped text, stacked
+       finger-size buttons, the main one on top. */
+    .monaco-dialog-modal-block .dialog-shadow { width: calc(100vw - 24px) !important; max-width: 480px !important; }
+    .monaco-dialog-box {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        height: auto !important;
+        box-sizing: border-box !important;
+        padding: 16px !important;
+        border-radius: 12px !important;
+    }
+    .monaco-dialog-box .dialog-message-row { padding: 8px 4px 16px !important; align-items: flex-start !important; }
+    .monaco-dialog-box .dialog-message-container,
+    .monaco-dialog-box .dialog-message-text,
+    .monaco-dialog-box .dialog-message-detail { white-space: normal !important; overflow-wrap: anywhere; min-width: 0 !important; font-size: 15px !important; line-height: 1.45 !important; }
+    .monaco-dialog-box .dialog-buttons-row { padding: 0 !important; }
+    .monaco-dialog-box .dialog-buttons { display: flex !important; flex-direction: column-reverse !important; gap: 8px !important; flex: 1 1 auto !important; width: 100% !important; margin: 0 !important; overflow: visible !important; }
+    .monaco-dialog-box .dialog-buttons .monaco-button {
+        width: 100% !important;
+        max-width: none !important;
+        margin: 0 !important;
+        min-height: 44px !important;
+        line-height: 42px !important;
+        font-size: 15px !important;
+        border-radius: 8px !important;
+        box-sizing: border-box !important;
+    }
+    .monaco-dialog-box .dialog-toolbar-row .action-label { width: 36px !important; height: 36px !important; }
+
+    /* Notification pop-ups (bottom right) use the whole width. */
+    .monaco-workbench .notifications-toasts { left: 6px !important; right: 6px !important; width: auto !important; }
+    .monaco-workbench .notifications-toasts .notification-toast-container,
+    .monaco-workbench .notifications-toasts .notification-toast { width: 100% !important; max-width: none !important; margin-left: 0 !important; }
+    .monaco-workbench .notifications-center { left: 6px !important; right: 6px !important; width: auto !important; max-width: none !important; }
+
+    /* Title bar: no layout buttons (one part shows at a time) and no squeezed search box; our
+       reload and AI chat buttons take their place. */
+    .monaco-workbench .part.titlebar .command-center,
+    .monaco-workbench .part.titlebar .action-label[aria-label^="Customize Layout"],
+    .monaco-workbench .part.titlebar .action-label[aria-label^="Toggle Primary Side Bar"],
+    .monaco-workbench .part.titlebar .action-label[aria-label^="Toggle Panel"],
+    .monaco-workbench .part.titlebar .action-label[aria-label*="Secondary Side Bar"] {
+        display: none !important;
+    }
+    /* Above the title bar's drag area, which otherwise takes the taps. */
+    .lfy-titlebar-buttons { position: relative; z-index: 10; display: flex; align-items: center; gap: 4px; padding: 0 6px; -webkit-app-region: no-drag; }
+    .lfy-titlebar-buttons button {
+        width: 36px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--vscode-titleBar-activeForeground);
+        font-size: 16px;
+        cursor: pointer;
+    }
+    .lfy-titlebar-buttons button:active { background: var(--vscode-toolbar-hoverBackground); }
+}
+
+/* Narrow screens: the open side bar or panel covers the editor at full width. */
+@media (max-width: 820px) {
+    .monaco-workbench .split-view-view:has(> .part.sidebar:not(.hidden)),
+    .monaco-workbench .split-view-view:has(> .part.panel:not(.hidden)) {
+        position: fixed !important;
+        top: var(--lfy-top, 35px) !important;
+        bottom: var(--lfy-bottom, 30px) !important;
+        left: 48px !important;
+        right: 0 !important;
+        width: auto !important;
+        height: auto !important;
+        z-index: 40;
+        box-shadow: 0 0 24px rgba(0, 0, 0, .5);
+    }
+    /* The side bar (Explorer, Source Control, Run, Extensions...) slides in from the left, the
+       panel (Problems, Terminal...) up from the bottom; phone.js slides them out again. */
+    .monaco-workbench .split-view-view:has(> .part.sidebar:not(.hidden)) { animation: lfy-slide-from-left .22s ease-out; }
+    .monaco-workbench .split-view-view:has(> .part.panel:not(.hidden)) { animation: lfy-slide-from-bottom .22s ease-out; }
+
+    /* Every side view but the Explorer (Search, Source Control, Run, Extensions...) and the panel
+       are full-screen drawers over everything, with an ✕ on top (phone.js adds it). */
+    body.lfy-sidebar-drawer .monaco-workbench .split-view-view:has(> .part.sidebar:not(.hidden)),
+    body.lfy-panel-drawer .monaco-workbench .split-view-view:has(> .part.panel:not(.hidden)) {
+        top: 0 !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        z-index: 2550 !important;
+        box-shadow: none !important;
+    }
+    body.lfy-sidebar-drawer .monaco-workbench .part.sidebar:not(.hidden),
+    body.lfy-panel-drawer .monaco-workbench .part.panel:not(.hidden) { height: 100% !important; }
+    body.lfy-sidebar-drawer .monaco-workbench .part.sidebar:not(.hidden) > .content { height: calc(100% - 48px) !important; }
+    body.lfy-sidebar-drawer .monaco-workbench .part.sidebar:not(.hidden) > .composite.title { height: 48px !important; padding-right: 52px; position: relative; }
+    body.lfy-sidebar-drawer .monaco-workbench .part.sidebar:not(.hidden) > .composite.title .title-label h2 { font-size: 15px !important; line-height: 48px !important; }
+    /* The view's own buttons (refresh, collapse, …) sit on the title's line, finger-size. */
+    body.lfy-sidebar-drawer .monaco-workbench .part.sidebar:not(.hidden) > .composite.title { align-items: center !important; }
+    body.lfy-sidebar-drawer .monaco-workbench .part.sidebar:not(.hidden) > .composite.title .title-actions { height: auto !important; display: flex !important; align-items: center; }
+    body.lfy-sidebar-drawer .monaco-workbench .part.sidebar:not(.hidden) > .composite.title .title-actions .action-label {
+        width: 40px !important;
+        height: 40px !important;
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px !important;
+        border-radius: 8px;
+    }
+    .lfy-drawer-close {
+        position: absolute;
+        top: 2px;
+        right: 4px;
+        width: 44px;
+        height: 44px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        font-size: 18px;
+        color: var(--vscode-foreground);
+        cursor: pointer;
+    }
+    .lfy-drawer-close:active { background: var(--vscode-toolbar-hoverBackground); }
+    body.lfy-sidebar-drawer .part.sidebar .lfy-drawer-close { display: flex; }
+
+    /* The panel drawer's header: tabs and buttons a finger can hit, no Maximize (it is full screen). */
+    .monaco-workbench .part.panel:not(.hidden) > .composite.title { height: 48px !important; }
+    .monaco-workbench .part.panel:not(.hidden) > .content { height: calc(100% - 48px) !important; }
+    .monaco-workbench .part.panel > .composite.title .title-actions .action-label:not(.separator),
+    .monaco-workbench .part.panel > .composite.title .global-actions .action-label:not(.separator) {
+        width: 36px !important;
+        padding: 0 !important;
+        height: 40px !important;
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px !important;
+        border-radius: 8px;
+    }
+    .monaco-workbench .part.panel > .composite.title .composite-bar .action-item .action-label { font-size: 14px !important; line-height: 48px !important; }
+    /* After the size rule above, so it wins: no Maximize (the panel is full screen already). */
+    .monaco-workbench .part.panel > .composite.title .global-actions .action-label[aria-label^="Maximize Panel"],
+    .monaco-workbench .part.panel > .composite.title .global-actions .action-label[aria-label^="Restore Panel"],
+    .monaco-workbench .part.panel > .composite.title .action-label[aria-label^="Maximize Panel"],
+    .monaco-workbench .part.panel > .composite.title .action-label[aria-label^="Restore Panel"] { display: none !important; }
+    .monaco-workbench .part.panel > .composite.title .action-label.separator { margin: 0 4px !important; }
+    /* The open panel's name, which opens the list of panels (phone.js); VS Code's tabs stay for
+       that list but out of sight. */
+    .monaco-workbench .part.panel > .composite.title .lfy-panel-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1 1 auto;
+        min-width: 84px;
+        height: 40px;
+        margin: 4px 4px 4px 8px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--vscode-panelTitle-activeForeground, var(--vscode-foreground));
+        font-size: 15px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .monaco-workbench .part.panel > .composite.title .lfy-panel-title:active { background: var(--vscode-toolbar-hoverBackground); }
+    .monaco-workbench .part.panel > .composite.title:has(> .lfy-panel-title) > .composite-bar-container {
+        position: absolute !important;
+        left: 0;
+        top: 0;
+        width: 1px !important;
+        opacity: 0;
+        pointer-events: none;
+    }
+    .monaco-workbench .part.panel > .composite.title:has(> .lfy-panel-title) > .title-actions { flex: 0 0 auto !important; }
+    .monaco-workbench .part.panel > .composite.title:has(> .lfy-panel-title) > .title-label { display: none !important; }
+    .monaco-workbench .part.panel > .composite.title .lfy-panel-title > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+    /* Terminal: no split (one terminal at a time on a phone) and no name entry (··· has it). */
+    .monaco-workbench .part.panel > .composite.title .title-actions .action-item:has(> .action-label[aria-label^="Split Terminal"]),
+    .monaco-workbench .part.panel > .composite.title .title-actions .action-item.menu-entry:has(> .action-label[aria-label^="Focus Terminal"]) { display: none !important; }
+    .monaco-workbench .part.panel > .composite.title .title-actions .monaco-dropdown-with-primary .action-label { width: 34px !important; }
+    /* New Terminal's shell picker (˅): ··· has the same choices, and the title needs the room. */
+    .monaco-workbench .part.panel > .composite.title .title-actions .monaco-dropdown-with-primary .dropdown-action-container { display: none !important; }
+    .monaco-workbench .part.sidebar:not(.hidden),
+    .monaco-workbench .part.sidebar:not(.hidden) > .content,
+    .monaco-workbench .part.sidebar:not(.hidden) .monaco-pane-view,
+    .monaco-workbench .part.sidebar:not(.hidden) .split-view-container,
+    .monaco-workbench .part.sidebar:not(.hidden) .split-view-view,
+    .monaco-workbench .part.sidebar:not(.hidden) .pane,
+    .monaco-workbench .part.sidebar:not(.hidden) .monaco-list,
+    .monaco-workbench .part.sidebar:not(.hidden) .monaco-scrollable-element,
+    .monaco-workbench .part.sidebar:not(.hidden) .webview {
+        width: 100% !important;
+    }
+    .monaco-workbench .part.sidebar:not(.hidden) > .title,
+    .monaco-workbench .part.sidebar:not(.hidden) .composite.title { width: 100% !important; }
+
+    /* The panel (terminal, problems, output) is a full screen too, not a strip under the code. */
+    .monaco-workbench .part.panel:not(.hidden),
+    .monaco-workbench .part.panel:not(.hidden) > .composite.title,
+    .monaco-workbench .part.panel:not(.hidden) > .content,
+    .monaco-workbench .part.panel:not(.hidden) .monaco-pane-view,
+    .monaco-workbench .part.panel:not(.hidden) .split-view-container,
+    .monaco-workbench .part.panel:not(.hidden) .split-view-view,
+    .monaco-workbench .part.panel:not(.hidden) .pane,
+    .monaco-workbench .part.panel:not(.hidden) .terminal-outer-container,
+    .monaco-workbench .part.panel:not(.hidden) .terminal-split-pane,
+    .monaco-workbench .part.panel:not(.hidden) .terminal-wrapper {
+        width: 100% !important;
+        height: 100% !important;
+    }
+    .monaco-workbench .part.panel:not(.hidden) > .composite.title { height: 35px !important; }
+    .monaco-workbench .part.panel:not(.hidden) > .content { height: calc(100% - 35px) !important; }
+
+    /* Webviews cannot be drawn over this full-screen side bar (VS Code ties them to it with CSS
+       anchor positioning): on a phone the AI Agents chat opens as a full-screen editor tab. */
+
+    /* Go to File, the command palette, and other pickers: full width at the top. */
+    .monaco-workbench .quick-input-widget {
+        left: 6px !important;
+        right: 6px !important;
+        width: auto !important;
+        margin-left: 0 !important;
+        top: 6px !important;
+        max-width: none !important;
+    }
+
+    /* Rows stay inside the side bar, the selected one with a clean, rounded highlight. */
+    .monaco-workbench .part.sidebar .monaco-list-rows { width: 100% !important; }
+    .monaco-workbench .part.sidebar .monaco-list-row { width: auto !important; left: 4px !important; right: 4px !important; border-radius: 6px; }
+    .monaco-workbench .part.sidebar .monaco-list:focus .monaco-list-row.focused,
+    .monaco-workbench .part.sidebar .monaco-list .monaco-list-row.selected { outline-offset: -1px !important; }
+
+    /* The status bar keeps what a phone uses (branch, problems, Go Live, notifications): the
+       keyboard layout, forwarded ports, remote and sync icons, and the AI Agents item (its icon
+       is in the activity bar) would overlap each other. */
+    .monaco-workbench .part.statusbar #status\.workbench\.keyboardLayout,
+    .monaco-workbench .part.statusbar #status\.forwardedPorts,
+    .monaco-workbench .part.statusbar #status\.host,
+    .monaco-workbench .part.statusbar #status\.scm\.1,
+    .monaco-workbench .part.statusbar .statusbar-item[aria-label*="AI Agents,"],
+    /* With a file open, its details (line and column, indentation, encoding, line endings,
+       language) would push Go Live and the branch off the screen. */
+    .monaco-workbench .part.statusbar #status\.editor\.selection,
+    .monaco-workbench .part.statusbar #status\.editor\.indentation,
+    .monaco-workbench .part.statusbar #status\.editor\.encoding,
+    .monaco-workbench .part.statusbar #status\.editor\.eol,
+    .monaco-workbench .part.statusbar #status\.editor\.mode { display: none !important; }
+    .monaco-workbench .part.statusbar .statusbar-item { max-width: 45vw; }
+    .monaco-workbench .part.statusbar .statusbar-item-label { overflow: hidden; text-overflow: ellipsis; }
+
+    /* The empty editor's keyboard shortcuts mean nothing on a phone (and run off the screen). */
+    .monaco-workbench .editor-group-watermark .shortcuts { display: none !important; }
+
+    /* Every pixel goes to the code: no minimap, slimmer gutter. */
+    .monaco-workbench .monaco-editor .minimap,
+    .monaco-workbench .monaco-editor .decorationsOverviewRuler { display: none !important; }
+}

@@ -213,3 +213,34 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .dialog-foot .grow { flex: 1; }
 .link-btn.danger { color: var(--vscode-errorForeground); }
 .box.drop { outline: 2px dashed var(--vscode-focusBorder); outline-offset: -2px; }
+
+/* Phones and tablets: touch-size buttons, a message box iOS does not zoom into, full-width pop-ups. */
+@media (pointer: coarse), (max-width: 600px) {
+    textarea { font-size: 16px; min-height: 48px; }
+    .send-btn { width: 40px; height: 40px; border-radius: 8px; }
+    .picker-btn, .slash-btn { min-height: 36px; padding: 0 10px; font-size: 13.5px; }
+    .send-btn .ico svg { width: 18px; height: 18px; }
+    .icon-btn { width: 36px; height: 36px; }
+    .icon-btn svg { width: 18px; height: 18px; }
+    .chip { height: 28px; font-size: 12.5px; }
+    .chip button { width: 24px; height: 24px; }
+    .pick-item, .pop-item { min-height: 40px; font-size: 14px; }
+    .pick-head { min-height: 44px; }
+    .dot { width: 18px; height: 18px; }
+    .picker-pop, .slash-pop { max-height: 70vh; }
+    .history-pop { left: 4px; right: 4px; max-height: 70vh; }
+    .history-item { min-height: 40px; }
+    .dialog-layer { padding: 12px 8px; }
+    .dialog { max-width: 100%; }
+    .chips { flex-wrap: wrap; }
+}
+
+/* Narrow: an agent card wraps, the name on the first line, the status and button on the second. */
+@media (max-width: 420px) {
+    .agent-card { flex-wrap: wrap; row-gap: 6px; }
+    .agent-card-body { flex: 1 1 calc(100% - 40px); }
+    .agent-card-body b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .agent-card > .badge { margin-left: 32px; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .agent-card > :last-child { margin-left: auto; }
+    .agent-card > .badge:last-child { margin-left: 32px; }
+}

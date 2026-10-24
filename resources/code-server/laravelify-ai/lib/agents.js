@@ -60,11 +60,13 @@ const AGENTS = {
         args(prompt, model, resume, effort) {
             return [
                 '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-                '--permission-mode', 'acceptEdits', '--allowedTools', 'Bash',
+                // "=" binds one value: newer CLIs read --allowedTools as a list and would take
+                // the message as another tool name, then wait for a prompt on stdin.
+                '--permission-mode', 'acceptEdits', '--allowedTools=Bash',
                 ...(model && model !== 'default' ? ['--model', model] : []),
                 ...(effort ? ['--effort', effort] : []),
                 ...(resume ? ['--resume', resume] : []),
-                prompt,
+                '--', prompt,
             ];
         },
     },

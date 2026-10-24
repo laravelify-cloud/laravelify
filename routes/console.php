@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\HostWriter;
 use App\Services\TerminalSessions;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -12,6 +13,9 @@ Artisan::command('inspire', function () {
 // Uptime checks and Telegram alerts: websites, workers, and disk every minute; apt patches once a day.
 Schedule::command('laravelify:monitor')->everyMinute()->withoutOverlapping(10);
 Schedule::command('laravelify:monitor --patches')->dailyAt('06:00')->withoutOverlapping(30);
+
+// One Claude, Cursor, and Copilot sign-in for every website's VS Code: the newest copy goes to all.
+Schedule::call(fn () => app(HostWriter::class)->syncAgentSignIns())->name('agent-auth-sync')->everyMinute()->withoutOverlapping(5);
 
 // The panel's own queue worker runs every deploy: start it again when it stopped, and say so.
 Schedule::command('laravelify:watch-worker')->everyMinute()->withoutOverlapping(5);

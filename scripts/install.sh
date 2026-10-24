@@ -462,7 +462,7 @@ fi
 step "Installing nginx, Redis, Supervisor, Git, and tools"
 apt-get update
 apt_install ca-certificates curl gnupg lsb-release software-properties-common \
-  nginx supervisor git unzip redis-server ufw debconf-utils rclone
+  nginx supervisor git unzip zip acl redis-server ufw debconf-utils rclone
 
 # The PHP repository is added once.
 php_repository_present() {
@@ -487,7 +487,7 @@ install_php() {
   local packages=()
   local extension
 
-  for extension in fpm cli mysql xml mbstring curl zip redis bcmath intl gd; do
+  for extension in fpm cli mysql xml mbstring curl zip redis bcmath intl gd sqlite3; do
     packages+=("php${version}-${extension}")
   done
 

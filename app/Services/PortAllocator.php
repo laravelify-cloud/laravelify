@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CodeWorkspace;
 use App\Models\Website;
 
 /**
@@ -88,9 +89,12 @@ class PortAllocator
             ...$this->claimed,
         ];
 
-        foreach (['port', 'http_port', 'reverb_port'] as $column) {
+        foreach (['port', 'http_port', 'reverb_port', 'code_server_port'] as $column) {
             $ports = [...$ports, ...Website::query()->whereNotNull($column)->pluck($column)->map(fn ($port) => (int) $port)->all()];
         }
+
+        // VS Code workspaces keep their editor's port while it is stopped, as websites do.
+        $ports = [...$ports, ...CodeWorkspace::query()->whereNotNull('code_server_port')->pluck('code_server_port')->map(fn ($port) => (int) $port)->all()];
 
         return array_fill_keys($ports, true);
     }

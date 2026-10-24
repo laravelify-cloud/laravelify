@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CodeWorkspaceDownloadController;
 use App\Http\Controllers\DatabaseExportController;
 use App\Http\Controllers\DeploymentLogController;
 use App\Http\Controllers\GithubAppHookController;
@@ -22,6 +23,7 @@ use App\Livewire\Database\Index as DatabaseIndex;
 use App\Livewire\Database\Show as DatabaseShow;
 use App\Livewire\Database\Table as DatabaseTable;
 use App\Livewire\Deployments\Index as DeploymentsIndex;
+use App\Livewire\Domains\Index as DomainIndex;
 use App\Livewire\Groups\Form as GroupForm;
 use App\Livewire\Groups\Index as GroupIndex;
 use App\Livewire\Groups\Show as GroupShow;
@@ -53,7 +55,8 @@ use App\Livewire\Tunnels\Show as TunnelShow;
 use App\Livewire\Websites\Form as WebsiteForm;
 use App\Livewire\Websites\Show as WebsiteShow;
 use App\Livewire\Websites\VsCode as WebsiteVsCode;
-use App\Models\Website;
+use App\Livewire\Workspaces\Index as WorkspaceIndex;
+use App\Livewire\Workspaces\Open as WorkspaceOpen;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -81,12 +84,11 @@ Route::get('/websites/{website}', WebsiteShow::class)->name('websites.show');
 Route::get('/websites/{website}/files/download', WebsiteFileController::class)->name('websites.files.download');
 Route::get('/websites/{website}/vscode', WebsiteVsCode::class)->name('websites.vscode');
 
-// nginx sends a VS Code that stopped (30 minutes idle) here instead of a 502: its launcher starts it again.
-Route::get('/code-restart/{token}', function (string $token) {
-    $website = Website::query()->where('code_server_token', $token)->firstOrFail();
+// /code-restart/{token} (an editor that stopped while idle) and /code-share/{share} are in bootstrap/app.php.
 
-    return redirect()->route('websites.vscode', $website);
-})->where('token', '[a-z0-9]{32}')->name('websites.vscode.restart');
+Route::get('/workspaces', WorkspaceIndex::class)->name('workspaces.index');
+Route::get('/workspaces/{workspace}/open', WorkspaceOpen::class)->name('workspaces.open');
+Route::get('/workspaces/{workspace}/download', CodeWorkspaceDownloadController::class)->name('workspaces.download');
 
 Route::get('/deployments', DeploymentsIndex::class)->name('deployments.index');
 Route::get('/deployments/{deployment}/log', DeploymentLogController::class)->name('deployments.log');
@@ -116,6 +118,7 @@ Route::get('/database/{database}', DatabaseShow::class)->where('database', '[A-Z
 Route::get('/database/{database}/{table}', DatabaseTable::class)->where(['database' => '[A-Za-z0-9_-]+', 'table' => '[A-Za-z0-9_$-]+'])->name('database.table');
 Route::get('/tools/phpmyadmin', PhpMyAdminController::class)->name('tools.phpmyadmin');
 
+Route::get('/domains', DomainIndex::class)->name('domains.index');
 Route::get('/tunnels', TunnelIndex::class)->name('tunnels.index');
 Route::get('/tunnels/create', TunnelForm::class)->name('tunnels.create');
 Route::get('/tunnels/{tunnel}', TunnelShow::class)->name('tunnels.show');
@@ -149,7 +152,7 @@ Route::post('/hooks/github/{website:slug}', GithubHookController::class)
     ->name('hooks.github');
 
 Route::post('/hooks/live/{website:slug}/{action}', LiveServerHookController::class)
-    ->whereIn('action', ['start', 'stop'])
+    ->whereIn('action', ['start', 'stop', 'auth'])
     ->middleware('throttle:30,1')
     ->name('hooks.live');
 

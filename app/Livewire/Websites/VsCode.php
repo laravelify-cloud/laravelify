@@ -6,6 +6,7 @@ use App\Livewire\PanelComponent;
 use App\Models\PanelTask;
 use App\Models\Website;
 use App\Services\CodeServer;
+use App\Services\CodeWorkspaces;
 use App\Services\PanelTaskRunner;
 use Illuminate\Support\Facades\Auth;
 use Throwable;
@@ -121,6 +122,10 @@ class VsCode extends PanelComponent
 
             return;
         }
+
+        // The project shows on the Workspaces page from now on (once, as its own workspace).
+        $workspace = app(CodeWorkspaces::class)->forWebsite($this->website, Auth::user());
+        $workspace->forceFill(['opened_at' => now()])->save();
 
         // A full page load: VS Code is not a Livewire page.
         $this->redirect($result['url']);

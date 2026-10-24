@@ -79,6 +79,7 @@ class CodeServer
         if ($website->code_server_token && $website->code_server_port && $this->status($website)['running']) {
             $this->writeGitCredentials($website, $author);
             $this->writeLiveServerConfig($website);
+            $this->shareAgentSignIns();
 
             return ['url' => (string) $this->url($website), 'installing' => null];
         }
@@ -100,6 +101,7 @@ class CodeServer
 
         $this->writeGitCredentials($website, $author);
         $this->writeLiveServerConfig($website);
+        $this->shareAgentSignIns();
         $this->prepareProfile($website);
         $this->host->codeServerStart($website, (int) $website->code_server_port, (string) $website->code_server_token, $this->workspace->path($website));
         $this->waitForPort((int) $website->code_server_port);
@@ -132,8 +134,20 @@ class CodeServer
     {
         if ($this->status($website)['running']) {
             $this->writeGitCredentials($website, null);
-        } elseif ($website->live_host) {
+        } elseif ($website->live_port !== null) {
             $this->live->stop($website);
+        }
+    }
+
+    /**
+     * The newest Claude, Cursor, and Copilot sign-in, so a website opened for the first time is
+     * signed in already. A failure only means signing in again in this editor.
+     */
+    public function shareAgentSignIns(): void
+    {
+        try {
+            $this->host->syncAgentSignIns();
+        } catch (\Throwable) {
         }
     }
 
@@ -192,6 +206,9 @@ class CodeServer
     public const DEFAULT_SETTINGS = [
         // The built-in Chat works only with GitHub Copilot, which code-server cannot have.
         'chat.disableAIFeatures' => true,
+        'chat.commandCenter.enabled' => false,
+        // Its Chat view opens in the secondary side bar; the AI Agents chat is in the activity bar.
+        'workbench.secondarySideBar.defaultVisibility' => 'hidden',
         // No welcome page (code-server's shows an advertisement for Coder).
         'workbench.startupEditor' => 'none',
         'workbench.welcomePage.walkthroughs.openOnInstall' => false,
@@ -201,6 +218,15 @@ class CodeServer
         'workbench.colorTheme' => 'Default Dark Modern',
         // The AI chat's "Add to Chat · Quick Edit" links above a selection are CodeLenses.
         'editor.codeLens' => true,
+        // On a phone the AI chat opens in Zen Mode as a full-screen drawer: no browser full
+        // screen, no centred column, no tabs.
+        'zenMode.fullScreen' => false,
+        'zenMode.centerLayout' => false,
+        'zenMode.showTabs' => 'none',
+        'zenMode.restore' => false,
+        // Settings and similar editors open as tabs, not floating windows: on a phone a floating
+        // window is wider than the screen (VS Code sizes it at 400px or more).
+        'workbench.editor.useModal' => 'off',
     ];
 
     /**
@@ -209,7 +235,15 @@ class CodeServer
      */
     private function prepareProfile(Website $website): void
     {
-        $user = $this->sites->for($website);
+        $this->prepareProfileFor($this->sites->for($website));
+    }
+
+    /**
+     * The AI Agents extension and the default settings for the editor of a user (a website's, or
+     * a workspace's with several projects).
+     */
+    public function prepareProfileFor(SiteUser $user): void
+    {
         $home = $user->home();
         $manifest = json_decode((string) file_get_contents(resource_path('code-server/laravelify-ai/package.json')), true);
         $folder = $home.'/.code-server/extensions/laravelify.laravelify-ai-'.$manifest['version'];
@@ -282,7 +316,7 @@ class CodeServer
         return $target;
     }
 
-    private function waitForPort(int $port): void
+    public function waitForPort(int $port): void
     {
         for ($attempt = 0; $attempt < 40; $attempt++) {
             $socket = @fsockopen('127.0.0.1', $port, $code, $message, 0.5);

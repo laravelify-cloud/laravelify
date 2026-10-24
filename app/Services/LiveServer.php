@@ -34,6 +34,12 @@ class LiveServer
         return $website->live_host ? 'https://'.$website->live_host.'/' : null;
     }
 
+    /** Running: the name routes to a dev server. Stopped, the website keeps its name for next time. */
+    public function running(Website $website): bool
+    {
+        return $website->live_host !== null && $website->live_port !== null;
+    }
+
     /**
      * The key the website's editor proves itself with (made the first time).
      */
@@ -86,21 +92,42 @@ class LiveServer
     }
 
     /**
-     * Take the name, its tunnel route, and its DNS record away.
+     * Stop routing the name to the dev server. The website keeps the name and its DNS record, so
+     * the next Go Live gets the same address at once (a new name takes a while to resolve, and a
+     * browser that asked too early remembers that it did not exist).
      */
     public function stop(Website $website): void
+    {
+        if (! $website->live_host || $website->live_port === null) {
+            return;
+        }
+
+        if ($tunnel = $this->tunnelOf($website)) {
+            $this->routes->route($tunnel, (string) $website->live_host, '', null, remove: true, keepDns: true);
+        }
+
+        $website->forceFill(['live_port' => null])->save();
+    }
+
+    /**
+     * Give the name up: its tunnel route and its DNS record go. The next Go Live gets a new one.
+     */
+    public function release(Website $website): void
     {
         if (! $website->live_host) {
             return;
         }
 
-        $tunnel = CloudflareTunnel::query()->find($website->live_tunnel_id) ?? $this->preview->tunnelFor($website);
-
-        if ($tunnel) {
+        if ($tunnel = $this->tunnelOf($website)) {
             $this->routes->route($tunnel, (string) $website->live_host, '', null, remove: true);
         }
 
         $website->forceFill(['live_host' => null, 'live_port' => null, 'live_tunnel_id' => null])->save();
+    }
+
+    private function tunnelOf(Website $website): ?CloudflareTunnel
+    {
+        return CloudflareTunnel::query()->find($website->live_tunnel_id) ?? $this->preview->tunnelFor($website);
     }
 
     /**

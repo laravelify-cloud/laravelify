@@ -2,7 +2,8 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="{{ request()->cookie('laravelify-theme') === 'light' ? '' : 'dark' }}">
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        {{-- The panel is laid out for PCs (1024px and wider): phones and tablets show that layout, zoomed to fit, and can pinch-zoom. --}}
+        <meta name="viewport" content="width=1024">
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <title>{{ $title ?? config('app.name') }}</title>
         @include('layouts.partials.favicons')
@@ -109,6 +110,14 @@
                     <a class="menu-item {{ request()->routeIs('sources.*', 'settings.github') ? 'menu-item-active' : '' }}" href="{{ route('sources.index') }}" wire:navigate>
                         <x-menu-icon name="sources" />
                         <span>Sources</span>
+                    </a>
+                    <a class="menu-item {{ request()->routeIs('domains.*') ? 'menu-item-active' : '' }}" href="{{ route('domains.index') }}" wire:navigate>
+                        <x-menu-icon name="globe" />
+                        <span>Domains</span>
+                    </a>
+                    <a class="menu-item {{ request()->routeIs('workspaces.*') ? 'menu-item-active' : '' }}" href="{{ route('workspaces.index') }}" wire:navigate>
+                        <x-menu-icon name="grid" />
+                        <span>Workspaces</span>
                     </a>
                     <a class="menu-item {{ request()->routeIs('tunnels.*') ? 'menu-item-active' : '' }}" href="{{ route('tunnels.index') }}" wire:navigate>
                         <x-menu-icon name="tunnels" />

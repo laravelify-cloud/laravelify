@@ -65,10 +65,55 @@ function ask(config, action, body = {}) {
     });
 }
 
+/** Until the address answers through Cloudflare (or 90 seconds pass): the dev server is behind it. */
+async function answersPublicly(url) {
+    const https = require('https');
+
+    for (let tries = 0; tries < 45; tries++) {
+        const status = await new Promise((resolve) => {
+            https.get(url, { timeout: 8000 }, (response) => { response.resume(); resolve(response.statusCode); })
+                .on('timeout', function () { this.destroy(); resolve(0); })
+                .on('error', () => resolve(0));
+        });
+
+        // 530 and 502: Cloudflare has the name but not the route yet.
+        if (status && status < 500) return true;
+
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    return false;
+}
+
 const read = (root, file) => { try { return fs.readFileSync(path.join(root, file), 'utf8'); } catch (e) { return null; } };
 
 /** The time of the last save, read by live-router.php (pages reload when it changes). */
 const versionFile = () => path.join(os.homedir(), '.laravelify', 'live-version');
+
+/** PHP's own session folder is read-only for the editor: sessions go in the website's home. */
+const sessionDir = () => path.join(os.homedir(), '.laravelify', 'php-sessions');
+
+/** The project's own Live Server command, written by the AI chat (see LIVE_SETUP_PROMPT). */
+const LIVE_FILE = path.join('.laravelify', 'live.json');
+
+const LIVE_SETUP_PROMPT = 'Set up the Live Server for this project. Work out the command that runs its dev server, '
+    + 'installing its packages first when they are missing, listening on 127.0.0.1 and on the port written as {port}. '
+    + 'Save it in .laravelify/live.json like {"label": "Flask", "command": "pip install -r requirements.txt && flask run --host 127.0.0.1 --port {port}"}. '
+    + 'Do not start the server yourself: the Live Server runs the command as soon as the file is saved.';
+
+function savedCommand(root, port) {
+    let saved = null;
+
+    try { saved = JSON.parse(read(root, LIVE_FILE) || 'null'); } catch (e) {}
+
+    if (!saved || typeof saved.command !== 'string' || !saved.command.trim()) return null;
+
+    return {
+        label: String(saved.label || 'Dev server'),
+        reload: ['hmr', 'pages', 'preview'].includes(saved.reload) ? saved.reload : 'preview',
+        command: saved.command.split('{port}').join(String(port)),
+    };
+}
 
 /**
  * How to run this project's dev server on 127.0.0.1:port: { label, command, reload } or null.
@@ -78,6 +123,10 @@ const versionFile = () => path.join(os.homedir(), '.laravelify', 'live-version')
  * (live-router.php reloads every open page), or 'preview' (VS Code reloads its own preview).
  */
 function devCommand(root, port, router = null) {
+    const saved = savedCommand(root, port);
+
+    if (saved) return saved;
+
     const pkgText = read(root, 'package.json');
     const composer = read(root, 'composer.json') || '';
     const install = fs.existsSync(path.join(root, 'node_modules')) ? '' : 'npm install && ';
@@ -110,7 +159,7 @@ function devCommand(root, port, router = null) {
     if (composer || fs.readdirSync(root).some((file) => /\.(php|html?)$/.test(file)) || docroot !== '.') {
         const routed = router ? ` '${router}'` : '';
 
-        return { label: composer || fs.existsSync(path.join(root, docroot, 'index.php')) ? 'PHP' : 'Static site', reload: router ? 'pages' : 'preview', command: `LIVE_VERSION_FILE='${versionFile()}' php -S 127.0.0.1:${port} -t ${docroot}${routed}` };
+        return { label: composer || fs.existsSync(path.join(root, docroot, 'index.php')) ? 'PHP' : 'Static site', reload: router ? 'pages' : 'preview', command: `LIVE_VERSION_FILE='${versionFile()}' php -d session.save_path='${sessionDir()}' -S 127.0.0.1:${port} -t ${docroot}${routed}` };
     }
 
     return null;
@@ -145,6 +194,37 @@ class LiveServer {
                 this.stop();
             }
         });
+    }
+
+    /**
+     * No known way to run this project (made with the AI, Python, Go...): the AI chat works out the
+     * command and saves it in .laravelify/live.json, and the Live Server starts as soon as it is there.
+     */
+    async askAi() {
+        const pick = await vscode.window.showWarningMessage(
+            'The Live Server does not know how to run this project yet. Let the AI chat work out the command?',
+            'Ask the AI',
+        );
+
+        if (pick !== 'Ask the AI') return;
+
+        this.waitForAi();
+        await vscode.commands.executeCommand('laravelifyAi.prompt', LIVE_SETUP_PROMPT);
+    }
+
+    waitForAi() {
+        if (this.aiWatcher) return;
+
+        this.aiWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(this.root, LIVE_FILE));
+        const ready = () => {
+            if (this.state === 'off' && savedCommand(this.root, 0)) {
+                this.aiWatcher.dispose();
+                this.aiWatcher = null;
+                this.start();
+            }
+        };
+        this.aiWatcher.onDidCreate(ready);
+        this.aiWatcher.onDidChange(ready);
     }
 
     render(detail) {
@@ -194,8 +274,10 @@ class LiveServer {
         this.dev = dev;
 
         if (!dev) {
-            return vscode.window.showErrorMessage('No dev server found: add a "dev" script to package.json, or an index.php / index.html.');
+            return this.askAi();
         }
+
+        try { fs.mkdirSync(sessionDir(), { recursive: true }); } catch (e) {}
 
         this.state = 'starting';
         this.render('Starting ' + dev.label + '…');
@@ -222,6 +304,9 @@ class LiveServer {
         try {
             const answer = await ask(config, 'start', { port: this.port });
             this.url = answer.url;
+            // A new name takes a moment to resolve; opened too early, the preview stays blank.
+            this.render('Waiting for ' + new URL(this.url).host + '…');
+            await answersPublicly(this.url);
             this.state = 'live';
             this.render();
             this.keepAwake(config);
@@ -306,4 +391,11 @@ class LiveServer {
     }
 }
 
-module.exports = { LiveServer, devCommand };
+/** Tell the panel a sign-in or sign-out happened here: every website gets it at once. */
+function shareSignIns() {
+    const config = settings();
+
+    return config ? ask(config, 'auth').catch(() => {}) : Promise.resolve();
+}
+
+module.exports = { LiveServer, devCommand, shareSignIns };

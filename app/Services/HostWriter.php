@@ -299,11 +299,59 @@ UNIT;
     }
 
     /**
+     * Give every website the newest Claude, Cursor, and Copilot sign-in (one sign-in for all).
+     */
+    public function syncAgentSignIns(): string
+    {
+        return $this->apply(['agent-auth-sync']);
+    }
+
+    /**
      * Start the panel's queue worker and scheduler again (Supervisor gives up after quick failures).
      */
     public function startPanelWorker(): string
     {
         return $this->apply(['panel-worker-start']);
+    }
+
+    /**
+     * One editor for several websites' projects, as the workspace's own user (see host-apply.sh).
+     *
+     * @param  list<string>  $slugs
+     */
+    public function workspaceStart(string $key, int $port, string $token, array $slugs): string
+    {
+        return $this->apply(['workspace-start', $key, (string) $port, $token, ...$slugs]);
+    }
+
+    public function workspaceStop(string $key): string
+    {
+        return $this->apply(['workspace-stop', $key]);
+    }
+
+    public function workspaceStatus(string $key): string
+    {
+        return $this->apply(['workspace-status', $key]);
+    }
+
+    /**
+     * Stop a workspace's editor and remove its user and its access to these projects.
+     *
+     * @param  list<string>  $slugs
+     */
+    public function workspaceDrop(string $key, array $slugs): string
+    {
+        return $this->apply(['workspace-drop', $key, ...$slugs]);
+    }
+
+    /**
+     * The projects' code in one zip in the panel's storage; returns its path.
+     *
+     * @param  list<string>  $slugs
+     */
+    public function workspaceZip(string $name, array $slugs): string
+    {
+        return $this->apply(['workspace-zip', $name, ...$slugs]);
     }
 
     public function codeServerStop(Website $website): string

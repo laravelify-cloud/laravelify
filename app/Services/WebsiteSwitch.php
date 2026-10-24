@@ -198,7 +198,7 @@ class WebsiteSwitch
         // So does its Live Server's address (remove-site stops the editor itself).
         if ($website->live_host) {
             try {
-                app(LiveServer::class)->stop($website);
+                app(LiveServer::class)->release($website);
             } catch (Throwable) {
                 // As above.
             }

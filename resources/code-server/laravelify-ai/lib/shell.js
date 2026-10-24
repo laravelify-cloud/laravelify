@@ -24,7 +24,8 @@ async function which(name) {
 
 /** A long-running process whose output arrives line by line. */
 function stream(file, args, { cwd, onLine, onExit }) {
-    const child = spawn(file, args, { cwd, env: env() });
+    // No stdin: the message is an argument, and a CLI given an open pipe waits for more input.
+    const child = spawn(file, args, { cwd, env: env(), stdio: ['ignore', 'pipe', 'pipe'] });
     let buffer = '';
     let errors = '';
 

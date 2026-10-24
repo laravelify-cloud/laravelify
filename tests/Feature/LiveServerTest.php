@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\Domains\Index as DomainsIndex;
 use App\Models\CloudflareTunnel;
+use App\Models\User;
 use App\Models\Website;
 use App\Services\CloudflareApi;
 use App\Services\CloudflareRoutes;
@@ -11,7 +13,9 @@ use App\Services\DomainSuggestions;
 use App\Services\HostWriter;
 use App\Services\LiveServer;
 use App\Services\PanelPreview;
+use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Mockery;
 use Mockery\MockInterface;
 use RuntimeException;
@@ -44,28 +48,52 @@ class LiveServerTest extends TestCase
         $this->assertNull($website->fresh()->live_host);
     }
 
-    public function test_it_routes_a_random_name_to_the_dev_server_and_takes_it_away_again(): void
+    public function test_a_website_keeps_its_live_name_when_stopped_and_gives_it_up_on_release(): void
     {
         $website = Website::factory()->create(['slug' => 'shop']);
         $tunnel = CloudflareTunnel::factory()->create();
         $routes = Mockery::mock(CloudflareRoutes::class);
-        $routes->shouldReceive('route')->once()->with(Mockery::on(fn ($t) => $t->is($tunnel)), 'calm-river-4f2a.example.com', 'http://127.0.0.1:14100', 'localhost')
-            ->andReturn(['configured' => true, 'lines' => [['host' => 'calm-river-4f2a.example.com', 'route' => 'added', 'dns' => 'added', 'ok' => true]], 'note' => null]);
-        $routes->shouldReceive('route')->once()->with(Mockery::any(), 'calm-river-4f2a.example.com', '', null, true)
-            ->andReturn(['configured' => true, 'lines' => [], 'note' => null]);
+        $added = ['configured' => true, 'lines' => [['host' => 'calm-river-4f2a.example.com', 'route' => 'added', 'dns' => 'added', 'ok' => true]], 'note' => null];
+        $routes->shouldReceive('route')->twice()->with(Mockery::on(fn ($t) => $t->is($tunnel)), 'calm-river-4f2a.example.com', Mockery::pattern('#^http://127\.0\.0\.1:141#'), 'localhost')->andReturn($added);
+        // Stop: only the tunnel route goes, the DNS record stays. Release: both go.
+        $routes->shouldReceive('route')->once()->with(Mockery::any(), 'calm-river-4f2a.example.com', '', null, true, true)->andReturn(['configured' => true, 'lines' => [], 'note' => null]);
+        $routes->shouldReceive('route')->once()->with(Mockery::any(), 'calm-river-4f2a.example.com', '', null, true)->andReturn(['configured' => true, 'lines' => [], 'note' => null]);
         $live = $this->live(listener: 1001, site: 1001, routes: $routes, tunnel: $tunnel);
 
         $this->assertSame('https://calm-river-4f2a.example.com/', $live->start($website, 14100));
-        $this->assertSame([14100, $tunnel->id], [$website->fresh()->live_port, $website->fresh()->live_tunnel_id]);
+        $this->assertTrue($live->running($website->fresh()));
 
         $live->stop($website);
+        $this->assertSame(['calm-river-4f2a.example.com', null], [$website->fresh()->live_host, $website->fresh()->live_port]);
+        $this->assertFalse($live->running($website->fresh()));
 
+        // The next Go Live (another port) gets the same name.
+        $this->assertSame('https://calm-river-4f2a.example.com/', $live->start($website->fresh(), 14155));
+
+        $live->release($website->fresh());
         $this->assertNull($website->fresh()->live_host);
+    }
+
+    public function test_the_domains_page_lists_every_domain_and_stops_a_live_server(): void
+    {
+        $this->actingAs(User::factory()->create(['two_factor_secret' => app(TwoFactor::class)->generateSecret(), 'two_factor_confirmed_at' => now()]));
+        $shop = Website::factory()->create(['name' => 'shop', 'domain' => 'shop.example.com', 'aliases' => ['www.shop.example.com'], 'preview_host' => 'quiet-lake-1a2b.example.com', 'live_host' => 'calm-river-4f2a.example.com', 'live_port' => 14100]);
+        $this->mock(LiveServer::class, function (MockInterface $live) use ($shop) {
+            $live->shouldReceive('running')->andReturn(true);
+            $live->shouldReceive('stop')->once()->with(Mockery::on(fn ($w) => $w->is($shop)));
+        });
+
+        Livewire::test(DomainsIndex::class)
+            ->assertSee(['shop.example.com', 'www.shop.example.com', 'quiet-lake-1a2b.example.com', 'calm-river-4f2a.example.com'])
+            ->assertSee(['Other domain', 'Preview', 'Live Server', 'Running'])
+            ->set('kind', 'live')
+            ->assertDontSee('quiet-lake-1a2b.example.com')
+            ->call('stopLive', $shop->id);
     }
 
     public function test_an_editor_that_stopped_by_itself_leaves_no_live_address(): void
     {
-        $website = Website::factory()->create(['code_server_token' => str_repeat('a', 32), 'live_host' => 'calm-river-4f2a.example.com']);
+        $website = Website::factory()->create(['code_server_token' => str_repeat('a', 32), 'live_host' => 'calm-river-4f2a.example.com', 'live_port' => 14100]);
         $this->mock(HostWriter::class, fn (MockInterface $host) => $host->shouldReceive('codeServerStatus')->andReturn('inactive -1'));
         $this->mock(LiveServer::class, fn (MockInterface $live) => $live->shouldReceive('stop')->once()->with(Mockery::on(fn ($w) => $w->is($website))));
 

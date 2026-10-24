@@ -2,6 +2,19 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.64] - 2026-10-24
+
+- **VS Code workspaces.** A new Workspaces page lists every project you open in VS Code (opening a website's editor adds it). **Create workspace** puts one project, or several, in one editor; it is named after its projects unless you name it. A workspace of several projects runs as its own Unix user that can reach exactly those projects' folders (through ACLs) and nothing else of the websites; git pushes each project with its own GitHub token. Each workspace can be downloaded as a zip (without installed packages, builds, and `.env` files), shared with a link that anyone can open without a panel account (turn it off or replace it any time), and deleted (its projects stay). Updates install `acl` and `zip` for this.
+- **VS Code on phones and tablets.** The editor is drawn larger on touch screens. Menus (☰, ⚙, accounts, long-press) are full-screen drawers that slide in, with a Close row, and submenus open as the next step with a Back row; only a tap opens a submenu. Search, Source Control, Run, and Extensions open as full-screen drawers with ✕; the Explorer stays beside the activity bar. The bottom panel shows which one is open (**Problems ▾**, **Terminal ▾**) and switches from there. The AI Agents chat opens full screen with ✕. Dialogs fit the screen with stacked buttons, the status bar keeps Go Live visible, a reload button sits in the title bar, and a long-press can no longer pick a menu item by itself. Computers keep the normal VS Code.
+- **The panel lays out at 1024px on every device.** Phones and tablets show the full desktop panel, zoomed to fit, instead of a cramped mobile layout.
+- **Domains page.** Every domain the panel answers on: the panel, websites and their other domains, previews, and Live Servers, with Stop and Release for a Live Server.
+- **Live Server keeps its name.** Each website keeps the address it got the first time, so every Go Live has the same link; Stop keeps the DNS record and Release removes it. The preview waits until the address answers. When the Live Server does not know how to run a project (one made with the AI, Python, Go...), it asks the AI chat to work out the command and starts as soon as it is saved in `.laravelify/live.json`.
+- **One AI sign-in for every website.** Signing in to Claude Code, Cursor Agent, or Copilot CLI in one editor signs in every website's editor and workspace; signing out signs out everywhere.
+- **Panel sign-ins last 2 days** instead of 2 hours. Servers still on the old default move to it on update.
+- **Fixed: Claude Code in the AI chat answered "no stdin data received".** Its tool list swallowed the message; the message is now passed safely and nothing waits on input.
+- **Fixed: PHP sites under the Live Server could not use sessions** (read-only `/var/lib/php/sessions`) **or SQLite** (driver not installed). Sessions go in the website's home, and updates install `php-sqlite3` for every PHP version.
+- **VS Code improvements.** Packages install by themselves when `node_modules` or `vendor` is missing, VS Code's own Chat (Copilot only) is hidden, Settings opens as a tab, and the editor may use half the server's memory (1.5 to 8 GB) so a dev server compiling a big app no longer gets it killed.
+
 ## [0.3.0-beta.63] - 2026-10-24
 
 - **Fixed: VS Code showed a 502 after a while.** It stops itself after 30 minutes without use, and its address then answered Bad gateway. A stopped VS Code now sends you to its launcher, which starts it again and opens it; old links and open tabs keep working.

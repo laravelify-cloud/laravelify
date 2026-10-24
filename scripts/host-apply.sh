@@ -145,6 +145,20 @@ ensure_site_user() {
   install -d -o root -g root -m 0755 "${STATE_DIR}" "${SITE_USERS_ROOT}" "${base}"
   install -d -o "${user}" -g "${user}" -m 0700 "${base}/home" "${base}/tmp"
   install -d -o "${user}" -g "${READ_GROUP}" -m 2750 "${base}/trash"
+  # That mode resets the ACLs' mask: workspaces with this site's project get their way in back.
+  restore_workspace_access "${slug}" "${base}/home"
+}
+
+# restore_workspace_access <slug> <site home>
+restore_workspace_access() {
+  local slug="$1" home="$2" list key
+  command -v setfacl >/dev/null 2>&1 || return 0
+  for list in "${STATE_DIR}"/workspaces/*/sites; do
+    [[ -f "${list}" ]] && grep -qx "${slug}" "${list}" || continue
+    key="$(basename "$(dirname "${list}")")"
+    [[ -d "${home}/workspaces" ]] || continue
+    setfacl -m "u:lfy-ws--${key}:--x" -- "${home}" "${home}/workspaces" 2>/dev/null || true
+  done
 }
 
 # Give a site folder to its user. chown -R -P never follows links. Folders get the setgid bit,
@@ -157,6 +171,117 @@ own_site_folder() {
     chmod 2750 -- "${site_dir}"
     setgid_folders "${site_dir}"
   fi
+}
+
+# --- VS Code ---------------------------------------------------------------------------------
+
+# nginx for one editor at /code/<token>/ (a website's or a workspace's): only through the panel's
+# check (/_access/code), the panel's phone layout added, a stopped editor sent to its launcher.
+# write_code_editor_conf <conf file> <token> <port> <systemd unit, stopped when nginx refuses>
+write_code_editor_conf() {
+  local CONF="$1" TOKEN="$2" PORT="$3" UNIT="$4" PANEL_PUBLIC ASSET_VERSION MEDIA ICONS="" pair
+  # The editor's tab icon and install (PWA) icons are the panel's, not code-server's.
+  PANEL_PUBLIC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/public"
+  # Phones fetch the phone layout files again after every panel update.
+  ASSET_VERSION="$(tr -cd '0-9A-Za-z.-' < "${PANEL_PUBLIC}/../VERSION" 2>/dev/null || true)-$(cat "${PANEL_PUBLIC}/code-assets/phone.css" "${PANEL_PUBLIC}/code-assets/phone.js" 2>/dev/null | cksum | cut -d' ' -f1)"
+  MEDIA="/code/${TOKEN}/_static/src/browser/media"
+  for pair in favicon.ico:favicon.ico favicon.svg:favicon.svg favicon-dark-support.svg:favicon.svg \
+    pwa-icon-192.png:android-chrome-192x192.png pwa-icon-512.png:android-chrome-512x512.png \
+    pwa-icon-maskable-192.png:android-chrome-192x192.png pwa-icon-maskable-512.png:maskable-icon-512x512.png; do
+    if [[ -f "${PANEL_PUBLIC}/${pair#*:}" ]]; then
+      ICONS+="location = ${MEDIA}/${pair%%:*} { alias ${PANEL_PUBLIC}/${pair#*:}; add_header Cache-Control \"public, max-age=86400\"; }"$'\n'
+    fi
+  done
+  cat > "${CONF}" <<EOF
+${ICONS}
+location /code/${TOKEN}/ {
+    auth_request /_laravelify/code-auth;
+    error_page 401 = @laravelify_code_login;
+    # VS Code stopped by itself (30 minutes idle): its launcher starts it again, instead of a 502.
+    error_page 502 504 = @laravelify_code_down_${TOKEN};
+    proxy_pass http://127.0.0.1:${PORT}/;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_read_timeout 86400;
+    proxy_send_timeout 86400;
+    client_max_body_size 256M;
+    # Cloudflare (Web Analytics, Rocket Loader) must not inject scripts into VS Code's pages and
+    # webviews: their content security policy blocks them and the console fills with errors.
+    add_header Cache-Control "no-transform" always;
+    # Phones and tablets: zoom allowed, and the panel's phone layout (bigger touch targets, one
+    # part at a time). The page comes uncompressed from code-server so nginx can add them.
+    proxy_set_header Accept-Encoding "";
+    sub_filter_once on;
+    # Only the workbench page has this viewport tag (webviews do not), so only it gets the files.
+    sub_filter '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">' '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"><link rel="stylesheet" href="/code/${TOKEN}/__laravelify/phone.css?v=${ASSET_VERSION}"><script src="/code/${TOKEN}/__laravelify/phone.js?v=${ASSET_VERSION}"></script>';
+}
+location = /code/${TOKEN}/__laravelify/phone.css { alias ${PANEL_PUBLIC}/code-assets/phone.css; add_header Cache-Control "public, max-age=3600"; }
+location = /code/${TOKEN}/__laravelify/phone.js { alias ${PANEL_PUBLIC}/code-assets/phone.js; add_header Cache-Control "public, max-age=3600"; }
+location @laravelify_code_down_${TOKEN} {
+    return 302 /code-restart/${TOKEN};
+}
+EOF
+  if ! nginx -t 2>/dev/null; then
+    rm -f "${CONF}"
+    systemctl stop "${UNIT}" >/dev/null 2>&1 || true
+    die "nginx rejected the editor location"
+  fi
+  systemctl reload nginx
+}
+
+# Workspaces: VS Code for several websites' projects at once, as their own user lfy-ws--<key>
+# (a website's slug never has "--", so the name can never be a website's user). Their homes are
+# in /var/lib/laravelify/workspaces/<key>/home. They are in laravelify-tenants: the panel may sudo
+# to them, as to the websites' users.
+WORKSPACES_ROOT="${STATE_DIR}/workspaces"
+
+workspace_key_ok() {
+  [[ "$1" =~ ^[a-z0-9]{6,16}$ ]]
+}
+
+workspace_user_name() {
+  echo "lfy-ws--$1"
+}
+
+ensure_workspace_user() {
+  local key="$1" user base
+  user="$(workspace_user_name "${key}")"
+  base="${WORKSPACES_ROOT}/${key}"
+  if ! id -u "${user}" >/dev/null 2>&1; then
+    useradd --system --user-group --home-dir "${base}/home" --no-create-home \
+      --shell /usr/sbin/nologin --comment "Laravelify VS Code workspace ${key}" "${user}"
+  fi
+  for group in $(id -nG "${user}"); do
+    case "${group}" in
+      "${user}"|"${TENANT_GROUP}") ;;
+      *) die "${user} is in the group ${group}; remove it (gpasswd -d ${user} ${group})" ;;
+    esac
+  done
+  id -nG "${user}" | tr ' ' '\n' | grep -qx "${TENANT_GROUP}" || usermod -aG "${TENANT_GROUP}" "${user}"
+  install -d -o root -g root -m 0755 "${WORKSPACES_ROOT}" "${base}"
+  install -d -o "${user}" -g "${user}" -m 0700 "${base}/home"
+}
+
+# A workspace's user may pass through a website's home (nothing else there: its sign-ins, caches,
+# and keys stay closed) into the project's folder, where it reads and writes everything. Default
+# ACLs keep it that way for new files, for the workspace and for the website's own user alike.
+# grant_workspace_access <workspace user> <site user> <site home> <project folder>
+grant_workspace_access() {
+  local ws="$1" site="$2" home="$3" dir="$4"
+  command -v setfacl >/dev/null 2>&1 || die "setfacl is not installed: sudo apt-get install -y acl"
+  setfacl -m "u:${ws}:--x" -- "${home}" "${home}/workspaces"
+  setfacl -R -P -m "u:${ws}:rwX,d:u:${ws}:rwX,d:u:${site}:rwX,m::rwx,d:m::rwx" -- "${dir}"
+}
+
+# revoke_workspace_access <workspace user> <site home> <project folder>
+revoke_workspace_access() {
+  local ws="$1" home="$2" dir="$3"
+  command -v setfacl >/dev/null 2>&1 || return 0
+  [[ -d "${dir}" && ! -L "${dir}" ]] && setfacl -R -P -x "u:${ws},d:u:${ws}" -- "${dir}" 2>/dev/null || true
+  setfacl -x "u:${ws}" -- "${home}/workspaces" "${home}" 2>/dev/null || true
 }
 
 # Set the setgid bit on every folder below $1 as root without following a link the site may swap
@@ -1064,6 +1189,12 @@ EOF
     UNIT="laravelify-code-${TARGET}"
     systemctl stop "${UNIT}" >/dev/null 2>&1 || true
     systemctl reset-failed "${UNIT}" >/dev/null 2>&1 || true
+    # VS Code's limit covers what its terminals run too (npm run dev, next dev, the Live Server):
+    # half the server's memory, at least 1.5 GB and at most 8 GB, so a dev server compiling a
+    # big app no longer gets the editor killed ("Attempting to reconnect").
+    CODE_MEMORY=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 2048 ))
+    (( CODE_MEMORY < 1536 )) && CODE_MEMORY=1536
+    (( CODE_MEMORY > 8192 )) && CODE_MEMORY=8192
     systemd-run --quiet --unit="${UNIT}" --collect \
       --uid="${SITE_USER}" --gid="$(id -gn "${SITE_USER}")" \
       --working-directory="${WORKSPACE}" \
@@ -1077,7 +1208,7 @@ EOF
       --property=PrivateTmp=yes \
       --property=ReadWritePaths="${SITES_ROOT}/${TARGET} ${SITE_HOME}" \
       --property=NoNewPrivileges=yes \
-      --property=MemoryMax=1536M \
+      --property=MemoryMax="${CODE_MEMORY}M" \
       /opt/code-server/bin/code-server \
         --bind-addr "127.0.0.1:${PORT}" --auth none \
         --disable-telemetry --disable-update-check --disable-workspace-trust \
@@ -1087,49 +1218,205 @@ EOF
         --user-data-dir "${SITE_HOME}/.code-server/data" \
         --extensions-dir "${SITE_HOME}/.code-server/extensions" \
         "${WORKSPACE}"
-    CONF="/etc/nginx/laravelify-panel.d/code-${TARGET}.conf"
-    # The editor's tab icon and install (PWA) icons are the panel's, not code-server's.
-    PANEL_PUBLIC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/public"
-    MEDIA="/code/${TOKEN}/_static/src/browser/media"
-    ICONS=""
-    for pair in favicon.ico:favicon.ico favicon.svg:favicon.svg favicon-dark-support.svg:favicon.svg \
-      pwa-icon-192.png:android-chrome-192x192.png pwa-icon-512.png:android-chrome-512x512.png \
-      pwa-icon-maskable-192.png:android-chrome-192x192.png pwa-icon-maskable-512.png:maskable-icon-512x512.png; do
-      if [[ -f "${PANEL_PUBLIC}/${pair#*:}" ]]; then
-        ICONS+="location = ${MEDIA}/${pair%%:*} { alias ${PANEL_PUBLIC}/${pair#*:}; add_header Cache-Control \"public, max-age=86400\"; }"$'\n'
-      fi
-    done
-    cat > "${CONF}" <<EOF
-${ICONS}
-location /code/${TOKEN}/ {
-    auth_request /_laravelify/code-auth;
-    error_page 401 = @laravelify_code_login;
-    # VS Code stopped by itself (30 minutes idle): its launcher starts it again, instead of a 502.
-    error_page 502 504 = @laravelify_code_down_${TOKEN};
-    proxy_pass http://127.0.0.1:${PORT}/;
-    proxy_http_version 1.1;
-    proxy_set_header Host \$host;
-    proxy_set_header Upgrade \$http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_read_timeout 86400;
-    proxy_send_timeout 86400;
-    client_max_body_size 256M;
-    # Cloudflare (Web Analytics, Rocket Loader) must not inject scripts into VS Code's pages and
-    # webviews: their content security policy blocks them and the console fills with errors.
-    add_header Cache-Control "no-transform" always;
-}
-location @laravelify_code_down_${TOKEN} {
-    return 302 /code-restart/${TOKEN};
-}
-EOF
-    if ! nginx -t 2>/dev/null; then
-      rm -f "${CONF}"
-      systemctl stop "${UNIT}" >/dev/null 2>&1 || true
-      die "nginx rejected the editor location"
-    fi
-    systemctl reload nginx
+    write_code_editor_conf "/etc/nginx/laravelify-panel.d/code-${TARGET}.conf" "${TOKEN}" "${PORT}" "${UNIT}"
     echo "started ${UNIT}"
+    ;;
+  workspace-start)
+    # workspace-start <key> <port> <token> <slug>...: one VS Code for several websites' projects,
+    # as the workspace's own user (lfy-ws--<key>). It reaches exactly those projects' folders, through
+    # ACLs (see grant_workspace_access); each website's home stays closed to it otherwise.
+    workspace_key_ok "${TARGET}" || die "invalid workspace"
+    PORT="${3:-}"; TOKEN="${4:-}"
+    [[ "${PORT}" =~ ^[0-9]{4,5}$ ]] && (( PORT >= 1024 && PORT <= 65535 )) || die "invalid port"
+    [[ "${TOKEN}" =~ ^[a-z0-9]{32}$ ]] || die "invalid token"
+    [[ -x /opt/code-server/bin/code-server ]] || die "code-server is not installed"
+    shift 4 2>/dev/null || true
+    (( $# >= 1 )) || die "a workspace needs a project"
+    ensure_workspace_user "${TARGET}"
+    WS_USER="$(workspace_user_name "${TARGET}")"
+    WS_HOME="${WORKSPACES_ROOT}/${TARGET}/home"
+    FOLDERS=()
+    for slug in "$@"; do
+      slug_ok "${slug}" || die "invalid slug ${slug}"
+      use_site "${slug}"
+      site_has_own_user || die "${slug} still runs as the shared user: open its own VS Code once first"
+      dir="${SITE_HOME}/workspaces/${slug}"
+      [[ -d "${dir}" && ! -L "${dir}" ]] || die "the project ${slug} is not cloned yet"
+      grant_workspace_access "${WS_USER}" "${SITE_USER}" "${SITE_HOME}" "${dir}"
+      FOLDERS+=("${dir}")
+    done
+    # Its projects, so a deploy that resets a website's home gives the access back.
+    printf '%s\n' "$@" > "${WORKSPACES_ROOT}/${TARGET}/sites"
+    FILE="${WS_HOME}/workspace.code-workspace"
+    {
+      printf '{\n  "folders": [\n'
+      for i in "${!FOLDERS[@]}"; do
+        printf '    { "name": "%s", "path": "%s" }%s\n' "$(basename "${FOLDERS[$i]}")" "${FOLDERS[$i]}" "$([[ $i -lt $(( ${#FOLDERS[@]} - 1 )) ]] && echo ,)"
+      done
+      printf '  ]\n}\n'
+    } > "${FILE}"
+    chown "${WS_USER}:${WS_USER}" "${FILE}"
+    # git refuses repositories another user owns unless told they are safe: these are the websites'.
+    runuser -u "${WS_USER}" -- git config --file "${WS_HOME}/.gitconfig" --replace-all safe.directory '*'
+    UNIT="laravelify-codews-${TARGET}"
+    systemctl stop "${UNIT}" >/dev/null 2>&1 || true
+    systemctl reset-failed "${UNIT}" >/dev/null 2>&1 || true
+    CODE_MEMORY=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 2048 ))
+    (( CODE_MEMORY < 1536 )) && CODE_MEMORY=1536
+    (( CODE_MEMORY > 8192 )) && CODE_MEMORY=8192
+    systemd-run --quiet --unit="${UNIT}" --collect \
+      --uid="${WS_USER}" --gid="${WS_USER}" \
+      --working-directory="${WS_HOME}" \
+      --property=UnsetEnvironment=yes \
+      --setenv=PATH="${WS_HOME}/.local/bin:/opt/graphify/bin:${PATH_SAFE}" \
+      --setenv=HOME="${WS_HOME}" \
+      --setenv=LANG=C.UTF-8 \
+      --setenv=SHELL=/bin/bash \
+      --property=ProtectSystem=strict \
+      --property=ProtectHome=yes \
+      --property=PrivateTmp=yes \
+      --property=ReadWritePaths="${WS_HOME} ${FOLDERS[*]}" \
+      --property=NoNewPrivileges=yes \
+      --property=MemoryMax="${CODE_MEMORY}M" \
+      /opt/code-server/bin/code-server \
+        --bind-addr "127.0.0.1:${PORT}" --auth none \
+        --disable-telemetry --disable-update-check --disable-workspace-trust \
+        --abs-proxy-base-path "/code/${TOKEN}" \
+        --app-name "Laravelify Code" \
+        --idle-timeout-seconds 1800 \
+        --user-data-dir "${WS_HOME}/.code-server/data" \
+        --extensions-dir "${WS_HOME}/.code-server/extensions" \
+        "${FILE}"
+    write_code_editor_conf "/etc/nginx/laravelify-panel.d/code-ws-${TARGET}.conf" "${TOKEN}" "${PORT}" "${UNIT}"
+    echo "started ${UNIT}"
+    ;;
+  workspace-stop)
+    workspace_key_ok "${TARGET}" || die "invalid workspace"
+    systemctl stop "laravelify-codews-${TARGET}" >/dev/null 2>&1 || true
+    rm -f "/etc/nginx/laravelify-panel.d/code-ws-${TARGET}.conf"
+    nginx -t >/dev/null 2>&1 && systemctl reload nginx
+    echo "stopped"
+    ;;
+  workspace-status)
+    # "<active|inactive> <seconds since the editor was last used, or -1>"
+    workspace_key_ok "${TARGET}" || die "invalid workspace"
+    state="$(systemctl is-active "laravelify-codews-${TARGET}" 2>/dev/null || true)"
+    beat="${WORKSPACES_ROOT}/${TARGET}/home/.local/share/code-server/heartbeat"
+    age=-1
+    [[ -f "${beat}" ]] && age=$(( $(date +%s) - $(stat -c %Y "${beat}") ))
+    echo "${state:-inactive} ${age}"
+    ;;
+  workspace-drop)
+    # workspace-drop <key> <slug>...: stop the editor, take its access to these projects back, and
+    # remove its user and home. The projects themselves stay as they are.
+    workspace_key_ok "${TARGET}" || die "invalid workspace"
+    shift 2 2>/dev/null || true
+    WS_USER="$(workspace_user_name "${TARGET}")"
+    systemctl stop "laravelify-codews-${TARGET}" >/dev/null 2>&1 || true
+    rm -f "/etc/nginx/laravelify-panel.d/code-ws-${TARGET}.conf"
+    nginx -t >/dev/null 2>&1 && systemctl reload nginx
+    if id -u "${WS_USER}" >/dev/null 2>&1; then
+      for slug in "$@"; do
+        slug_ok "${slug}" || continue
+        use_site "${slug}"
+        site_has_own_user || continue
+        revoke_workspace_access "${WS_USER}" "${SITE_HOME}" "${SITE_HOME}/workspaces/${slug}"
+      done
+      pkill -u "${WS_USER}" >/dev/null 2>&1 || true
+      userdel "${WS_USER}" >/dev/null 2>&1 || true
+    fi
+    [[ -d "${WORKSPACES_ROOT}/${TARGET}" && ! -L "${WORKSPACES_ROOT}/${TARGET}" ]] && rm -rf -- "${WORKSPACES_ROOT:?}/${TARGET}"
+    echo "dropped"
+    ;;
+  workspace-zip)
+    # workspace-zip <name> <slug>...: the projects' code in one zip for the panel to send, without
+    # installed packages, builds, and .env files (secrets). Links are stored as links, never followed.
+    [[ "${TARGET}" =~ ^[a-z0-9-]{8,64}$ ]] || die "invalid name"
+    shift 2 2>/dev/null || true
+    (( $# >= 1 )) || die "nothing to zip"
+    command -v zip >/dev/null 2>&1 || die "zip is not installed: sudo apt-get install -y zip"
+    OUT_DIR="${ROOT}/storage/app/private/workspace-zips"
+    install -d -o "${PANEL_USER}" -g "${PANEL_USER}" -m 0700 "${OUT_DIR}"
+    OUT="${OUT_DIR}/${TARGET}.zip"
+    rm -f -- "${OUT}"
+    for slug in "$@"; do
+      slug_ok "${slug}" || die "invalid slug ${slug}"
+      use_site "${slug}"
+      dir="${SITE_HOME}/workspaces/${slug}"
+      [[ -d "${dir}" && ! -L "${dir}" ]] || continue
+      (cd "${SITE_HOME}/workspaces" && zip -r -q -y "${OUT}" "${slug}" \
+        -x "${slug}/node_modules/*" "*/node_modules/*" "${slug}/vendor/*" "${slug}/.next/*" "${slug}/.nuxt/*" \
+           "${slug}/.svelte-kit/*" "*.env" "*/.env.*" "${slug}/.env.*" "${slug}/storage/logs/*") || true
+    done
+    [[ -f "${OUT}" ]] || die "the projects have no files to zip yet"
+    chown "${PANEL_USER}:${PANEL_USER}" "${OUT}"
+    chmod 0600 "${OUT}"
+    echo "${OUT}"
+    ;;
+  agent-auth-sync)
+    # One sign-in for Claude Code, Cursor Agent, and Copilot CLI across every website (the owner
+    # chose this): each website's user has its own copy, since one user cannot read another's
+    # files. Claude and Cursor replace their tokens as they refresh them, so the newest copy wins
+    # and goes to every website. A sign-out (the files gone from a website that had them) signs
+    # out everywhere instead of being copied back.
+    AUTH_STATE="${STATE_DIR}/agent-auth"
+    install -d -m 0700 "${AUTH_STATE}"
+    # Websites by slug, VS Code workspaces (their homes too) as ws--<key>.
+    home_label() {
+      local base
+      base="$(basename "$(dirname "$1")")"
+      [[ "$1" == "${STATE_DIR}/workspaces/"* ]] && echo "ws--${base}" || echo "${base}"
+    }
+    sync_agent() {
+      local name="$1" primary="$2"; shift 2
+      local extra=("$@") home slug newest="" newest_time=0 had now_have=() gone=0 t
+      for home in "${SITE_USERS_ROOT}"/*/home "${STATE_DIR}"/workspaces/*/home; do
+        [[ -d "${home}" && ! -L "${home}" ]] || continue
+        slug="$(home_label "${home}")"
+        if [[ -f "${home}/${primary}" && ! -L "${home}/${primary}" ]]; then
+          now_have+=("${slug}")
+          t="$(stat -c %Y "${home}/${primary}")"
+          (( t > newest_time )) && newest_time="${t}" && newest="${home}"
+        elif [[ -f "${AUTH_STATE}/${name}.sites" ]] && grep -qx "${slug}" "${AUTH_STATE}/${name}.sites"; then
+          gone=1
+        fi
+      done
+      if (( gone )); then
+        for home in "${SITE_USERS_ROOT}"/*/home "${STATE_DIR}"/workspaces/*/home; do
+          rm -f -- "${home}/${primary}" 2>/dev/null || true
+          for t in "${extra[@]}"; do rm -f -- "${home}/${t}" 2>/dev/null || true; done
+        done
+        rm -f -- "${AUTH_STATE}/${name}.sites"
+        echo "${name}: signed out on every website"
+        return
+      fi
+      [[ -n "${newest}" ]] || return 0
+      local copied=0 owner group sum
+      sum="$(sha256sum "${newest}/${primary}" | cut -d' ' -f1)"
+      for home in "${SITE_USERS_ROOT}"/*/home "${STATE_DIR}"/workspaces/*/home; do
+        [[ -d "${home}" && ! -L "${home}" && "${home}" != "${newest}" ]] || continue
+        [[ -f "${home}/${primary}" ]] && [[ "$(sha256sum "${home}/${primary}" | cut -d' ' -f1)" == "${sum}" ]] && continue
+        owner="$(stat -c %U "${home}")"; group="$(stat -c %G "${home}")"
+        [[ "${owner}" == lfy-* ]] || continue
+        for t in "${primary}" "${extra[@]}"; do
+          [[ -f "${newest}/${t}" && ! -L "${newest}/${t}" ]] || continue
+          [[ -L "${home}/$(dirname "${t}")" ]] && continue
+          install -d -o "${owner}" -g "${group}" -m 0700 "${home}/$(dirname "${t}")"
+          install -o "${owner}" -g "${group}" -m 0600 "${newest}/${t}" "${home}/${t}"
+        done
+        copied=$(( copied + 1 ))
+      done
+      # The websites that have it now: one of them losing it later is a sign-out.
+      : > "${AUTH_STATE}/${name}.sites"
+      for home in "${SITE_USERS_ROOT}"/*/home "${STATE_DIR}"/workspaces/*/home; do
+        [[ -f "${home}/${primary}" ]] && home_label "${home}" >> "${AUTH_STATE}/${name}.sites"
+      done
+      (( copied )) && echo "${name}: sign-in copied to ${copied} website(s)"
+      return 0
+    }
+    sync_agent claude .claude/.credentials.json .claude.json
+    sync_agent cursor .config/cursor/auth.json .cursor/cli-config.json
+    sync_agent copilot .copilot/config.json
     ;;
   panel-worker-start)
     # The panel's own queue worker and scheduler, when Supervisor gave up on them (FATAL after

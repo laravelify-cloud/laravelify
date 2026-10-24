@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CodeWorkspace;
 use App\Models\Website;
 
 /**
@@ -25,7 +26,22 @@ class SiteUser
     /** The panel's own Unix user, the same name scripts/privileges.sh creates. */
     public const PANEL = 'laravelify';
 
+    /** A VS Code workspace's user (lfy-ws--<key>) instead of a website's. */
+    private ?string $workspace = null;
+
     public function __construct(private CommandRunner $runner, private ?string $slug = null) {}
+
+    /**
+     * The user of a VS Code workspace with several projects: its editor runs as it, and the panel
+     * may sudo to it (host-apply.sh puts it in laravelify-tenants).
+     */
+    public function forWorkspace(string $key): static
+    {
+        $user = $this->shared();
+        $user->workspace = $key;
+
+        return $user;
+    }
 
     /**
      * The user of a website: its own user once its folder belongs to it, the shared one before.
@@ -80,6 +96,7 @@ class SiteUser
     {
         $shared = clone $this;
         $shared->slug = null;
+        $shared->workspace = null;
 
         return $shared;
     }
@@ -99,6 +116,10 @@ class SiteUser
 
     public function name(): string
     {
+        if ($this->workspace !== null) {
+            return CodeWorkspace::USER_PREFIX.$this->workspace;
+        }
+
         return $this->slug !== null
             ? self::userName($this->slug)
             : (string) (config('laravelify.site_user') ?: 'www-data');
@@ -183,6 +204,10 @@ class SiteUser
      */
     public function home(): string
     {
+        if ($this->workspace !== null) {
+            return dirname($this->siteUsersRoot()).'/workspaces/'.$this->workspace.'/home';
+        }
+
         if ($this->slug !== null) {
             return $this->siteUsersRoot().'/'.$this->slug.'/home';
         }

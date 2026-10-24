@@ -137,20 +137,31 @@ if ! command -v rclone >/dev/null 2>&1; then
   apt-get install -y rclone >/dev/null 2>&1 || echo "Could not install rclone. Backups need it: sudo apt-get install -y rclone" >&2
 fi
 
-# Websites resize images with GD (JPEG, PNG, WebP). New installs have it; older ones do not.
-# Add it for every PHP version installed, then reload that version's PHP-FPM. Workers and
-# queue processes started before this keep running without it until they restart.
+# VS Code workspaces: ACLs give a workspace's editor its projects' folders, zip packs downloads.
+for tool in setfacl:acl zip:zip; do
+  if ! command -v "${tool%%:*}" >/dev/null 2>&1; then
+    echo "Installing ${tool#*:} for VS Code workspaces..."
+    apt-get install -y "${tool#*:}" >/dev/null 2>&1 || echo "Could not install ${tool#*:}: sudo apt-get install -y ${tool#*:}" >&2
+  fi
+done
+
+# Extensions newer installs have and older ones do not: GD (websites resize images) and SQLite
+# (Laravel's default database, and what apps made with the AI chat often use). Add them for every
+# PHP version installed, then reload that version's PHP-FPM. Workers and queue processes started
+# before this keep running without them until they restart.
 while read -r package; do
   version="${package#php}"
   version="${version%-fpm}"
-  if ! dpkg -s "php${version}-gd" 2>/dev/null | grep -q '^Status: install ok installed'; then
-    echo "Installing php${version}-gd for image resizing..."
-    if apt-get install -y "php${version}-gd" >/dev/null 2>&1; then
-      systemctl reload "php${version}-fpm" >/dev/null 2>&1 || true
-    else
-      echo "Could not install php${version}-gd: sudo apt-get install -y php${version}-gd" >&2
+  for extension in gd sqlite3; do
+    if ! dpkg -s "php${version}-${extension}" 2>/dev/null | grep -q '^Status: install ok installed'; then
+      echo "Installing php${version}-${extension}..."
+      if apt-get install -y "php${version}-${extension}" >/dev/null 2>&1; then
+        systemctl reload "php${version}-fpm" >/dev/null 2>&1 || true
+      else
+        echo "Could not install php${version}-${extension}: sudo apt-get install -y php${version}-${extension}" >&2
+      fi
     fi
-  fi
+  done
 done < <(dpkg-query -W -f='${Package}\n' 'php[0-9].[0-9]-fpm' 2>/dev/null)
 
 # Website previews at <panel>/p/<token>/ are nginx locations in /etc/nginx/laravelify-panel.d,

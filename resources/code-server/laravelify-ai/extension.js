@@ -8,7 +8,7 @@ const { AGENTS } = require('./lib/agents');
 const { Sessions } = require('./lib/session');
 const { Login } = require('./lib/login');
 const { run } = require('./lib/shell');
-const { LiveServer } = require('./lib/live');
+const { LiveServer, shareSignIns } = require('./lib/live');
 
 let live = null;
 
@@ -44,11 +44,57 @@ class ChatView {
         view.webview.options = { enableScripts: true, localResourceRoots: [media] };
         view.webview.html = this.html(view.webview, media);
         view.webview.onDidReceiveMessage((message) => this.receive(message).catch((error) => this.post({ type: 'error', message: String(error.message || error) })));
+        // On a phone the side bar is too narrow (and VS Code cannot draw a webview over a
+        // full-screen side bar): showing the chat opens it full screen as an editor tab instead.
+        view.onDidChangeVisibility(() => this.phone && view.visible && this.openOnPhone());
+    }
+
+    /** The chat as an editor tab: what a phone shows, full screen. */
+    openPanel() {
+        if (this.panel) {
+            this.panel.reveal(vscode.ViewColumn.Active);
+
+            return;
+        }
+
+        const media = vscode.Uri.joinPath(this.context.extensionUri, 'media');
+        this.panel = vscode.window.createWebviewPanel('laravelifyAi.chatPanel', 'AI Agents', vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [media] });
+        this.panel.iconPath = vscode.Uri.joinPath(media, 'sparkle.svg');
+        this.panel.webview.html = this.html(this.panel.webview, media, 'panel');
+        this.panel.webview.onDidReceiveMessage((message) => this.receive(message).catch((error) => this.post({ type: 'error', message: String(error.message || error) })));
+        this.panel.onDidDispose(() => {
+            this.panel = null;
+            this.leaveZen();
+        });
+        // Back on another tab: the editor's bars come back.
+        this.panel.onDidChangeViewState(({ webviewPanel }) => webviewPanel.active || this.leaveZen());
+    }
+
+    /** On a phone the chat is a full-screen drawer: the chat tab in Zen Mode, with no bars. */
+    async openOnPhone() {
+        await vscode.commands.executeCommand('workbench.action.closeSidebar');
+        this.openPanel();
+
+        if (!this.zen) {
+            this.zen = true;
+            await vscode.commands.executeCommand('workbench.action.toggleZenMode');
+        }
+    }
+
+    async leaveZen() {
+        if (this.zen) {
+            this.zen = false;
+            await vscode.commands.executeCommand('workbench.action.toggleZenMode');
+        }
     }
 
     post(message) {
         if (this.view) {
             this.view.webview.postMessage(message);
+        }
+
+        if (this.panel) {
+            this.panel.webview.postMessage(message);
         }
     }
 
@@ -77,6 +123,23 @@ class ChatView {
 
             case 'agents':
                 await this.refreshAgents();
+                break;
+
+            // The side bar chat reports a phone-sized window: show the chat as a full-screen tab.
+            case 'device':
+                this.phone = !!message.phone;
+
+                if (this.phone && message.where === 'sidebar' && this.view && this.view.visible) {
+                    await this.openOnPhone();
+                }
+
+                break;
+
+            case 'closePanel':
+                if (this.panel) {
+                    this.panel.dispose();
+                }
+
                 break;
 
             case 'models': {
@@ -173,6 +236,8 @@ class ChatView {
                     await run(AGENTS[message.agent].logout(bin), { timeout: 30000 });
                 }
 
+                // One sign-in for every website: signing out here signs out everywhere.
+                await shareSignIns();
                 await this.refreshAgents();
                 break;
             }
@@ -368,6 +433,11 @@ class ChatView {
 
             if (state.state === 'done' || state.state === 'error') {
                 this.login = null;
+
+                if (state.state === 'done') {
+                    await shareSignIns();
+                }
+
                 await this.refreshAgents();
             }
         });
@@ -406,7 +476,7 @@ class ChatView {
         this.post({ type: 'activeFile', path: file && !file.startsWith('..') ? file : null });
     }
 
-    html(webview, media) {
+    html(webview, media, where = 'sidebar') {
         const nonce = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
         const asset = (name) => webview.asWebviewUri(vscode.Uri.joinPath(media, name));
         const agents = Object.fromEntries(Object.values(AGENTS).map((a) => [a.id, { id: a.id, label: a.label, product: a.product, color: a.color, mark: a.mark, account: a.account, efforts: a.efforts }]));
@@ -417,7 +487,7 @@ class ChatView {
 <link rel="stylesheet" href="${asset('chat.css')}">
 </head><body>
 <div id="app"></div>
-<script nonce="${nonce}">window.AGENTS = ${JSON.stringify(agents)};</script>
+<script nonce="${nonce}">window.AGENTS = ${JSON.stringify(agents)}; window.LFY_WHERE = ${JSON.stringify(where)};</script>
 <script nonce="${nonce}" src="${asset('chat.js')}"></script>
 </body></html>`;
     }
@@ -470,6 +540,8 @@ function activate(context) {
     };
 
     context.subscriptions.push(
+        // Sends a prompt to the chat with the agent picked there (the Live Server's setup uses it).
+        vscode.commands.registerCommand('laravelifyAi.prompt', (text) => toChat({ type: 'prompt', text })),
         vscode.commands.registerCommand('laravelifyAi.addSelection', async () => {
             const snippet = selectionSnippet();
             const editor = vscode.window.activeTextEditor;
@@ -563,6 +635,10 @@ function activate(context) {
 
     setTimeout(() => view.installMissing(), 3000);
 
+    // A fresh clone has no node_modules or vendor (never in git): without them TypeScript and PHP
+    // tools mark every import red. Install them once, in a terminal you can watch.
+    setTimeout(() => installProjectPackages(view.root()), 2000);
+
     // The project map: built once when it is missing, then after every change the agents make.
     setTimeout(() => {
         const sessions = view.ensureSessions();
@@ -580,6 +656,32 @@ function activate(context) {
             saveTimer = setTimeout(() => view.ensureSessions() && view.sessions.refreshGraph((event) => view.post(event)), 8000);
         }
     }));
+}
+
+/**
+ * The project's packages, with the tool its lock file names: pnpm, yarn, bun, or npm; Composer
+ * for PHP. Only what is missing, so opening the editor again installs nothing.
+ */
+function installProjectPackages(root) {
+    if (!root) return;
+
+    const has = (file) => fs.existsSync(path.join(root, file));
+    const commands = [];
+
+    if (has('package.json') && !has('node_modules')) {
+        commands.push(has('pnpm-lock.yaml') ? 'corepack pnpm install' : has('yarn.lock') ? 'corepack yarn install' : has('bun.lockb') || has('bun.lock') ? 'bun install' : has('package-lock.json') ? 'npm ci' : 'npm install');
+    }
+
+    if (has('composer.json') && !has('vendor')) {
+        commands.push('composer install --no-interaction');
+    }
+
+    if (!commands.length) return;
+
+    const terminal = vscode.window.createTerminal({ name: 'Install packages', cwd: root });
+    terminal.show(true);
+    terminal.sendText(commands.join(' && ') + ' && echo "Packages installed: the red underlines go away in a moment."');
+    vscode.window.setStatusBarMessage('$(sync~spin) Installing the project\'s packages (node_modules / vendor)…', 60000);
 }
 
 // VS Code closing (or stopping by itself when idle) takes the Live Server's address away too.

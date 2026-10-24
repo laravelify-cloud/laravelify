@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccessGateController;
 use App\Http\Controllers\CodeEditorGateController;
+use App\Http\Controllers\CodeWorkspaceShareController;
 use App\Http\Middleware\PanelAccess;
 use App\Http\Middleware\PanelGate;
 use App\Http\Middleware\SecurityHeaders;
@@ -25,6 +26,18 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->middleware('web')
                 ->withoutMiddleware([PanelGate::class, PanelAccess::class])
                 ->name('access.code');
+            // A VS Code workspace's share link opens its editor for anyone who has it, and an editor
+            // that stopped while idle starts again from here: no panel login or access prompt.
+            Route::get('/code-share/{share}', [CodeWorkspaceShareController::class, 'open'])
+                ->middleware(['web', 'throttle:30,1'])
+                ->withoutMiddleware([PanelGate::class, PanelAccess::class])
+                ->where('share', '[a-z0-9]{40}')
+                ->name('workspaces.shared');
+            Route::get('/code-restart/{token}', [CodeWorkspaceShareController::class, 'restart'])
+                ->middleware('web')
+                ->withoutMiddleware([PanelGate::class, PanelAccess::class])
+                ->where('token', '[a-z0-9]{32}')
+                ->name('websites.vscode.restart');
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {

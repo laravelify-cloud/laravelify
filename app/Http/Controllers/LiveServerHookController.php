@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Website;
+use App\Services\CodeServer;
 use App\Services\LiveServer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,13 @@ class LiveServerHookController extends Controller
         }
 
         try {
+            // A sign-in or sign-out in this editor: every website gets it now, not within a minute.
+            if ($action === 'auth') {
+                app(CodeServer::class)->shareAgentSignIns();
+
+                return response()->json(['ok' => true]);
+            }
+
             if ($action === 'stop') {
                 $live->stop($website);
 

@@ -156,6 +156,7 @@
             <button class="icon-btn bookmark-btn" data-action="bookmark" title="Bookmark this chat">${icon('bookmark')}</button>
             <button class="icon-btn" data-action="history" title="Chat history">${icon('history')}</button>
             <button class="icon-btn" data-action="new" title="New chat">${icon('add')}</button>
+            ${window.LFY_WHERE === 'panel' ? `<button class="icon-btn" data-action="closePanel" title="Close">${ICON.close}</button>` : ''}
         </header>
         <div class="history-pop" hidden></div>
         <main class="messages" tabindex="-1"></main>
@@ -814,6 +815,7 @@
                     break;
                 }
                 case 'new': send({ type: 'newChat' }); break;
+                case 'closePanel': send({ type: 'closePanel' }); break;
                 case 'attach': send({ type: 'attachPick' }); break;
                 case 'changes': send({ type: 'openChanges' }); break;
                 case 'map': send({ type: state.graph === 'ready' ? 'openMap' : 'rebuildMap' }); break;
@@ -1041,6 +1043,10 @@
                 renderComposer();
                 textarea.focus();
                 break;
+            // Both chats (side bar, phone tab) get it: the one on screen sends it.
+            case 'prompt':
+                if (!document.hidden) submit(data.text, null, []);
+                break;
             case 'quickEdit':
                 submit(data.instruction, null, [data.snippet]);
                 break;
@@ -1148,4 +1154,21 @@
     renderAll();
     autosize();
     send({ type: 'ready' });
+
+    // A phone-sized VS Code window (this page is on the same site, so it can read its width):
+    // the extension then shows the chat full screen as an editor tab, not in the narrow side bar.
+    function reportDevice() {
+        let width = window.innerWidth;
+
+        try {
+            width = window.top.innerWidth;
+        } catch (e) {}
+
+        send({ type: 'device', phone: width <= 820, where: window.LFY_WHERE || 'sidebar' });
+    }
+
+    reportDevice();
+    try {
+        window.top.addEventListener('resize', () => { clearTimeout(reportDevice.timer); reportDevice.timer = setTimeout(reportDevice, 400); });
+    } catch (e) {}
 })();

@@ -246,6 +246,11 @@ for key in SESSION_DRIVER QUEUE_CONNECTION CACHE_STORE; do
     sed -i "s/^${key}=.*/${key}=database/" "${APP_ROOT}/.env"
   fi
 done
+# Panel sign-ins last 2 days now; a server still on the old 2-hour default moves to it.
+if [[ "$(env_value SESSION_LIFETIME)" == 120 ]]; then
+  say "SESSION_LIFETIME: 120 -> 2880 minutes (2 days)"
+  sed -i "s/^SESSION_LIFETIME=.*/SESSION_LIFETIME=2880/" "${APP_ROOT}/.env"
+fi
 if [[ "${SESSIONS_WERE_REDIS}" == 1 ]]; then
   say "Panel sessions moved to the database: everyone signs in to the panel again once."
 fi
