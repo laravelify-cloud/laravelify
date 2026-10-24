@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.69] - 2026-10-24
+
+- **Fixed: a workspace of several projects lost access to them about a minute after opening** ("EACCES: permission denied" for `.vscode`, `.claude`, and the AI chat). The minutely AI sign-in sync set the mode of each website's home, which reset the permission that lets the workspace pass through to its projects. It no longer touches the home itself, and it gives every workspace its access back each minute, whatever reset it.
+
 ## [0.3.0-beta.68] - 2026-10-24
 
 - **"nginx config refused" says why.** The error named only the file; it now lists each reason and how to fix it. For example, a site moving to its own user with paths sent straight into another site's PHP (`fastcgi_pass` to the shared pool) is told to send them to that site with `proxy_pass http://127.0.0.1` and its Host instead, which keeps each site's PHP in its own pool.

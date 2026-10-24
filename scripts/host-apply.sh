@@ -1432,7 +1432,9 @@ EOF
         for t in "${primary}" "${extra[@]}"; do
           [[ -f "${newest}/${t}" && ! -L "${newest}/${t}" ]] || continue
           [[ -L "${home}/$(dirname "${t}")" ]] && continue
-          install -d -o "${owner}" -g "${group}" -m 0700 "${home}/$(dirname "${t}")"
+          # Never the home itself (.claude.json sits in it): setting its mode would reset the ACL
+          # mask that lets VS Code workspaces pass through to the project.
+          [[ "$(dirname "${t}")" == "." ]] || install -d -o "${owner}" -g "${group}" -m 0700 "${home}/$(dirname "${t}")"
           install -o "${owner}" -g "${group}" -m 0600 "${newest}/${t}" "${home}/${t}"
         done
         copied=$(( copied + 1 ))
@@ -1448,6 +1450,15 @@ EOF
     sync_agent claude .claude/.credentials.json .claude.json
     sync_agent cursor .config/cursor/auth.json .cursor/cli-config.json
     sync_agent copilot .copilot/config.json
+    # VS Code workspaces pass through their projects' homes by an ACL that any chmod of a home
+    # resets: give it back every minute, whatever reset it.
+    for list in "${WORKSPACES_ROOT}"/*/sites; do
+      [[ -f "${list}" ]] || continue
+      while IFS= read -r slug; do
+        slug_ok "${slug}" || continue
+        restore_workspace_access "${slug}" "${SITE_USERS_ROOT}/${slug}/home"
+      done < "${list}"
+    done
     ;;
   panel-worker-start)
     # The panel's own queue worker and scheduler, when Supervisor gave up on them (FATAL after
