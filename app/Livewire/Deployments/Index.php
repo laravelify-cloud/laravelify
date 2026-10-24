@@ -66,6 +66,6 @@ class Index extends PanelComponent
         return view('livewire.deployments.index', [
             'cards' => $cards,
             'running' => $latest->filter(fn (Deployment $deployment): bool => in_array($deployment->status, ['queued', 'running'], true))->count(),
-        ])->layout('layouts.app')->title('Deployments');
+        ])->layout('layouts.app', ['mobile' => true])->title('Deployments');
     }
 }

@@ -35,6 +35,14 @@ class SiteUser
      * The user of a VS Code workspace with several projects: its editor runs as it, and the panel
      * may sudo to it (host-apply.sh puts it in laravelify-tenants).
      */
+    /** The panel AI chat's user: a workspace user with no projects (host-apply.sh ai-chat-user). */
+    public const AI_CHAT_KEY = 'panelaichat';
+
+    public function forAiChat(): static
+    {
+        return $this->forWorkspace(self::AI_CHAT_KEY);
+    }
+
     public function forWorkspace(string $key): static
     {
         $user = $this->shared();

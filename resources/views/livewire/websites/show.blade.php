@@ -43,7 +43,7 @@
             </div>
         </div>
 
-        <div class="flex items-center gap-1.5">
+        <div class="flex flex-wrap items-center gap-1.5">
             {{-- Links --}}
             <div class="relative" x-data="{ open: false }" @click.outside="open = false" @keydown.escape.window="open = false">
                 <button class="app-tab" type="button" @click="open = !open" :aria-expanded="open" aria-haspopup="menu" title="Open website links">
@@ -234,8 +234,19 @@
     <livewire:websites.environments :website="$website" :key="'environments-'.$website->id" />
 
     <div class="grid items-start gap-8 xl:grid-cols-[210px_minmax(0,1fr)]">
+        {{-- Phones and tablets: the sections as one strip to swipe through --}}
+        <nav class="site-tabs" aria-label="Website sections" x-init="$nextTick(() => $el.querySelector('.is-active')?.scrollIntoView({ inline: 'center', block: 'nearest' }))">
+            @foreach ($navGroups as [$groupLabel, $items])
+                @foreach ($items as $key => [$label, $icon])
+                    <button type="button" :class="tab === '{{ $key }}' && 'is-active'" @click="setTab('{{ $key }}'); $el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })">
+                        <x-menu-icon name="{{ $icon }}" class="size-4" /> {{ $label }}
+                    </button>
+                @endforeach
+            @endforeach
+        </nav>
+
         {{-- Grouped settings sidebar --}}
-        <aside class="submenu xl:sticky xl:top-[4.5rem]">
+        <aside class="submenu max-xl:hidden xl:sticky xl:top-[4.5rem]">
             <nav class="flex flex-col gap-px" aria-label="Website settings">
                 @foreach ($navGroups as $groupKey => [$groupLabel, $items])
                     @if (! $loop->first)
@@ -627,17 +638,17 @@
                     </x-slot:actions>
                     @error('deployments') <p class="error px-4 pt-3">{{ $message }}</p> @enderror
                     <div class="overflow-x-auto">
-                        <table class="table">
+                        <table class="table max-sm:table-fixed">
                             <thead>
                                 <tr>
                                     <th class="w-10">
                                         <input type="checkbox" aria-label="Select all deployments" @checked($deployments->isNotEmpty() && count($selectedDeployments) === $deployments->count()) wire:click="toggleDeploymentSelection">
                                     </th>
-                                    <th>Status</th>
+                                    <th class="max-sm:w-28">Status</th>
                                     <th>Commit</th>
-                                    <th>Trigger</th>
-                                    <th>Duration</th>
-                                    <th>Started</th>
+                                    <th class="max-sm:hidden">Trigger</th>
+                                    <th class="max-sm:hidden">Duration</th>
+                                    <th class="max-sm:hidden">Started</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -659,10 +670,12 @@
                                             @if ($deployment->commit_author || $deployment->branch)
                                                 <p class="truncate text-[12px] text-muted">{{ collect([$deployment->commit_author, $deployment->branch ? 'on '.$deployment->branch : null])->filter()->implode(' ') }}</p>
                                             @endif
+                                            {{-- Phones: when, how long, and why, their columns are hidden. --}}
+                                            <p class="truncate text-[12px] text-muted sm:hidden">@ago($deployment->created_at){{ $deployment->durationLabel() ? ' · '.$deployment->durationLabel() : '' }} · {{ ucfirst($deployment->trigger) }}</p>
                                         </td>
-                                        <td class="capitalize text-muted">{{ $deployment->trigger }}</td>
-                                        <td class="tabular-nums text-muted">{{ $deployment->durationLabel() ?? '-' }}</td>
-                                        <td class="whitespace-nowrap text-muted" title="@datetime($deployment->created_at)">@ago($deployment->created_at)</td>
+                                        <td class="capitalize text-muted max-sm:hidden">{{ $deployment->trigger }}</td>
+                                        <td class="tabular-nums text-muted max-sm:hidden">{{ $deployment->durationLabel() ?? '-' }}</td>
+                                        <td class="whitespace-nowrap text-muted max-sm:hidden" title="@datetime($deployment->created_at)">@ago($deployment->created_at)</td>
                                     </tr>
                                 @empty
                                     <tr><td colspan="6" class="table-empty">No deployments yet. Deploy the site to see its build log here.</td></tr>

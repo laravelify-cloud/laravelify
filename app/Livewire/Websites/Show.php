@@ -631,7 +631,7 @@ class Show extends PanelComponent
                 : $this->website->deployments()->first(),
             'webhookUrl' => url('/hooks/github/'.$this->website->slug),
             'deployApp' => $this->website->githubApp,
-        ])->layout('layouts.app')->title($this->website->name);
+        ])->layout('layouts.app', ['mobile' => true])->title($this->website->name);
     }
 
     private function saved(): void

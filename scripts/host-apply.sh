@@ -1321,6 +1321,15 @@ EOF
     write_code_editor_conf "/etc/nginx/laravelify-panel.d/code-ws-${TARGET}.conf" "${TOKEN}" "${PORT}" "${UNIT}"
     echo "started ${UNIT}"
     ;;
+  ai-chat-user)
+    # The panel's AI chat runs the agents (Claude Code, Cursor Agent, Copilot CLI) as its own user,
+    # lfy-ws--panelaichat: like a workspace's, it gets the shared AI sign-in, but no website's
+    # files. It changes the server only through the panel's MCP tools, with its own token.
+    ensure_workspace_user panelaichat
+    install -d -o "$(workspace_user_name panelaichat)" -g "$(workspace_user_name panelaichat)" -m 0700 \
+      "${WORKSPACES_ROOT}/panelaichat/home/chat" "${WORKSPACES_ROOT}/panelaichat/home/.laravelify"
+    echo "ready"
+    ;;
   workspace-stop)
     workspace_key_ok "${TARGET}" || die "invalid workspace"
     systemctl stop "laravelify-codews-${TARGET}" >/dev/null 2>&1 || true

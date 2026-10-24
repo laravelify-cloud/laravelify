@@ -2,6 +2,14 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.70] - 2026-10-24
+
+- **AI chat in the panel.** A new AI chat page (in the sidebar) talks to Claude Code, Cursor Agent, or GitHub Copilot CLI, with the same sign-in as VS Code (sign in once in any editor). The agents manage the server only through the panel's own tools (MCP), with a token the chat makes for itself: deploy, logs, domains, environment, nginx, backups, and more. They have no shell, and they ask before deleting anything. Skills lists every tool, and `/` in the message box starts a message with one. Answers stream in with the tools they used, Stop ends one, and a chat can switch agent midway (the new one gets what was said). An agent that runs out of usage says so and suggests another.
+- **Attach things to a message.** Paste, drop, or pick images (shown as thumbnails; click to see them full size), import a GitHub repository from your connected GitHub Apps (the agent reads a fresh copy), or add a website's error log.
+- **Pick the model and Claude's effort.** The model menu has a tab per agent with a word on each model, and an Effort slider for Claude, from Faster to Smarter (`--effort`), kept per chat.
+- **Like the Claude app, on PC and phone.** Chats on the left grouped by day with search, one centred conversation, and a rounded message box. On phones and tablets the chats and the skills open as drawers, and the page uses the phone's real width.
+- **Phone-friendly website pages.** The group page, the website page, and Deployments now use the phone's real width: no sideways scrolling, minor columns move under the name, and the website's sections become a strip of tabs to swipe through. Other pages keep the zoomed-out PC layout.
+
 ## [0.3.0-beta.69] - 2026-10-24
 
 - **Fixed: a workspace of several projects lost access to them about a minute after opening** ("EACCES: permission denied" for `.vscode`, `.claude`, and the AI chat). The minutely AI sign-in sync set the mode of each website's home, which reset the permission that lets the workspace pass through to its projects. It no longer touches the home itself, and it gives every workspace its access back each minute, whatever reset it.

@@ -8,7 +8,7 @@
     </x-page-header>
 
     <div class="flex flex-wrap items-center gap-3">
-        <input class="input h-9 w-64" type="search" wire:model.live.debounce.300ms="search" placeholder="Find a website" aria-label="Find a website">
+        <input class="input h-9 w-full sm:w-64" type="search" wire:model.live.debounce.300ms="search" placeholder="Find a website" aria-label="Find a website">
         <div class="segmented">
             @foreach (['all' => 'All', 'running' => 'In progress', 'failed' => 'Failed', 'success' => 'Finished'] as $key => $label)
                 <button type="button" wire:click="$set('filter', '{{ $key }}')" aria-pressed="{{ $filter === $key ? 'true' : 'false' }}">{{ $label }}</button>
@@ -21,7 +21,7 @@
             {{ $search !== '' || $filter !== 'all' ? 'No website matches.' : 'No websites yet. Add one in a group and its deployments show here.' }}
         </div>
     @else
-        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             @foreach ($cards as $card)
                 @php
                     $website = $card['website'];

@@ -14,6 +14,7 @@ use App\Http\Controllers\PhpMyAdminController;
 use App\Http\Controllers\TerminalSessionController;
 use App\Http\Controllers\WebsiteFileController;
 use App\Livewire\Account\Security as AccountSecurity;
+use App\Livewire\Ai\Chat as AiChat;
 use App\Livewire\Auth\Login;
 use App\Livewire\Backups\Index as BackupsIndex;
 use App\Livewire\Backups\ScheduleForm as BackupScheduleForm;
@@ -57,8 +58,10 @@ use App\Livewire\Websites\Show as WebsiteShow;
 use App\Livewire\Websites\VsCode as WebsiteVsCode;
 use App\Livewire\Workspaces\Index as WorkspaceIndex;
 use App\Livewire\Workspaces\Open as WorkspaceOpen;
+use App\Models\AiChatMessage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
 Route::get('/setup', CreateAdmin::class)->name('setup');
 Route::get('/setup/two-factor', EnableTwoFactor::class)->name('setup.two-factor');
@@ -85,6 +88,22 @@ Route::get('/websites/{website}/files/download', WebsiteFileController::class)->
 Route::get('/websites/{website}/vscode', WebsiteVsCode::class)->name('websites.vscode');
 
 // /code-restart/{token} (an editor that stopped while idle) and /code-share/{share} are in bootstrap/app.php.
+
+Route::get('/ai', AiChat::class)->name('ai.chat');
+// An image attached to an AI chat message, shown in the chat.
+Route::get('/ai/attachments/{message}/{index}', function (AiChatMessage $message, int $index) {
+    $path = (string) ($message->attachments[$index]['path'] ?? '');
+    abort_unless(($message->attachments[$index]['kind'] ?? null) === 'image' && str_starts_with($path, 'ai-chat/attachments/') && Storage::disk('local')->exists($path), 404);
+
+    return Storage::disk('local')->response($path);
+})->whereNumber('index')->name('ai.attachment');
+// An image pasted into the message box and not sent yet, as its thumbnail.
+Route::get('/ai/pending/{file}', function (string $file) {
+    $path = 'ai-chat/attachments/'.$file;
+    abort_unless(Storage::disk('local')->exists($path), 404);
+
+    return Storage::disk('local')->response($path);
+})->where('file', '[A-Za-z0-9]+\.(png|jpe?g|gif|webp|bmp|svg)')->name('ai.pending');
 
 Route::get('/workspaces', WorkspaceIndex::class)->name('workspaces.index');
 Route::get('/workspaces/{workspace}/open', WorkspaceOpen::class)->name('workspaces.open');

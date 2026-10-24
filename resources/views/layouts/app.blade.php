@@ -2,8 +2,14 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="{{ request()->cookie('laravelify-theme') === 'light' ? '' : 'dark' }}">
     <head>
         <meta charset="utf-8">
-        {{-- The panel is laid out for PCs (1024px and wider): phones and tablets show that layout, zoomed to fit, and can pinch-zoom. --}}
-        <meta name="viewport" content="width=1024">
+        {{-- The panel is laid out for PCs (1024px and wider): phones and tablets show that layout, zoomed to fit, and can pinch-zoom.
+             Pages made for phones too (the layout's "mobile") use the device width; the body carries it across wire:navigate. --}}
+        <meta name="viewport" content="{{ ($mobile ?? false) ? 'width=device-width, initial-scale=1, viewport-fit=cover' : 'width=1024' }}">
+        <script>
+            document.addEventListener('livewire:navigated', function () {
+                document.querySelector('meta[name=viewport]').content = document.body.dataset.viewport;
+            });
+        </script>
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <title>{{ $title ?? config('app.name') }}</title>
         @include('layouts.partials.favicons')
@@ -13,7 +19,7 @@
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         @livewireStyles
     </head>
-    <body class="shell">
+    <body class="shell" @if ($mobile ?? false) data-mobile @endif data-viewport="{{ ($mobile ?? false) ? 'width=device-width, initial-scale=1, viewport-fit=cover' : 'width=1024' }}">
         <div class="flex min-h-screen" x-data="{ nav: false }" @keydown.escape.window="nav = false" x-on:livewire:navigated.window="nav = false">
             <div class="sidebar-scrim lg:hidden" x-cloak x-show="nav" x-transition.opacity @click="nav = false"></div>
             <aside class="sidebar" :class="nav && 'is-open'">
@@ -114,6 +120,10 @@
                     <a class="menu-item {{ request()->routeIs('domains.*') ? 'menu-item-active' : '' }}" href="{{ route('domains.index') }}" wire:navigate>
                         <x-menu-icon name="globe" />
                         <span>Domains</span>
+                    </a>
+                    <a class="menu-item {{ request()->routeIs('ai.*') ? 'menu-item-active' : '' }}" href="{{ route('ai.chat') }}" wire:navigate>
+                        <x-menu-icon name="robot" />
+                        <span>AI chat</span>
                     </a>
                     <a class="menu-item {{ request()->routeIs('workspaces.*') ? 'menu-item-active' : '' }}" href="{{ route('workspaces.index') }}" wire:navigate>
                         <x-menu-icon name="grid" />

@@ -99,6 +99,6 @@ class Show extends PanelComponent
             'switching' => $this->switchingWebsiteIds($tasks),
             'deleting' => $this->deletingWebsiteIds($tasks),
             'websites' => $this->groupedWebsites(),
-        ])->layout('layouts.app')->title($this->group->name);
+        ])->layout('layouts.app', ['mobile' => true])->title($this->group->name);
     }
 }

@@ -88,6 +88,13 @@ const icons = {
     s3: 'CloudSyncOutlined',
     table: 'TableChartOutlined',
     menu: 'MenuOutlined',
+    image: 'ImageOutlined',
+    github: 'GitHub',
+    tune: 'TuneOutlined',
+    build: 'BuildOutlined',
+    attach: 'AttachFileOutlined',
+    article: 'ArticleOutlined',
+    bolt: 'BoltOutlined',
 };
 
 const result = {};

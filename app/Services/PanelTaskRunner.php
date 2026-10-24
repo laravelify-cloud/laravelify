@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Jobs\RunPanelTask;
 use App\Models\CloudflareTunnel;
 use App\Models\PanelTask;
+use App\Models\User;
 use App\Models\Website;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -125,6 +126,7 @@ class PanelTaskRunner
             'websites.own-user' => $this->ownUserTask($task),
             'websites.domains' => $this->domainsTask($task),
             'websites.redirects' => $this->redirectsTask($task),
+            'ai.install' => $this->aiInstallTask($task),
             default => throw new RuntimeException('Unknown task.'),
         };
     }
@@ -153,6 +155,29 @@ class PanelTaskRunner
         return $problems === []
             ? ['message' => $report['lines'] !== [] ? $website->name.': domains set in nginx, the tunnel, and Cloudflare DNS.' : $website->name.': domains applied.']
             : ['message' => $website->name.': Cloudflare needs attention: '.implode(' ', $problems), 'failed' => true];
+    }
+
+    /**
+     * Install an agent's CLI for the panel AI chat's user.
+     *
+     * @return array{message: string, failed?: bool}
+     */
+    private function aiInstallTask(PanelTask $task): array
+    {
+        $agent = (string) ($task->payload['agent'] ?? '');
+        $assistant = app(AiAssistant::class);
+
+        if (! isset(AiAssistant::AGENTS[$agent])) {
+            throw new RuntimeException('Unknown agent.');
+        }
+
+        $assistant->prepare(User::query()->findOrFail((int) ($task->payload['user_id'] ?? 0)));
+        $output = $assistant->install($agent);
+        $product = AiAssistant::AGENTS[$agent]['product'];
+
+        return $assistant->status($agent)['installed']
+            ? ['message' => $product.' is installed for the AI chat.']
+            : ['message' => $product.' could not be installed: '.Str::limit($output, 300), 'failed' => true];
     }
 
     /**

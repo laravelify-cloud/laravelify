@@ -324,6 +324,12 @@ UNIT;
         return $this->apply(['workspace-start', $key, (string) $port, $token, ...$slugs]);
     }
 
+    /** The panel AI chat's own user and home (see host-apply.sh ai-chat-user). */
+    public function aiChatUser(): string
+    {
+        return $this->apply(['ai-chat-user', 'panel']);
+    }
+
     public function workspaceStop(string $key): string
     {
         return $this->apply(['workspace-stop', $key]);

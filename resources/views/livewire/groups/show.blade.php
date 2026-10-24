@@ -47,15 +47,15 @@
         </div>
 
         <div class="overflow-x-auto">
-            <table class="table">
+            <table class="table max-sm:table-fixed">
                 <thead>
                     <tr>
                         <th class="w-10"><input type="checkbox" aria-label="Select all websites" :checked="all.length > 0 && selected.length === all.length" @change="selected = $event.target.checked ? [...all] : []" :disabled="all.length === 0"></th>
                         <th>Website</th>
-                        <th>Status</th>
-                        <th>Type</th>
-                        <th>Address</th>
-                        <th>Runtime</th>
+                        <th class="max-sm:w-28">Status</th>
+                        <th class="max-sm:hidden">Type</th>
+                        <th class="max-sm:hidden">Address</th>
+                        <th class="max-sm:hidden">Runtime</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -70,9 +70,11 @@
                                     <span class="stat-icon size-7"><x-menu-icon name="{{ $website->definition()['icon'] }}" class="size-4" /></span>
                                     {{ $website->name }}
                                     @if ($website->parent_id || $websites->contains('parent_id', $website->id))
-                                        <span class="env-pill">{{ $website->environmentName() }} · {{ $website->branch }}</span>
+                                        <span class="env-pill max-sm:hidden">{{ $website->environmentName() }} · {{ $website->branch }}</span>
                                     @endif
                                 </a>
+                                {{-- Phones: the type and address under the name, their columns are hidden. --}}
+                                <p class="mt-1 truncate text-[12px] text-muted sm:hidden">{{ $website->typeLabel() }}{{ $website->publicUrl() ? ' · '.preg_replace('#^https?://#', '', $website->publicUrl()) : '' }}</p>
                             </td>
                             <td>
                                 @if (in_array($website->id, $deleting, true))
@@ -85,15 +87,15 @@
                                     <span class="status-badge" style="--status-color: var(--color-muted)">Turned off</span>
                                 @endif
                             </td>
-                            <td><span class="pill">{{ $website->typeLabel() }}</span></td>
-                            <td class="max-w-[18rem] truncate text-muted">
+                            <td class="max-sm:hidden"><span class="pill">{{ $website->typeLabel() }}</span></td>
+                            <td class="max-w-[18rem] truncate text-muted max-sm:hidden">
                                 @if ($website->publicUrl())
                                     <a class="hover:text-ink" href="{{ $website->publicUrl() }}" target="_blank" rel="noreferrer">{{ preg_replace('#^https?://#', '', $website->publicUrl()) }}</a>
                                 @else
                                     {{ $website->domain ?: '-' }}
                                 @endif
                             </td>
-                            <td class="text-muted">{{ $website->isPhp() ? 'PHP '.$website->php_version : ($website->isNode() ? 'Node '.$website->node_version : ($website->usesNode() ? 'Static (built with Node '.$website->node_version.')' : 'Static files')) }}</td>
+                            <td class="text-muted max-sm:hidden">{{ $website->isPhp() ? 'PHP '.$website->php_version : ($website->isNode() ? 'Node '.$website->node_version : ($website->usesNode() ? 'Static (built with Node '.$website->node_version.')' : 'Static files')) }}</td>
                         </tr>
                     @empty
                         <tr>
