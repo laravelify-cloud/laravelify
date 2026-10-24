@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.68] - 2026-10-24
+
+- **"nginx config refused" says why.** The error named only the file; it now lists each reason and how to fix it. For example, a site moving to its own user with paths sent straight into another site's PHP (`fastcgi_pass` to the shared pool) is told to send them to that site with `proxy_pass http://127.0.0.1` and its Host instead, which keeps each site's PHP in its own pool.
+
 ## [0.3.0-beta.67] - 2026-10-24
 
 - **Fixed: opening a workspace could fail with "git failed: could not lock config file".** Two launches of one project at once (the move check, Try again, or a second tab) could remove the folder the other was still cloning into. A project's copy is now prepared by one launch at a time, and a workspace already starting shows "Still starting" in another tab instead of starting again.

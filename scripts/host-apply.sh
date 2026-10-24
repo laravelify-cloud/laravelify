@@ -461,7 +461,7 @@ trusted_source() {
 # Statements are split the way nginx reads them (quotes, escapes, "#" comments at a word start,
 # several statements on a line), so nothing hides inside a quoted string or behind a comment.
 validate_nginx() {
-  local file="$1" socket="" allow_panel=0
+  local file="$1" socket="" allow_panel=0 reasons
   # A site with its own user only talks to its own pool; never another site's or the panel's.
   # phpMyAdmin is the exception: it runs in the panel's pool (pass "panel" as the second argument).
   if [[ "${2:-}" == "panel" ]]; then
@@ -469,8 +469,9 @@ validate_nginx() {
   elif site_has_own_user; then
     socket="unix:/run/php/site-${SLUG_IN_CHECK}.sock"
   fi
-  awk -v socket="${socket}" -v allow_panel="${allow_panel}" '
-    function fail(message) { printf "error: nginx config: %s\n", message > "/dev/stderr"; bad = 1 }
+  # The reasons go into the error itself: the panel shows only its last line.
+  reasons="$(awk -v socket="${socket}" -v allow_panel="${allow_panel}" '
+    function fail(message) { if (!(message in said)) { said[message] = 1; printf "%s%s", (bad ? "; " : ""), message } bad = 1 }
     function flush() {
       if (inword) { words[++count] = word }
       word = ""; inword = 0
@@ -491,7 +492,7 @@ validate_nginx() {
         }
       } else if (directive == "fastcgi_pass" && value ~ /^unix:/) {
         if (socket != "" && value != socket) {
-          fail("fastcgi_pass " value ": use " socket)
+          fail("fastcgi_pass " value ": a site with its own user runs PHP only in its own pool (" socket "); send paths of another site to it with proxy_pass http://127.0.0.1 and its Host instead")
         } else if (socket == "" && value !~ /^unix:\/run\/php\/php8\.[0-9]+-fpm\.sock$/ && !(allow_panel == 1 && value == "unix:/run/php/laravelify.sock")) {
           fail("fastcgi_pass " value ": use the PHP-FPM socket of a PHP version")
         }
@@ -524,7 +525,7 @@ validate_nginx() {
       }
     }
     END { check(); exit bad }
-  ' "${file}" || die "nginx config refused (${file##*/})"
+  ' "${file}")" || die "nginx config refused (${file##*/}): ${reasons}"
 }
 
 # Supervisor runs as root: every program of a site must run as the site user and log into the
