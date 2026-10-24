@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.65] - 2026-10-24
+
+- **Fixed: Create workspace did not list every website.** Sites VS Code cannot open yet were left out without a word. Every website is listed now: those that cannot be picked say why, and a site still on the shared user has **Move & open**, which moves it to its own user and opens its VS Code, after which it can be picked.
+
 ## [0.3.0-beta.64] - 2026-10-24
 
 - **VS Code workspaces.** A new Workspaces page lists every project you open in VS Code (opening a website's editor adds it). **Create workspace** puts one project, or several, in one editor; it is named after its projects unless you name it. A workspace of several projects runs as its own Unix user that can reach exactly those projects' folders (through ACLs) and nothing else of the websites; git pushes each project with its own GitHub token. Each workspace can be downloaded as a zip (without installed packages, builds, and `.env` files), shared with a link that anyone can open without a panel account (turn it off or replace it any time), and deleted (its projects stay). Updates install `acl` and `zip` for this.

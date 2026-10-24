@@ -124,12 +124,18 @@ class Index extends PanelComponent
                 || $workspace->websites->contains(fn (Website $website) => str_contains(strtolower($website->name), $search)))
             ->values();
 
-        // Only projects VS Code can open (GitHub or example repositories, with their own user).
+        // Every website; those VS Code cannot open yet say why (and a site on the shared user links
+        // to its launcher, which moves it to its own user).
         $projectSearch = strtolower(trim($this->projectSearch));
         $projects = $this->creating
             ? Website::query()->orderBy('name')->get()
-                ->filter(fn (Website $website) => $editors->unavailableReason($website) === null
-                    && ($projectSearch === '' || str_contains(strtolower($website->name), $projectSearch)))
+                ->filter(fn (Website $website) => $projectSearch === '' || str_contains(strtolower($website->name), $projectSearch))
+                ->map(fn (Website $website) => [
+                    'website' => $website,
+                    'reason' => $editors->unavailableReason($website),
+                    'canMove' => $editors->canMoveToOwnUser($website),
+                ])
+                ->sortBy(fn (array $project) => $project['reason'] === null ? 0 : 1)
                 ->values()
             : collect();
 

@@ -77,15 +77,32 @@
                     <input type="search" wire:model.live.debounce.250ms="projectSearch" placeholder="Search projects" autocomplete="off">
                 </label>
                 <div class="pick-list" style="max-height: 18rem">
-                    @forelse ($projects as $website)
-                        <label @class(['pick-item cursor-pointer', 'is-selected' => in_array($website->id, $selected)]) wire:key="pick-{{ $website->id }}">
-                            <input type="checkbox" wire:model.live="selected" value="{{ $website->id }}">
-                            <x-menu-icon name="git" />
-                            <span class="min-w-0 flex-1 truncate">{{ $website->name }}</span>
-                            <span class="shrink-0 text-[12px] text-muted">{{ $website->branch }}</span>
-                        </label>
+                    @forelse ($projects as $project)
+                        @php $website = $project['website']; @endphp
+                        @if ($project['reason'] === null)
+                            <label @class(['pick-item cursor-pointer', 'is-selected' => in_array($website->id, $selected)]) wire:key="pick-{{ $website->id }}">
+                                <input type="checkbox" wire:model.live="selected" value="{{ $website->id }}">
+                                <x-menu-icon name="git" />
+                                <span class="min-w-0 flex-1 truncate">{{ $website->name }}</span>
+                                <span class="shrink-0 text-[12px] text-muted">{{ $website->branch }}</span>
+                            </label>
+                        @else
+                            <div class="pick-item opacity-70" wire:key="pick-{{ $website->id }}" title="{{ $project['reason'] }}">
+                                <input type="checkbox" disabled aria-label="{{ $website->name }} cannot be picked yet">
+                                <x-menu-icon name="git" />
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate">{{ $website->name }}</span>
+                                    <span class="block text-[12px] text-muted">
+                                        {{ $project['canMove'] ? 'Runs as the shared user: it needs its own user first.' : $project['reason'] }}
+                                    </span>
+                                </span>
+                                @if ($project['canMove'])
+                                    <a class="btn btn-sm shrink-0" href="{{ route('websites.vscode', $website) }}" target="_blank" rel="noopener" title="Opens its VS Code, which moves it to its own user">Move &amp; open</a>
+                                @endif
+                            </div>
+                        @endif
                     @empty
-                        <p class="bg-card px-3 py-6 text-center text-muted">No projects VS Code can open match. Websites need a GitHub or example repository and their own user.</p>
+                        <p class="bg-card px-3 py-6 text-center text-muted">No websites match.</p>
                     @endforelse
                 </div>
                 <small class="text-muted">{{ count($selected) }} selected</small>

@@ -44,6 +44,7 @@ class CodeWorkspacesTest extends TestCase
     {
         $editors = Mockery::mock(CodeServer::class);
         $editors->shouldReceive('unavailableReason')->andReturn(null);
+        $editors->shouldReceive('canMoveToOwnUser')->andReturn(false);
         $this->app->instance(CodeServer::class, $editors);
     }
 
@@ -153,6 +154,7 @@ class CodeWorkspacesTest extends TestCase
         $other = Website::factory()->create();
         $editors = Mockery::mock(CodeServer::class);
         $editors->shouldReceive('unavailableReason')->andReturnUsing(fn (Website $website) => $website->is($other) ? 'VS Code needs a website that deploys from a GitHub repository or an example project.' : null);
+        $editors->shouldReceive('canMoveToOwnUser')->andReturn(false);
         $this->app->instance(CodeServer::class, $editors);
 
         Livewire::test(Index::class)
@@ -178,6 +180,25 @@ class CodeWorkspacesTest extends TestCase
         $workspace = CodeWorkspace::query()->sole();
         $this->assertSame('My shop', $workspace->name);
         $this->assertSame([$shop->id], $workspace->websites->modelKeys());
+    }
+
+    public function test_the_dialog_lists_every_website_and_says_why_one_cannot_be_picked(): void
+    {
+        $this->signIn();
+        $ready = Website::factory()->create(['name' => 'Shop']);
+        $shared = Website::factory()->create(['name' => 'Legacy blog']);
+        $editors = Mockery::mock(CodeServer::class);
+        $editors->shouldReceive('unavailableReason')->andReturnUsing(fn (Website $website) => $website->is($shared) ? "VS Code runs as the website's own user, and this website still runs as the shared user." : null);
+        $editors->shouldReceive('canMoveToOwnUser')->andReturnUsing(fn (Website $website) => $website->is($shared));
+        $this->app->instance(CodeServer::class, $editors);
+
+        Livewire::test(Index::class)
+            ->call('startCreate')
+            ->assertSee('Shop')
+            ->assertSee('Legacy blog')
+            ->assertSee('Runs as the shared user: it needs its own user first.')
+            ->assertSee(route('websites.vscode', $shared));
+        $this->assertModelExists($ready);
     }
 
     public function test_opening_a_websites_vs_code_adds_it_to_workspaces_once(): void
