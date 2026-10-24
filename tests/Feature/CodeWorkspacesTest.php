@@ -15,6 +15,7 @@ use App\Services\CodeWorkspaces;
 use App\Services\HostWriter;
 use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Mockery;
@@ -240,6 +241,25 @@ class CodeWorkspacesTest extends TestCase
         PanelTask::query()->sole()->forceFill(['status' => PanelTask::SUCCESS])->save();
 
         $page->call('checkMoves')->assertRedirect('https://panel.test/code/'.str_repeat('c', 32).'/');
+    }
+
+    public function test_a_second_launch_waits_instead_of_preparing_the_projects_again(): void
+    {
+        $this->signIn();
+        $workspace = $this->workspace([Website::factory()->create(), Website::factory()->create()]);
+        $workspaces = Mockery::mock(CodeWorkspaces::class);
+        $workspaces->shouldReceive('moveToOwnUsers')->andReturn([]);
+        $workspaces->shouldNotReceive('start');
+        $this->app->instance(CodeWorkspaces::class, $workspaces);
+        $first = Cache::lock('workspace-launch:'.$workspace->id, 900);
+        $first->get();
+
+        Livewire::test(Open::class, ['workspace' => $workspace])
+            ->call('launch')
+            ->assertSet('starting', true)
+            ->assertSee('Still starting');
+
+        $first->release();
     }
 
     public function test_opening_a_websites_vs_code_adds_it_to_workspaces_once(): void

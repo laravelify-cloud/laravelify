@@ -17,8 +17,8 @@
                 $downloading = $installing !== null;
                 $percent = $downloading && $total > 0 ? min(100, (int) floor($installing / $total * 100)) : null;
             @endphp
-            <p class="vsc-launch-step">{{ $downloading ? 'Installing VS Code…' : 'Starting VS Code…' }}</p>
-            <ol class="vsc-launch-steps" @if ($downloading) wire:poll.3s="launch" @endif>
+            <p class="vsc-launch-step">{{ $downloading ? 'Installing VS Code…' : ($starting ? 'Still starting (opened elsewhere too)…' : 'Starting VS Code…') }}</p>
+            <ol class="vsc-launch-steps" @if ($downloading || $starting) wire:poll.3s="launch" @endif>
                 <li @class(['is-active' => $downloading, 'is-done' => ! $downloading])>
                     <span class="vsc-step-icon">
                         <i @class(['codicon', 'codicon-loading codicon-modifier-spin' => $downloading, 'codicon-pass-filled' => ! $downloading])></i>

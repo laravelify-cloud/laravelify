@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.67] - 2026-10-24
+
+- **Fixed: opening a workspace could fail with "git failed: could not lock config file".** Two launches of one project at once (the move check, Try again, or a second tab) could remove the folder the other was still cloning into. A project's copy is now prepared by one launch at a time, and a workspace already starting shows "Still starting" in another tab instead of starting again.
+
 ## [0.3.0-beta.66] - 2026-10-24
 
 - **Websites deploy at the same time.** The panel had one queue worker, so deploys waited for each other and behind backups and panel tasks. Deploy workers now run beside it (one per CPU core, 2 to 4): different websites deploy side by side, two deploys of one website still take turns, and idle workers help with other jobs. A job still running is never handed to a second worker, and every worker allows 4 hours. Changes to nginx, Supervisor, PM2, PHP pools, the tunnel, and users take turns on the server, so one never tests or reloads nginx while another writes its files.

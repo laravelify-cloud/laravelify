@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Website;
+use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 
 /**
@@ -44,6 +45,13 @@ class ProjectWorkspace
             throw new RuntimeException('The code editor needs a site that deploys from a GitHub repository or an example project.');
         }
 
+        // One at a time per website: a second launcher (a workspace and the website's own editor,
+        // or a page asking twice) would otherwise remove the folder the first is cloning into.
+        Cache::lock('project-workspace:'.$website->id, 900)->block(600, fn () => $this->prepareNow($website));
+    }
+
+    private function prepareNow(Website $website): void
+    {
         if (app(ExampleRepositories::class)->isExample($website)) {
             // In the home of the site's user (a site moved to its own user leaves it in the shared one).
             app(ExampleRepositories::class)->ensure($website, $this->user($website));

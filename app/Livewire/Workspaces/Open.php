@@ -7,6 +7,7 @@ use App\Models\CodeWorkspace;
 use App\Models\PanelTask;
 use App\Services\CodeWorkspaces;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
@@ -65,12 +66,36 @@ class Open extends PanelComponent
         $this->launch($workspaces);
     }
 
+    /** Another launch of this workspace is still under way (another tab, an earlier click). */
+    public bool $starting = false;
+
     public function launch(CodeWorkspaces $workspaces): void
     {
         if ($this->moveTasks) {
             return;
         }
 
+        // One launch at a time: a second one waits and asks again, instead of preparing the
+        // projects a second time while the first is cloning them.
+        $lock = Cache::lock('workspace-launch:'.$this->workspace->id, 900);
+
+        if (! $lock->get()) {
+            $this->starting = true;
+
+            return;
+        }
+
+        $this->starting = false;
+
+        try {
+            $this->launchNow($workspaces);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function launchNow(CodeWorkspaces $workspaces): void
+    {
         try {
             $result = $workspaces->start($this->workspace, (string) Auth::user()?->name);
         } catch (Throwable $exception) {
