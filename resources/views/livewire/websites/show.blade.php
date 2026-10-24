@@ -21,6 +21,8 @@
     @saved.window="clearDirty()"
     @if ($deploying) wire:poll.2s @endif
 >
+    @include('livewire.partials.followed-tasks')
+
     {{-- Resource header --}}
     <div class="page-header">
         <div class="min-w-0">

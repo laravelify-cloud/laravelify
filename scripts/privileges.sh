@@ -237,7 +237,7 @@ if grep -qs '^user=www-data' "${SUPERVISOR_PANEL}" "${SUPERVISOR_SCHEDULER}"; th
       sleep 1
     done
   fi
-  supervisorctl stop laravelify-queue laravelify-scheduler >/dev/null 2>&1 || true
+  supervisorctl stop laravelify-queue 'laravelify-deploys:*' laravelify-scheduler >/dev/null 2>&1 || true
 fi
 
 for key in SESSION_DRIVER QUEUE_CONNECTION CACHE_STORE; do
@@ -406,10 +406,16 @@ rm -f -- "${SUDO_TMP}"
 # --- 9. The panel's queue worker and scheduler -------------------------------------------
 
 SUPERVISOR_TMP="$(mktemp)"
+# Deploys of different websites run side by side: one deploy worker per CPU core, 2 to 4.
+DEPLOY_WORKERS="$(nproc 2>/dev/null || echo 2)"
+(( DEPLOY_WORKERS < 2 )) && DEPLOY_WORKERS=2
+(( DEPLOY_WORKERS > 4 )) && DEPLOY_WORKERS=4
 cat > "${SUPERVISOR_TMP}" <<CONF
 ; Written by Laravelify (scripts/privileges.sh). The panel's own programs, as ${PANEL_USER}.
+; laravelify-queue runs panel tasks, backups, and restores first; laravelify-deploys runs deploys
+; first. Each takes the other's jobs when it has none, so nothing waits behind one long job.
 [program:laravelify-queue]
-command=${PHP_BIN} ${APP_ROOT}/artisan queue:work --sleep=1 --tries=1 --timeout=3600
+command=${PHP_BIN} ${APP_ROOT}/artisan queue:work --queue=default,deploys --sleep=1 --tries=1 --timeout=14400
 directory=${APP_ROOT}
 autostart=true
 autorestart=true
@@ -422,6 +428,24 @@ user=${PANEL_USER}
 environment=HOME="${APP_ROOT}/storage/app/process-home",COMPOSER_HOME="${APP_ROOT}/storage/app/process-home/.composer"
 redirect_stderr=true
 stdout_logfile=/var/log/laravelify/panel-queue.log
+stdout_logfile_maxbytes=10MB
+stdout_logfile_backups=3
+
+[program:laravelify-deploys]
+command=${PHP_BIN} ${APP_ROOT}/artisan queue:work --queue=deploys,default --sleep=1 --tries=1 --timeout=14400
+process_name=%(program_name)s_%(process_num)02d
+numprocs=${DEPLOY_WORKERS}
+directory=${APP_ROOT}
+autostart=true
+autorestart=true
+startretries=1000
+stopasgroup=true
+killasgroup=true
+stopwaitsecs=600
+user=${PANEL_USER}
+environment=HOME="${APP_ROOT}/storage/app/process-home",COMPOSER_HOME="${APP_ROOT}/storage/app/process-home/.composer"
+redirect_stderr=true
+stdout_logfile=/var/log/laravelify/panel-deploys.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=3
 
@@ -490,7 +514,7 @@ if [[ ! -f "${STATE_DIR}/.sites-separated" || "${LARAVELIFY_REAPPLY:-}" == 1 ]];
 fi
 bash "${APP_ROOT}/scripts/host-apply.sh" pm2-boot all || say "warning: PM2 boot setup failed"
 
-supervisorctl start laravelify-queue laravelify-scheduler >/dev/null 2>&1 || true
+supervisorctl start laravelify-queue 'laravelify-deploys:*' laravelify-scheduler >/dev/null 2>&1 || true
 
 # --- 11. One user per website --------------------------------------------------------------
 # A process gets new groups only when it starts: the panel's pool, its queue worker (after its

@@ -2,6 +2,13 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.66] - 2026-10-24
+
+- **Websites deploy at the same time.** The panel had one queue worker, so deploys waited for each other and behind backups and panel tasks. Deploy workers now run beside it (one per CPU core, 2 to 4): different websites deploy side by side, two deploys of one website still take turns, and idle workers help with other jobs. A job still running is never handed to a second worker, and every worker allows 4 hours. Changes to nginx, Supervisor, PM2, PHP pools, the tunnel, and users take turns on the server, so one never tests or reloads nginx while another writes its files.
+- **Domains and redirects apply in the background.** Saving them no longer holds the page for the Cloudflare API calls: the page says they are being applied and shows the result when done. Mistakes in redirects still show at once.
+- **Create workspace moves websites for you.** Websites still on the shared user can be picked: they move to their own user in the background, and opening the workspace waits for the move, then opens VS Code (no more "this website still runs as the shared user").
+- **Moving a website to its own user, and deploys, are much faster.** They no longer walk every folder of `node_modules`, `vendor`, `.git`, build caches, or folders the site's `.gitignore` names (one process per folder before; often minutes, now a fraction of a second). Those files still belong to the website's user.
+
 ## [0.3.0-beta.65] - 2026-10-24
 
 - **Fixed: Create workspace did not list every website.** Sites VS Code cannot open yet were left out without a word. Every website is listed now: those that cannot be picked say why, and a site still on the shared user has **Move & open**, which moves it to its own user and opens its VS Code, after which it can be picked.

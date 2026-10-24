@@ -40,7 +40,9 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Several workers run at once: a job still running must never be handed to a second
+            // one, so this is longer than the longest job (panel tasks, 4 hours).
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 14500),
             'after_commit' => false,
         ],
 

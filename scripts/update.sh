@@ -127,7 +127,7 @@ systemctl reload "php${PHP_BIN#php}-fpm" || true
 # code in memory. queue:restart lets it finish the current job (a deploy in
 # progress is not killed) and exit; Supervisor starts it again on the new code.
 runuser -u laravelify -- "${PHP_BIN}" "${APP_ROOT}/artisan" queue:restart --no-ansi || true
-supervisorctl start laravelify-queue >/dev/null 2>&1 || true
+supervisorctl start laravelify-queue 'laravelify-deploys:*' >/dev/null 2>&1 || true
 # schedule:work also keeps the old code in memory.
 supervisorctl restart laravelify-scheduler >/dev/null 2>&1 || true
 
@@ -193,6 +193,6 @@ bash "${APP_ROOT}/scripts/host-apply.sh" code-server-install >/dev/null \
 
 # The panel's worker and scheduler may have stopped while MySQL restarted above (Supervisor
 # marks a program FATAL after quick failures): make sure they run, or deploys wait forever.
-supervisorctl start laravelify-queue laravelify-scheduler >/dev/null 2>&1 || true
+supervisorctl start laravelify-queue 'laravelify-deploys:*' laravelify-scheduler >/dev/null 2>&1 || true
 
 echo "Panel updated."

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CodeWorkspace;
+use App\Models\PanelTask;
 use App\Models\User;
 use App\Models\Website;
 use Illuminate\Support\Collection;
@@ -68,8 +69,10 @@ class CodeWorkspaces
             throw new RuntimeException('Pick a project for the workspace.');
         }
 
+        // A website still on the shared user is fine: its move to its own user starts with the
+        // workspace (see moveToOwnUsers). Any other reason stops here.
         foreach ($websites as $website) {
-            if (($reason = $this->editors->unavailableReason($website)) !== null) {
+            if (($reason = $this->editors->unavailableReason($website)) !== null && ! $this->editors->canMoveToOwnUser($website)) {
                 throw new RuntimeException($website->name.': '.$reason);
             }
         }
@@ -114,6 +117,36 @@ class CodeWorkspaces
         }
 
         return $name;
+    }
+
+    /** A website VS Code can open once it is moved to its own user. */
+    public function needsMove(Website $website): bool
+    {
+        return $this->editors->unavailableReason($website) !== null && $this->editors->canMoveToOwnUser($website);
+    }
+
+    /**
+     * Move the workspace's websites that still run as the shared user to their own users, in the
+     * background (one task each, as the VS Code launcher does); a move already running is followed.
+     *
+     * @return list<int> The ids of the move tasks still to finish.
+     */
+    public function moveToOwnUsers(CodeWorkspace $workspace): array
+    {
+        $tasks = app(PanelTaskRunner::class);
+        $ids = [];
+
+        foreach ($workspace->websites as $website) {
+            if (! $this->needsMove($website)) {
+                continue;
+            }
+
+            $scope = 'websites:own-user:'.$website->id;
+            $running = PanelTask::query()->where('scope', $scope)->whereIn('status', [PanelTask::QUEUED, PanelTask::RUNNING])->latest('id')->first();
+            $ids[] = ($running ?? $tasks->start('websites.own-user', $scope, 'Moving '.$website->name.' to its own user', ['website_id' => $website->id]))->id;
+        }
+
+        return $ids;
     }
 
     public function url(CodeWorkspace $workspace): ?string

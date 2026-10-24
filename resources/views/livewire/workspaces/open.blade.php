@@ -1,9 +1,12 @@
-<div class="vsc-launch" @if (! $error) wire:init="launch" @endif>
+<div class="vsc-launch" @if (! $error && ! $moveTasks) wire:init="launch" @endif>
     <div class="vsc-launch-card">
         <i class="codicon codicon-vscode vsc-launch-logo"></i>
         <h1>{{ $workspace->name }}</h1>
 
-        @if ($error)
+        @if ($moveTasks)
+            <div class="vsc-launch-step" wire:poll.2s="checkMoves"><i class="codicon codicon-loading codicon-modifier-spin"></i> {{ $moveStatus }}</div>
+            <p class="vsc-muted" style="max-width: 460px">VS Code runs as each website's own user, so websites still on the shared user move first: each gets its own user and its app restarts once. Installed packages and builds are not walked through, so it is quick. You can leave this page open; VS Code opens when it is done.</p>
+        @elseif ($error)
             <p class="vsc-launch-error"><i class="codicon codicon-error"></i> {{ $error }}</p>
             <div class="vsc-launch-actions">
                 <a class="vsc-button-secondary" href="{{ route('workspaces.index') }}">Back to workspaces</a>

@@ -78,7 +78,10 @@ class Index extends PanelComponent
         }
 
         $this->creating = false;
-        $this->toast('Workspace '.$workspace->name.' created.');
+        $moves = count($workspaces->moveToOwnUsers($workspace->load('websites')));
+        $this->toast($moves > 0
+            ? 'Workspace '.$workspace->name.' created. Moving '.$moves.' '.str('project')->plural($moves).' to '.($moves > 1 ? 'their' : 'its').' own user in the background; Open waits for it.'
+            : 'Workspace '.$workspace->name.' created.');
     }
 
     public function openShare(int $id): void
@@ -135,7 +138,7 @@ class Index extends PanelComponent
                     'reason' => $editors->unavailableReason($website),
                     'canMove' => $editors->canMoveToOwnUser($website),
                 ])
-                ->sortBy(fn (array $project) => $project['reason'] === null ? 0 : 1)
+                ->sortBy(fn (array $project) => $project['reason'] === null ? 0 : ($project['canMove'] ? 1 : 2))
                 ->values()
             : collect();
 

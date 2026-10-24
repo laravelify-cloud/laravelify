@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Http\Controllers\CodeEditorGateController;
 use App\Livewire\Websites\VsCode;
 use App\Livewire\Workspaces\Index;
+use App\Livewire\Workspaces\Open;
 use App\Models\CodeWorkspace;
+use App\Models\PanelTask;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\CodeServer;
@@ -13,6 +15,7 @@ use App\Services\CodeWorkspaces;
 use App\Services\HostWriter;
 use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
@@ -196,9 +199,47 @@ class CodeWorkspacesTest extends TestCase
             ->call('startCreate')
             ->assertSee('Shop')
             ->assertSee('Legacy blog')
-            ->assertSee('Runs as the shared user: it needs its own user first.')
-            ->assertSee(route('websites.vscode', $shared));
+            ->assertSee('it moves to its own user first');
         $this->assertModelExists($ready);
+    }
+
+    public function test_creating_a_workspace_moves_its_shared_user_websites_in_the_background(): void
+    {
+        Queue::fake();
+        $this->signIn();
+        $ready = Website::factory()->create(['name' => 'Shop']);
+        $shared = Website::factory()->create(['name' => 'Legacy blog']);
+        $editors = Mockery::mock(CodeServer::class);
+        $editors->shouldReceive('unavailableReason')->andReturnUsing(fn (Website $website) => $website->is($shared) ? "VS Code runs as the website's own user, and this website still runs as the shared user." : null);
+        $editors->shouldReceive('canMoveToOwnUser')->andReturnUsing(fn (Website $website) => $website->is($shared));
+        $this->app->instance(CodeServer::class, $editors);
+
+        Livewire::test(Index::class)->call('startCreate')->set('selected', [$ready->id, $shared->id])->call('create')->assertHasNoErrors();
+
+        $task = PanelTask::query()->sole();
+        $this->assertSame('websites.own-user', $task->kind);
+        $this->assertSame(['website_id' => $shared->id], $task->payload);
+        $this->assertSame(1, CodeWorkspace::query()->count());
+    }
+
+    public function test_the_launcher_waits_for_a_move_then_opens_the_editor(): void
+    {
+        Queue::fake();
+        $this->signIn();
+        $shared = Website::factory()->create(['name' => 'Legacy blog']);
+        $workspace = $this->workspace([$shared]);
+        $moved = false;
+        $editors = Mockery::mock(CodeServer::class);
+        $editors->shouldReceive('unavailableReason')->andReturnUsing(fn () => $moved ? null : "VS Code runs as the website's own user, and this website still runs as the shared user.");
+        $editors->shouldReceive('canMoveToOwnUser')->andReturnUsing(fn () => ! $moved);
+        $editors->shouldReceive('start')->once()->andReturn(['url' => 'https://panel.test/code/'.str_repeat('c', 32).'/', 'installing' => null]);
+        $this->app->instance(CodeServer::class, $editors);
+
+        $page = Livewire::test(Open::class, ['workspace' => $workspace])->assertSee('Moving 1 project to its own user');
+        $moved = true;
+        PanelTask::query()->sole()->forceFill(['status' => PanelTask::SUCCESS])->save();
+
+        $page->call('checkMoves')->assertRedirect('https://panel.test/code/'.str_repeat('c', 32).'/');
     }
 
     public function test_opening_a_websites_vs_code_adds_it_to_workspaces_once(): void

@@ -52,7 +52,7 @@ touch "${STATE_DIR}/.no-separation"
 rm -f "${STATE_DIR}/.sites-separated"
 
 say "Stopping the panel's queue worker and scheduler"
-supervisorctl stop laravelify-queue laravelify-scheduler >/dev/null 2>&1 || true
+supervisorctl stop laravelify-queue 'laravelify-deploys:*' laravelify-scheduler >/dev/null 2>&1 || true
 
 # nginx: the files from before, or at least the sites' pool again and www-data workers.
 NGINX_BACKUP="$(mktemp -d)"
@@ -115,7 +115,7 @@ restore /etc/supervisor/conf.d/laravelify-panel.conf || sed -i 's/^user=laraveli
 restore /etc/supervisor/conf.d/laravelify-scheduler.conf || true
 supervisorctl reread >/dev/null || true
 supervisorctl update || true
-supervisorctl start laravelify-queue laravelify-scheduler >/dev/null 2>&1 || true
+supervisorctl start laravelify-queue 'laravelify-deploys:*' laravelify-scheduler >/dev/null 2>&1 || true
 
 # Node apps go back to root's PM2 daemon, from the files older versions read.
 if command -v pm2 >/dev/null 2>&1; then

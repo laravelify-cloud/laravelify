@@ -3,10 +3,12 @@
 namespace App\Services;
 
 use App\Jobs\RunPanelTask;
+use App\Models\CloudflareTunnel;
 use App\Models\PanelTask;
 use App\Models\Website;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Throwable;
 
@@ -121,8 +123,59 @@ class PanelTaskRunner
             'websites.switch' => $this->switch->switchTask($task),
             'websites.delete' => $this->switch->deleteTask($task),
             'websites.own-user' => $this->ownUserTask($task),
+            'websites.domains' => $this->domainsTask($task),
+            'websites.redirects' => $this->redirectsTask($task),
             default => throw new RuntimeException('Unknown task.'),
         };
+    }
+
+    /**
+     * A website's domains on nginx, the tunnel, and Cloudflare DNS (several Cloudflare API calls),
+     * after the website page saved them; routes left on a tunnel it moved away from go too.
+     *
+     * @return array{message: string, failed?: bool}
+     */
+    private function domainsTask(PanelTask $task): array
+    {
+        $payload = $task->payload ?? [];
+        $website = Website::query()->find((int) ($payload['website_id'] ?? 0)) ?? throw new RuntimeException('That website no longer exists.');
+        $left = ['configured' => false, 'lines' => [], 'note' => null];
+
+        if ($previous = CloudflareTunnel::query()->find((int) ($payload['previous_tunnel_id'] ?? 0))) {
+            app(ConfigRenderer::class)->refreshTunnel($previous);
+            $left = app(CloudflareRoutes::class)->forget($previous, array_values((array) ($payload['previous_domains'] ?? [])));
+        }
+
+        $domain = isset($payload['domain']) ? (string) $payload['domain'] : null;
+        $report = app(WebsiteDomains::class)->apply($website, $domain, array_values(array_map('strval', (array) ($payload['aliases'] ?? []))));
+        $problems = [...CloudflareRoutes::problems($left), ...CloudflareRoutes::problems($report)];
+
+        return $problems === []
+            ? ['message' => $report['lines'] !== [] ? $website->name.': domains set in nginx, the tunnel, and Cloudflare DNS.' : $website->name.': domains applied.']
+            : ['message' => $website->name.': Cloudflare needs attention: '.implode(' ', $problems), 'failed' => true];
+    }
+
+    /**
+     * A website's redirects on nginx and, for other domains, the tunnel and Cloudflare DNS.
+     *
+     * @return array{message: string, failed?: bool}
+     */
+    private function redirectsTask(PanelTask $task): array
+    {
+        $payload = $task->payload ?? [];
+        $website = Website::query()->find((int) ($payload['website_id'] ?? 0)) ?? throw new RuntimeException('That website no longer exists.');
+
+        try {
+            $report = app(WebsiteRedirects::class)->apply($website, array_values((array) ($payload['rows'] ?? [])));
+        } catch (ValidationException $exception) {
+            return ['message' => $website->name.': '.collect($exception->errors())->flatten()->first(), 'failed' => true];
+        }
+
+        $problems = CloudflareRoutes::problems($report);
+
+        return $problems === []
+            ? ['message' => $website->name.': redirects applied.']
+            : ['message' => $website->name.': redirects applied, but Cloudflare needs attention: '.implode(' ', $problems), 'failed' => true];
     }
 
     /**

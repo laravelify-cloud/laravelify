@@ -4,6 +4,7 @@ namespace App\Livewire\Workspaces;
 
 use App\Livewire\PanelComponent;
 use App\Models\CodeWorkspace;
+use App\Models\PanelTask;
 use App\Services\CodeWorkspaces;
 use Illuminate\Support\Facades\Auth;
 use Throwable;
@@ -24,13 +25,52 @@ class Open extends PanelComponent
     /** The size of the download in MB (0 while unknown). */
     public int $total = 0;
 
-    public function mount(CodeWorkspace $workspace): void
+    /** @var list<int> Background tasks moving projects to their own users, while they run. */
+    public array $moveTasks = [];
+
+    public ?string $moveStatus = null;
+
+    public function mount(CodeWorkspace $workspace, CodeWorkspaces $workspaces): void
     {
         $this->workspace = $workspace->load('websites');
+
+        // Projects still on the shared user move to their own users first (or a move under way is followed).
+        $this->moveTasks = $workspaces->moveToOwnUsers($this->workspace);
+        $this->moveStatus = $this->moveTasks ? 'Moving '.count($this->moveTasks).' '.str('project')->plural(count($this->moveTasks)).' to '.(count($this->moveTasks) > 1 ? 'their' : 'its').' own user…' : null;
+    }
+
+    /** Polled while projects move. */
+    public function checkMoves(CodeWorkspaces $workspaces): void
+    {
+        $tasks = PanelTask::query()->whereKey($this->moveTasks)->get();
+        $waiting = $tasks->whereIn('status', [PanelTask::QUEUED, PanelTask::RUNNING]);
+
+        if ($waiting->isNotEmpty()) {
+            $first = $waiting->first();
+            $this->moveStatus = $first->status === PanelTask::QUEUED ? 'Waiting for the panel\'s background worker…' : ($first->message ?: $first->label.'…');
+
+            return;
+        }
+
+        $this->moveTasks = [];
+        $this->moveStatus = null;
+
+        if ($failed = $tasks->firstWhere('status', PanelTask::FAILED)) {
+            $this->error = 'Could not move a project to its own user: '.($failed->message ?: 'see the panel log.');
+
+            return;
+        }
+
+        $this->workspace->load('websites');
+        $this->launch($workspaces);
     }
 
     public function launch(CodeWorkspaces $workspaces): void
     {
+        if ($this->moveTasks) {
+            return;
+        }
+
         try {
             $result = $workspaces->start($this->workspace, (string) Auth::user()?->name);
         } catch (Throwable $exception) {
@@ -53,6 +93,9 @@ class Open extends PanelComponent
     public function retry(CodeWorkspaces $workspaces): void
     {
         $this->error = null;
+        $this->workspace->load('websites');
+        $this->moveTasks = $workspaces->moveToOwnUsers($this->workspace);
+        $this->moveStatus = $this->moveTasks ? 'Moving to its own user…' : null;
         $this->launch($workspaces);
     }
 

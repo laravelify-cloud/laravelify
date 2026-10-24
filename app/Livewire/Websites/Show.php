@@ -2,12 +2,12 @@
 
 namespace App\Livewire\Websites;
 
+use App\Livewire\Concerns\FollowsTasks;
 use App\Livewire\PanelComponent;
 use App\Models\CloudflareTunnel;
 use App\Models\Deployment;
 use App\Models\GithubApp;
 use App\Models\Website;
-use App\Services\CloudflareRoutes;
 use App\Services\ConfigRenderer;
 use App\Services\DatabaseProvisioner;
 use App\Services\HostWriter;
@@ -23,13 +23,14 @@ use App\Support\EnvFile;
 use App\Support\GitInput;
 use App\Support\Redirects;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Renderless;
 use Throwable;
 
 class Show extends PanelComponent
 {
+    use FollowsTasks;
+
     public Website $website;
 
     public string $name = '';
@@ -105,7 +106,7 @@ class Show extends PanelComponent
         $this->deploymentId = $website->deployments()->value('id');
     }
 
-    public function saveGeneral(ConfigRenderer $renderer, WebsiteDomains $domains, CloudflareRoutes $cloudflare): void
+    public function saveGeneral(WebsiteDomains $domains): void
     {
         $this->validate([
             'name' => ['required', 'string', 'max:80'],
@@ -153,21 +154,19 @@ class Show extends PanelComponent
 
         $this->website->refresh();
 
-        // A site that moved to another tunnel (or none) leaves its routes on the old one.
-        $left = ['configured' => false, 'lines' => [], 'note' => null];
-
-        if ($previousTunnel && $previousTunnel->id !== $this->website->cloudflare_tunnel_id) {
-            $renderer->refreshTunnel($previousTunnel);
-            $left = $cloudflare->forget($previousTunnel, $previousDomains);
-        }
-
-        $report = $domains->apply($this->website, $domain, array_values(array_diff($aliases, [$domain])));
-        $problems = [...CloudflareRoutes::problems($left), ...CloudflareRoutes::problems($report)];
+        // nginx, the tunnel, and Cloudflare DNS (several API calls) follow in the background; a
+        // site that moved to another tunnel (or none) leaves its routes on the old one there too.
+        $movedFrom = $previousTunnel && $previousTunnel->id !== $this->website->cloudflare_tunnel_id ? $previousTunnel->id : null;
+        $this->runInBackground('websites.domains', 'website:'.$this->website->id, 'Applying the domains of '.$this->website->name, [
+            'website_id' => $this->website->id,
+            'domain' => $domain,
+            'aliases' => array_values(array_diff($aliases, [$domain])),
+            'previous_tunnel_id' => $movedFrom,
+            'previous_domains' => $movedFrom ? $previousDomains : [],
+        ]);
         $this->fillFromWebsite();
 
-        $problems === []
-            ? $this->toast($report['lines'] !== [] ? 'General settings saved. Domains are set in nginx, the tunnel, and Cloudflare DNS.' : 'General settings saved.')
-            : $this->toast('General settings saved, but Cloudflare needs attention: '.implode(' ', $problems), 'warning');
+        $this->toast('General settings saved. The domains are being applied to nginx, the tunnel, and Cloudflare in the background.', 'info');
         $this->saved();
     }
 
@@ -282,25 +281,25 @@ class Show extends PanelComponent
     {
         $this->resetErrorBag();
 
-        try {
-            $report = $redirects->apply($this->website, $this->redirect_rows);
-        } catch (ValidationException $exception) {
-            foreach ($exception->errors() as $key => $messages) {
-                $this->addError($key, $messages[0]);
+        // Mistakes show at once; nginx, the tunnel, and Cloudflare follow in the background.
+        $errors = $redirects->check($this->website, $this->redirect_rows)['errors'];
+
+        if ($errors !== []) {
+            foreach ($errors as $row => $message) {
+                $this->addError('redirects.'.($row - 1), $message);
             }
 
-            $this->toast(collect($exception->errors())->flatten()->first(), 'error');
+            $this->toast(reset($errors), 'error');
 
             return;
         }
 
-        $this->website->refresh();
-        $this->fillFromWebsite();
-        $problems = CloudflareRoutes::problems($report);
+        $this->runInBackground('websites.redirects', 'website:'.$this->website->id, 'Applying the redirects of '.$this->website->name, [
+            'website_id' => $this->website->id,
+            'rows' => $this->redirect_rows,
+        ]);
 
-        $problems === []
-            ? $this->toast('Redirects saved and applied.')
-            : $this->toast('Redirects saved, but Cloudflare needs attention: '.implode(' ', $problems), 'warning');
+        $this->toast('Redirects saved. They are being applied to nginx and Cloudflare in the background.', 'info');
         $this->saved();
     }
 

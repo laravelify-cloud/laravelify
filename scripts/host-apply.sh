@@ -287,8 +287,24 @@ revoke_workspace_access() {
 # Set the setgid bit on every folder below $1 as root without following a link the site may swap
 # in: find enters each folder itself (-execdir), and perl opens the name with O_NOFOLLOW and
 # changes the folder it opened (fchmod). Files never get the bit.
+#
+# Installed packages, builds, caches, and git's own folder are skipped (node_modules alone can hold
+# tens of thousands of folders, one perl each): nothing there is served or edited, and their files
+# are readable anyway. So are folders the site's .gitignore names (plain names, like "dist/").
 setgid_folders() {
-  find "$1" -xdev -mindepth 1 -type d ! -perm -2000 -execdir perl -MFcntl -e '
+  local skip=(node_modules vendor .git .next .nuxt .svelte-kit .turbo .cache .output .vercel bower_components)
+  local ignore name args=()
+  while IFS= read -r ignore; do
+    while IFS= read -r name; do
+      name="${name%%#*}"; name="${name%/}"; name="${name#/}"; name="${name//[[:space:]]/}"
+      [[ "${name}" =~ ^[A-Za-z0-9._-]+$ && "${name}" != "." && "${name}" != ".." ]] && skip+=("${name}")
+    done < "${ignore}"
+  done < <(find "$1" -maxdepth 3 -name .gitignore -type f 2>/dev/null)
+  for name in "${skip[@]}"; do
+    args+=(-name "${name}" -o)
+  done
+  unset 'args[${#args[@]}-1]'
+  find "$1" -xdev -mindepth 1 -type d \( "${args[@]}" \) -prune -o -type d ! -perm -2000 -execdir perl -MFcntl -e '
     for my $name (@ARGV) {
       sysopen(my $folder, $name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW) or next;
       chmod(((stat $folder)[2] & 07777) | 02000, $folder);
@@ -941,6 +957,20 @@ elif [[ "${4:-}" == pty-shell ]]; then
   MAX_SECONDS=14400
 fi
 
+# The panel runs several deploys and tasks at once. Actions that write nginx, Supervisor, PM2,
+# PHP pools, the tunnel, or users take turns (each takes a second or two), so one never tests or
+# reloads nginx while another is halfway through its files. Long or read-only actions (commands,
+# logs, status, backups, restores, patches, zips, the code-server install) do not wait.
+case "${ACTION}" in
+  site|site-processes|site-nginx|site-disable|remove-site|mkdir-site|site-user|site-user-drop|\
+  panel-preview|panel-preview-remove|code-server-start|code-server-stop|\
+  workspace-start|workspace-stop|workspace-drop|cloudflared|remove-tunnel|pm2-boot|\
+  phpmyadmin|phpmyadmin-sso|phpmyadmin-hide)
+    exec 9>/run/laravelify-host-apply.lock
+    flock -w 300 9 || die "another server change has been running for 5 minutes; try again"
+    ;;
+esac
+
 case "${ACTION}" in
   site)
     slug_ok "${TARGET}" || die "invalid slug"
@@ -1421,8 +1451,8 @@ EOF
   panel-worker-start)
     # The panel's own queue worker and scheduler, when Supervisor gave up on them (FATAL after
     # MySQL was down for a moment). Nothing else can be started this way.
-    supervisorctl start laravelify-queue laravelify-scheduler 2>&1 || true
-    supervisorctl status laravelify-queue laravelify-scheduler 2>&1 || true
+    supervisorctl start laravelify-queue 'laravelify-deploys:*' laravelify-scheduler 2>&1 || true
+    supervisorctl status laravelify-queue 'laravelify-deploys:*' laravelify-scheduler 2>&1 || true
     ;;
   code-server-stop)
     slug_ok "${TARGET}" || die "invalid slug"
