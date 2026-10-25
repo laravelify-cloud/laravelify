@@ -162,17 +162,33 @@ class GlitchtipSdk
             return $present ? ['composer.lock'] : ['composer.json', 'composer.lock'];
         }
 
-        if ($this->exists($site, $work.'/pnpm-lock.yaml') || $this->exists($site, $work.'/yarn.lock')) {
-            throw new RuntimeException('This project uses '.($this->exists($site, $work.'/pnpm-lock.yaml') ? 'pnpm' : 'Yarn').'. Add '.$package['package'].' with it by hand, then click again to add its setup.');
-        }
-
         if (str_contains((string) $this->read($site, $work.'/package.json'), '"'.$package['package'].'"')) {
             return [];
         }
 
+        // The package manager the deploy uses (from the lock file), through Corepack for pnpm and
+        // Yarn, as the deploy does: only package.json and the lock file change, nothing is built.
+        $node = ['bash', base_path('scripts/with-node.sh'), (string) ($website->node_version ?: '22')];
+
+        if ($this->exists($site, $work.'/pnpm-lock.yaml')) {
+            $this->must($this->runner->runAsSite($this->in($work, [...$node, 'corepack', 'pnpm', 'add', $package['package'], '--lockfile-only'])), 'pnpm add '.$package['package']);
+
+            return ['package.json', 'pnpm-lock.yaml'];
+        }
+
+        if ($this->exists($site, $work.'/yarn.lock')) {
+            // Yarn 2+ updates only the lock file; Yarn 1 has no such mode and installs into the clone.
+            $result = $this->runner->runAsSite($this->in($work, [...$node, 'corepack', 'yarn', 'add', $package['package'], '--mode=update-lockfile']));
+
+            if (! $result->ok) {
+                $this->must($this->runner->runAsSite($this->in($work, [...$node, 'corepack', 'yarn', 'add', $package['package'], '--ignore-scripts'])), 'yarn add '.$package['package']);
+            }
+
+            return ['package.json', 'yarn.lock'];
+        }
+
         $this->must($this->runner->runAsSite($this->in($work, [
-            'bash', base_path('scripts/with-node.sh'), (string) ($website->node_version ?: '22'),
-            'npm', 'install', '--package-lock-only', '--no-audit', '--no-fund', '--loglevel=error', $package['package'],
+            ...$node, 'npm', 'install', '--package-lock-only', '--no-audit', '--no-fund', '--loglevel=error', $package['package'],
         ])), 'npm install '.$package['package']);
 
         return ['package.json', 'package-lock.json'];

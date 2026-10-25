@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.77] - 2026-10-25
+
+- **Install SDK in the code works with pnpm and Yarn projects.** It used to stop with "This project uses pnpm". It now adds the Sentry package with the package manager the deploy uses (from the lock file, through Corepack, at the version pinned in `package.json`). Only `package.json` and `pnpm-lock.yaml` or `yarn.lock` change, so the next deploy's frozen-lockfile install accepts it.
+
 ## [0.3.0-beta.76] - 2026-10-25
 
 - **Fixed: Install SDK in the code could break a PHP site on an older PHP version.** It ran Composer with the server's default PHP, so a Laravel site on PHP 8.2 got packages that need 8.4, and its next deploy answered 500. Composer now runs with the website's own PHP version, in the button and in every deploy. A deploy now refuses a lock file made for a newer PHP before it changes the site. Pressing the button again on a site that already has the package resolves it again for its PHP, which repairs such a commit.
