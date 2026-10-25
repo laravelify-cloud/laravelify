@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.75] - 2026-10-25
+
+- **Pick where a GitHub App is made.** The organization field shows Personal account and every organization the panel knows as buttons (those of your other Apps, and all of yours once a GitHub token is saved in Settings → GitHub), or type another. It also says that an App can only be installed in the account it is made in.
+- **The Sources list's actions line up.** Re-register and Delete are the same size, on the right, under a header that matches the table.
+
 ## [0.3.0-beta.74] - 2026-10-25
 
 - **Re-register and delete sources from the Sources list.** Re-register clears a GitHub App's connection and opens its registration, so GitHub makes a new App with the permissions the panel asks for now (Contents: read and write); the websites using it keep it and work again once it is installed. Delete asks for the name and says how many websites use the source.

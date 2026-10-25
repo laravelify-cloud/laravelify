@@ -4,10 +4,11 @@
     'action',
     'button' => 'Delete',
     'actions' => [],
+    'small' => false,
 ])
 
 <div x-data="{ open: false, typed: '' }" class="inline-flex">
-    <button class="btn btn-danger" type="button" @click="open = true; typed = ''; $wire.confirmName = ''">{{ $button }}</button>
+    <button @class(['btn btn-danger', 'btn-sm' => $small]) type="button" @click="open = true; typed = ''; $wire.confirmName = ''">{{ $button }}</button>
 
     <template x-teleport="body">
         <x-modal-frame class="modal-root-top" open="open" close="open = false">

@@ -37,7 +37,7 @@
                     <th>Source</th>
                     <th>Provider</th>
                     <th>Status</th>
-                    <th class="sr-only">Actions</th>
+                    <th class="text-right"><span class="sr-only">Actions</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -53,8 +53,8 @@
                         <td>
                             <span class="status-badge" style="--status-color: {{ $source->isConnected() ? 'var(--color-success)' : 'var(--color-warning)' }}">{{ $source->isConnected() ? 'Connected' : 'Setup incomplete' }}</span>
                         </td>
-                        <td>
-                            <div class="row-actions justify-end">
+                        <td class="w-px whitespace-nowrap">
+                            <div class="flex items-center justify-end gap-2">
                                 <button
                                     class="btn btn-sm"
                                     type="button"
@@ -66,6 +66,7 @@
                                     title="Delete this GitHub App source?"
                                     :name="$source->name"
                                     :action="'delete('.$source->id.')'"
+                                    small
                                     :actions="['The source is removed from the panel. The App on GitHub is not uninstalled.', $source->websites_count.' '.str('website')->plural($source->websites_count).' using it keep their repository, but stop deploying on push until you pick another source in their General tab.']"
                                 />
                             </div>

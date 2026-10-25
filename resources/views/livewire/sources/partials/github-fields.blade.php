@@ -3,16 +3,7 @@
     <input class="input" wire:model="name" required>
     @error('name') <small class="error">{{ $message }}</small> @enderror
 </label>
-<label class="field">
-    <span>Organization</span>
-    <input class="input" wire:model="organization" list="github-organizations" autocomplete="off" placeholder="Personal account when empty">
-            <datalist id="github-organizations">
-                @foreach (\App\Services\GithubAppClient::knownOrganizations() as $knownOrganization)
-                    <option value="{{ $knownOrganization }}"></option>
-                @endforeach
-            </datalist>
-    @error('organization') <small class="error">{{ $message }}</small> @enderror
-</label>
+@include('livewire.sources.partials.organization-field')
 <label class="field">
     <span>HTML URL</span>
     <input class="input" wire:model="html_url" required>
