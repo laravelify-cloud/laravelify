@@ -431,7 +431,9 @@ class Deployer
 
         match ($manager) {
             // Corepack runs the pnpm/yarn version pinned in package.json "packageManager".
-            'pnpm' => $this->must($this->runner->runAsSite(['bash', $withNode, $node, 'corepack', 'pnpm', 'install', '--frozen-lockfile'], $path), $log),
+            // No one can answer pnpm's "node_modules will be removed and reinstalled. Proceed?" in a
+            // deploy: unanswered, it skips the install. Rebuilding node_modules is what a deploy wants.
+            'pnpm' => $this->must($this->runner->runAsSite(['bash', $withNode, $node, 'corepack', 'pnpm', 'install', '--frozen-lockfile', '--config.confirm-modules-purge=false'], $path), $log),
             'yarn' => $this->must($this->runner->runAsSite(['bash', $withNode, $node, 'corepack', 'yarn', 'install'], $path), $log),
             default => $this->npm($withNode, $node, $path, [is_file($path.'/package-lock.json') ? 'ci' : 'install'], $log),
         };

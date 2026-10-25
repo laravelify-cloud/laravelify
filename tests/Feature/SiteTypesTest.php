@@ -395,7 +395,7 @@ class SiteTypesTest extends TestCase
 
         $this->assertSame('success', $deployment->fresh()->status, (string) $deployment->fresh()->log);
         $commands = collect($runner->commands);
-        $this->assertTrue($commands->contains(fn (string $line): bool => str_ends_with($line, '22 corepack pnpm install --frozen-lockfile')));
+        $this->assertTrue($commands->contains(fn (string $line): bool => str_ends_with($line, '22 corepack pnpm install --frozen-lockfile --config.confirm-modules-purge=false')));
         $this->assertTrue($commands->contains(fn (string $line): bool => str_ends_with($line, '22 corepack pnpm run build')));
         $this->assertFileExists($site.'/.laravelify-built');
         $this->assertStringContainsString('Start command: node dist/main.js', (string) $deployment->fresh()->log);

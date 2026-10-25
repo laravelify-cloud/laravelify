@@ -396,7 +396,7 @@ class DeployOperationsTest extends TestCase
 
             $this->assertSame('success', $deployment->fresh()->status, (string) $deployment->fresh()->log);
             $commands = collect($runner->commands);
-            $this->assertTrue($commands->contains(fn (string $line): bool => str_ends_with($line, '22 corepack pnpm install --frozen-lockfile')));
+            $this->assertTrue($commands->contains(fn (string $line): bool => str_ends_with($line, '22 corepack pnpm install --frozen-lockfile --config.confirm-modules-purge=false')));
             $this->assertTrue($commands->contains(fn (string $line): bool => str_ends_with($line, '22 corepack pnpm run build')));
             $this->assertFalse($commands->contains(fn (string $line): bool => str_contains($line, 'npm --no-progress')));
             $this->assertFileExists($site.'/.next/standalone/public/logo.svg');

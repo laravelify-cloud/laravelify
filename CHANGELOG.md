@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.78] - 2026-10-25
+
+- **Fixed: a pnpm site's deploy could skip installing its packages.** When pnpm wanted to remove and rebuild `node_modules`, it asked "Proceed? (Y/n)", which no one can answer in a deploy, so it installed nothing and the build failed ("Module not found", for example `@sentry/nextjs`). Deploys now let pnpm rebuild `node_modules` without asking.
+
 ## [0.3.0-beta.77] - 2026-10-25
 
 - **Install SDK in the code works with pnpm and Yarn projects.** It used to stop with "This project uses pnpm". It now adds the Sentry package with the package manager the deploy uses (from the lock file, through Corepack, at the version pinned in `package.json`). Only `package.json` and `pnpm-lock.yaml` or `yarn.lock` change, so the next deploy's frozen-lockfile install accepts it.
