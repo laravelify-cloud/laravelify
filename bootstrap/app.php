@@ -49,6 +49,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'laravelify-theme',
             'laravelify-tz',
             'laravelify-locale',
+            // GlitchTip's own sign-in cookies, which the panel hands over (GlitchtipLoginController).
+            'sessionid',
+            'csrftoken',
         ]);
 
         $middleware->web(append: [

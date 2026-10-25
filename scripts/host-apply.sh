@@ -327,6 +327,103 @@ create_site_folder() {
   use_site "${slug}"
 }
 
+# --- GlitchTip's nginx locations ------------------------------------------------------------
+# GlitchTip at /glitchtip on the panel's address. Its pages need a GlitchTip session: a page
+# opened without one (or with an expired one) goes to /tools/glitchtip, which needs the panel's
+# sign-in and signs GlitchTip in, so GlitchTip's own sign-in page does not show. Its API, the
+# errors the websites send, sign-in calls, and files (scripts, styles) pass straight through.
+# ?signin=own on /glitchtip/login shows GlitchTip's own sign-in: the panel sends the browser
+# there when its sign-in was turned down (the password was changed in GlitchTip).
+write_glitchtip_nginx() {
+  install -d -m 0755 /etc/nginx/laravelify-panel.d
+  local conf=/etc/nginx/laravelify-panel.d/50-glitchtip.conf previous=""
+  [[ -f "${conf}" ]] && previous="$(cat "${conf}")"
+  cat > "${conf}" <<'EOF'
+# Written by Laravelify (host-apply.sh glitchtip-nginx): GlitchTip, signed in through the panel.
+location = /glitchtip { return 301 /glitchtip/; }
+
+location = /glitchtip-session {
+    internal;
+    proxy_pass http://127.0.0.1:8095/glitchtip/_allauth/browser/v1/auth/session;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+}
+
+location @glitchtip_signin {
+    if ($uri ~ "^/glitchtip/([A-Za-z0-9][A-Za-z0-9/_.-]*)$") {
+        return 302 /tools/glitchtip?to=$1;
+    }
+    return 302 /tools/glitchtip;
+}
+
+location ^~ /glitchtip/ {
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_read_timeout 60s;
+    client_max_body_size 40m;
+
+    # The panel manages the organization, its projects and keys, the admin's password and MFA,
+    # and its API token: browsers may not delete or change them (the panel talks to GlitchTip
+    # directly, not through here). auth_request below is inherited by these nested locations,
+    # so each that skips the session check turns it off.
+    location ~ "^/glitchtip/(api/0/(organizations/[^/]+|projects/[^/]+/[^/]+(/keys/[^/]+)?|api-tokens/[^/]+|users/[^/]+(/emails)?)/$|api/0/generate-recovery-codes/|_allauth/browser/v1/account/(password|authenticators))" {
+        auth_request off;
+        if ($request_method !~ ^(GET|HEAD|OPTIONS)$) {
+            add_header Content-Type application/json always;
+            return 403 '{"detail":"Laravelify manages this: change it in the panel."}';
+        }
+        proxy_pass http://127.0.0.1:8095;
+    }
+
+    # The API (errors from the websites), sign-in calls, and other endpoints.
+    location ~ ^/glitchtip/(api|_allauth|accounts|static|_health|v1|oauth|accept|admin|stripe|metrics)(/|$) {
+        auth_request off;
+        proxy_pass http://127.0.0.1:8095;
+    }
+
+    # Files: scripts, styles, icons.
+    location ~ \.[A-Za-z0-9]+$ {
+        auth_request off;
+        proxy_pass http://127.0.0.1:8095;
+    }
+
+    location = /glitchtip/login {
+        auth_request off;
+        if ($arg_signin != "own") {
+            return 302 /tools/glitchtip;
+        }
+        proxy_pass http://127.0.0.1:8095;
+    }
+
+    # Pages: only with a GlitchTip session, with the panel's additions (public/glitchtip-panel).
+    auth_request /glitchtip-session;
+    # Only 401 (no session): a 403 is the answer above, which must reach the browser.
+    error_page 401 = @glitchtip_signin;
+    proxy_set_header Accept-Encoding "";
+    sub_filter_once on;
+    sub_filter '</head>' '<link rel="stylesheet" href="/glitchtip-panel/glitchtip.css?v=__VERSION__"><script src="/glitchtip-panel/glitchtip.js?v=__VERSION__" defer></script></head>';
+    proxy_pass http://127.0.0.1:8095;
+}
+EOF
+  # A new version of the additions is loaded at once, not from the browser's cache.
+  local version
+  version="$(cat "${ROOT}/public/glitchtip-panel/glitchtip.js" "${ROOT}/public/glitchtip-panel/glitchtip.css" 2>/dev/null | md5sum | cut -c1-10)"
+  sed -i "s/__VERSION__/${version}/g" "${conf}"
+  if nginx -t >/dev/null 2>&1; then
+    systemctl reload nginx
+  else
+    if [[ -n "${previous}" ]]; then printf '%s\n' "${previous}" > "${conf}"; else rm -f "${conf}"; fi
+    nginx -t
+    die "nginx did not accept GlitchTip's locations, so the previous ones were put back"
+  fi
+}
+
 # --- A site's PHP-FPM pool -----------------------------------------------------------------
 # Written here from fixed values, never from the panel: the FPM master runs as root.
 
@@ -966,7 +1063,7 @@ case "${ACTION}" in
   site|site-processes|site-nginx|site-disable|remove-site|mkdir-site|site-user|site-user-drop|\
   panel-preview|panel-preview-remove|code-server-start|code-server-stop|\
   workspace-start|workspace-stop|workspace-drop|cloudflared|remove-tunnel|pm2-boot|\
-  phpmyadmin|phpmyadmin-sso|phpmyadmin-hide)
+  phpmyadmin|phpmyadmin-sso|phpmyadmin-hide|glitchtip-nginx|glitchtip-remove)
     exec 9>/run/laravelify-host-apply.lock
     flock -w 300 9 || die "another server change has been running for 5 minutes; try again"
     ;;
@@ -1321,6 +1418,126 @@ EOF
     write_code_editor_conf "/etc/nginx/laravelify-panel.d/code-ws-${TARGET}.conf" "${TOKEN}" "${PORT}" "${UNIT}"
     echo "started ${UNIT}"
     ;;
+  glitchtip-install)
+    # GlitchTip (MIT), error tracking for the websites: Sentry SDKs in Laravel, PHP, Node and
+    # browser apps send their errors to it. Native, like the rest of the panel: its own user and
+    # PostgreSQL database, Python packages through uv, one process (web + worker) under Supervisor
+    # on 127.0.0.1:8095, reached at /glitchtip on the panel's address (browsers send errors there).
+    # Running it again updates the settings, or GlitchTip itself when a newer version is given.
+    # Prints "TOKEN=<api token>" and, the first time, "PASSWORD=<admin password>".
+    url="${TARGET%/}"
+    [[ "${url}" =~ ^https?://[A-Za-z0-9.:-]+$ ]] || die "invalid panel address"
+    version="${3:-v6.2.6}"
+    [[ "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid GlitchTip version"
+    email="${4:-}"
+    [[ "${email}" =~ ^[^[:space:]@]+@[^[:space:]@]+$ ]] || die "invalid email"
+    gt_root=/opt/glitchtip
+    gt_app="${gt_root}/${version}"
+    export DEBIAN_FRONTEND=noninteractive HOME=/root
+    echo "Installing PostgreSQL..." >&2
+    command -v psql >/dev/null || apt-get install -y -q postgresql >/dev/null
+    command -v unzip >/dev/null || apt-get install -y -q unzip >/dev/null
+    systemctl enable --now postgresql >/dev/null 2>&1 || true
+    id glitchtip >/dev/null 2>&1 || useradd --system --home-dir "${gt_root}" --shell /usr/sbin/nologin glitchtip
+    install -d -o glitchtip -g glitchtip -m 0750 "${gt_root}" "${gt_root}/uploads"
+    if [[ ! -f "${gt_root}/env" ]]; then
+      pass="$(openssl rand -hex 16)"
+      sudo -u postgres psql -qc "CREATE ROLE glitchtip LOGIN PASSWORD '${pass}'" >/dev/null 2>&1 || sudo -u postgres psql -qc "ALTER ROLE glitchtip PASSWORD '${pass}'" >/dev/null
+      sudo -u postgres psql -qc "CREATE DATABASE glitchtip OWNER glitchtip" >/dev/null 2>&1 || true
+      umask 027
+      cat > "${gt_root}/env" <<ENV
+DATABASE_URL=postgres://glitchtip:${pass}@127.0.0.1:5432/glitchtip
+VALKEY_URL=
+SECRET_KEY=$(openssl rand -hex 32)
+EMAIL_URL=consolemail://
+DEFAULT_FROM_EMAIL=${email}
+ENABLE_USER_REGISTRATION=False
+GLITCHTIP_ENABLE_UPTIME=False
+BASE_PATH=/glitchtip
+GRANIAN_HOST=127.0.0.1
+GRANIAN_PORT=8095
+GRANIAN_STATIC_PATH_ROUTE=/glitchtip/static
+UPLOAD_ROOT=${gt_root}/uploads
+ENV
+      umask 022
+      chown root:glitchtip "${gt_root}/env"
+      if [[ "$(sudo -u postgres psql -tAc 'SHOW max_locks_per_transaction')" -lt 512 ]]; then
+        sudo -u postgres psql -qc "ALTER SYSTEM SET max_locks_per_transaction = 512" >/dev/null
+        systemctl restart postgresql
+      fi
+    fi
+    # The panel's address can change: errors are sent to it, and the sign-in checks it.
+    sed -i -e '/^GLITCHTIP_DOMAIN=/d' -e '/^CSRF_TRUSTED_ORIGINS=/d' "${gt_root}/env"
+    printf 'GLITCHTIP_DOMAIN=%s/glitchtip\nCSRF_TRUSTED_ORIGINS=%s\n' "${url}" "${url}" >> "${gt_root}/env"
+    if [[ ! -f "${gt_app}/.venv/bin/python" ]]; then
+      echo "Downloading GlitchTip ${version}..." >&2
+      tmp="$(mktemp -d)"
+      curl -fsSL "https://gitlab.com/glitchtip/glitchtip-backend/-/archive/${version}/glitchtip-backend-${version}.tar.gz" | tar -xz -C "${tmp}"
+      curl -fsSL "https://gitlab.com/api/v4/projects/15449363/jobs/artifacts/${version}/download?job=build-assets" -o "${tmp}/assets.zip"
+      unzip -q "${tmp}/assets.zip" -d "${tmp}/assets"
+      rm -rf "${gt_app}"
+      mv "${tmp}/glitchtip-backend-${version}" "${gt_app}"
+      rm -rf "${gt_app}/dist"
+      mv "${tmp}/assets/dist/glitchtip-frontend/browser" "${gt_app}/dist"
+      rm -rf "${tmp}"
+      chown -R glitchtip:glitchtip "${gt_app}"
+      if [[ ! -x "${gt_root}/bin/uv" ]]; then
+        curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="${gt_root}/bin" UV_NO_MODIFY_PATH=1 sh >/dev/null 2>&1
+      fi
+      echo "Installing its Python packages..." >&2
+      # uwsgi is one of two servers it can use and needs a compiler; it runs on granian here.
+      (cd "${gt_app}" && sudo -u glitchtip env HOME="${gt_root}" UV_CACHE_DIR="${gt_root}/.cache/uv" UV_PYTHON_INSTALL_DIR="${gt_root}/python" \
+        "${gt_root}/bin/uv" sync --frozen --no-dev --no-install-project --no-install-package uwsgi >/dev/null 2>&1) \
+        || die "GlitchTip's Python packages could not be installed"
+    fi
+    gt_run() { sudo -u glitchtip bash -c "set -a; . ${gt_root}/env; set +a; cd ${gt_app}; . .venv/bin/activate; $1"; }
+    echo "Preparing its database..." >&2
+    gt_run "python manage.py migrate --no-input >/dev/null && python manage.py collectstatic --no-input >/dev/null" || die "GlitchTip's database could not be prepared"
+    ln -sfn "${gt_app}" "${gt_root}/current"
+    cat > /etc/supervisor/conf.d/laravelify-glitchtip.conf <<CONF
+[program:laravelify-glitchtip]
+command=/bin/bash -c 'set -a; . ${gt_root}/env; set +a; cd ${gt_root}/current; . .venv/bin/activate; exec ./bin/run-all-in-one.sh'
+user=glitchtip
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+redirect_stderr=true
+stdout_logfile=/var/log/laravelify-glitchtip.log
+stdout_logfile_maxbytes=10MB
+stdout_logfile_backups=2
+CONF
+    supervisorctl reread >/dev/null && supervisorctl update >/dev/null
+    supervisorctl restart laravelify-glitchtip >/dev/null
+    write_glitchtip_nginx
+    for _ in $(seq 1 30); do
+      curl -fs -o /dev/null http://127.0.0.1:8095/glitchtip/api/settings/ && break
+      sleep 2
+    done
+    # The panel's admin in GlitchTip, and an API token with every scope (it makes a project per website).
+    password="$(openssl rand -base64 18 | tr -d '/+=')"
+    cat > "${gt_root}/bootstrap.py" <<'PY'
+import os
+from django.contrib.auth import get_user_model
+from apps.api_tokens.models import APIToken
+User = get_user_model()
+user = User.objects.filter(email=os.environ["GT_EMAIL"]).first() or User.objects.filter(is_superuser=True).first()
+if user is None:
+    user = User.objects.create_superuser(email=os.environ["GT_EMAIL"], password=os.environ["GT_PASSWORD"])
+    print("PASSWORD=" + os.environ["GT_PASSWORD"])
+token = APIToken.objects.filter(user=user, label="Laravelify panel").first()
+if token is None:
+    token = APIToken.objects.create(user=user, label="Laravelify panel")
+    for flag, _ in token.scopes.items():
+        setattr(token.scopes, flag, True)
+    token.save()
+print("EMAIL=" + user.email)
+print("TOKEN=" + token.token)
+PY
+    chown glitchtip:glitchtip "${gt_root}/bootstrap.py"
+    gt_run "GT_EMAIL='${email}' GT_PASSWORD='${password}' python manage.py shell < ${gt_root}/bootstrap.py" 2>/dev/null | grep -E '^(PASSWORD|EMAIL|TOKEN)=' \
+      || die "GlitchTip started, but its admin could not be made"
+    ;;
   ai-chat-user)
     # The panel's AI chat runs the agents (Claude Code, Cursor Agent, Copilot CLI) as its own user,
     # lfy-ws--panelaichat: like a workspace's, it gets the shared AI sign-in, but no website's
@@ -1443,7 +1660,21 @@ EOF
           [[ -L "${home}/$(dirname "${t}")" ]] && continue
           # Never the home itself (.claude.json sits in it): setting its mode would reset the ACL
           # mask that lets VS Code workspaces pass through to the project.
-          [[ "$(dirname "${t}")" == "." ]] || install -d -o "${owner}" -g "${group}" -m 0700 "${home}/$(dirname "${t}")"
+          # Each folder on the way is the site's (install -d gives only the last one): a root-owned
+          # .config stopped build tools that keep their settings there (Astro, npm tools).
+          if [[ "$(dirname "${t}")" != "." ]]; then
+            dir="${home}"
+            IFS=/ read -ra parts <<< "$(dirname "${t}")"
+            for part in "${parts[@]}"; do
+              dir="${dir}/${part}"
+              [[ -L "${dir}" ]] && break
+              if [[ -d "${dir}" ]]; then
+                [[ "$(stat -c %U "${dir}")" == root ]] && chown "${owner}:${group}" "${dir}"
+              else
+                install -d -o "${owner}" -g "${group}" -m 0700 "${dir}"
+              fi
+            done
+          fi
           install -o "${owner}" -g "${group}" -m 0600 "${newest}/${t}" "${home}/${t}"
         done
         copied=$(( copied + 1 ))
@@ -1459,6 +1690,16 @@ EOF
     sync_agent claude .claude/.credentials.json .claude.json
     sync_agent cursor .config/cursor/auth.json .cursor/cli-config.json
     sync_agent copilot .copilot/config.json
+    # Folders an earlier sync left root's (it made .config as root) go back to the site.
+    for home in "${SITE_USERS_ROOT}"/*/home "${STATE_DIR}"/workspaces/*/home; do
+      [[ -d "${home}" && ! -L "${home}" ]] || continue
+      owner="$(stat -c %U "${home}")"
+      [[ "${owner}" == lfy-* ]] || continue
+      for dir in .config .claude .cursor .copilot; do
+        [[ -d "${home}/${dir}" && ! -L "${home}/${dir}" && "$(stat -c %U "${home}/${dir}")" == root ]] \
+          && chown "${owner}:$(stat -c %G "${home}")" "${home}/${dir}"
+      done
+    done
     # VS Code workspaces pass through their projects' homes by an ACL that any chmod of a home
     # resets: give it back every minute, whatever reset it.
     for list in "${WORKSPACES_ROOT}"/*/sites; do
@@ -1611,6 +1852,32 @@ if (isset($cfg['Servers'][1])) {
 PHP
     chmod 644 /etc/phpmyadmin/conf.d/laravelify-signon.php
     echo "phpMyAdmin one-click sign-in is installed."
+    ;;
+  glitchtip-remove)
+    # Turn off error tracking: GlitchTip's process, nginx locations, database (with every error
+    # in it), files, and user go. PostgreSQL itself stays: other things may use it.
+    supervisorctl stop laravelify-glitchtip >/dev/null 2>&1 || true
+    rm -f /etc/supervisor/conf.d/laravelify-glitchtip.conf
+    supervisorctl reread >/dev/null 2>&1 || true
+    supervisorctl update >/dev/null 2>&1 || true
+    rm -f /etc/nginx/laravelify-panel.d/50-glitchtip.conf
+    nginx -t >/dev/null 2>&1 && systemctl reload nginx
+    if command -v psql >/dev/null && id postgres >/dev/null 2>&1; then
+      (cd /tmp && sudo -u postgres psql -qc "DROP DATABASE IF EXISTS glitchtip WITH (FORCE)" >/dev/null 2>&1) \
+        || (cd /tmp && sudo -u postgres psql -qc "DROP DATABASE IF EXISTS glitchtip" >/dev/null) || die "GlitchTip's database could not be deleted"
+      (cd /tmp && sudo -u postgres psql -qc "DROP ROLE IF EXISTS glitchtip" >/dev/null) || true
+    fi
+    pkill -u glitchtip >/dev/null 2>&1 || true
+    rm -rf -- /opt/glitchtip
+    rm -f /var/log/laravelify-glitchtip.log*
+    id glitchtip >/dev/null 2>&1 && userdel glitchtip >/dev/null 2>&1 || true
+    echo "GlitchTip is removed."
+    ;;
+  glitchtip-nginx)
+    # Run by every update: servers with GlitchTip get its current nginx locations.
+    [[ -f /etc/supervisor/conf.d/laravelify-glitchtip.conf ]] || { echo "GlitchTip is not installed."; exit 0; }
+    write_glitchtip_nginx
+    echo "GlitchTip opens through the panel's sign-in."
     ;;
   phpmyadmin-hide)
     # phpMyAdmin does not list the panel's own database (or its own storage database), and PHP's
@@ -1961,9 +2228,16 @@ PHP
     slug_ok "${TARGET}" || die "invalid slug"
     systemctl stop "laravelify-code-${TARGET}" >/dev/null 2>&1 || true
     rm -f "/etc/nginx/laravelify-panel.d/code-${TARGET}.conf"
-    # The folder stays (as before), owned by the shared user again; the site's own user goes.
+    # The site's own user goes; its folder, owned by the shared user again, moves to the trash in
+    # /var/www/.trash as <slug>-<date>, so it can still be brought back by moving it.
     drop_site_user "${TARGET}"
     remove_site_pool "${TARGET}"
+    if [[ -d "${SITES_ROOT}/${TARGET}" && ! -L "${SITES_ROOT}/${TARGET}" ]]; then
+      install -d -m 2750 -o "${SITE_USER}" -g "${READ_GROUP}" "${SITES_ROOT}/.trash"
+      trashed="${SITES_ROOT}/.trash/${TARGET}-$(date +%Y-%m-%d-%H%M%S)"
+      mv -T -- "${SITES_ROOT}/${TARGET}" "${trashed}"
+      echo "Folder moved to ${trashed}"
+    fi
     sync_site_firewall "/etc/nginx/sites-available/laravelify-${TARGET}.conf" /dev/null
     rm -f "/etc/nginx/sites-enabled/laravelify-${TARGET}.conf" \
       "/etc/nginx/sites-available/laravelify-${TARGET}.conf" \

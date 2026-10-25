@@ -12,6 +12,7 @@ use App\Services\CommandRunner;
 use App\Services\ConfigRenderer;
 use App\Services\Deployer;
 use App\Services\ExampleRepositories;
+use App\Services\HostWriter;
 use App\Services\TwoFactor;
 use App\Support\BuildOutput;
 use App\Support\Examples;
@@ -19,6 +20,7 @@ use App\Support\SiteTypes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Livewire\Livewire;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -268,7 +270,28 @@ class SiteTypesTest extends TestCase
         // Next.js keeps its standalone file.
         $next = $renderer->process($site('nextjs'));
         $this->assertStringContainsString('cwd: "/var/www/demo/.next/standalone"', $next);
-        $this->assertStringContainsString('script: "server.js"', $next);
+        $this->assertStringContainsString('"node", "server.js"', $next);
+
+        // PM2 ignores env_file: with-node.sh loads the .env named here.
+        $this->assertStringContainsString('LARAVELIFY_ENV_FILE: "/var/www/demo/.env"', $nest);
+        $this->assertStringContainsString('LARAVELIFY_ENV_FILE: "/var/www/demo/.env"', $next);
+        $this->assertStringNotContainsString('env_file', $nest.$next);
+    }
+
+    public function test_node_apps_saved_with_env_file_read_their_env_after_the_update(): void
+    {
+        $this->app->instance(HostWriter::class, Mockery::mock(HostWriter::class, fn ($mock) => $mock->shouldReceive('writeProcesses')->twice()->andReturn('')));
+        $old = fn (string $script) => "module.exports = {\n  apps: [\n    {\n      name: \"demo\",\n{$script}\n      env_file: \"/var/www/demo/.env\",\n      env: {\n        NODE_ENV: \"production\",\n      },\n    },\n  ],\n};\n";
+        $nuxt = Website::factory()->create(['type' => 'nuxt', 'process_config' => $old("      script: \"/bin/bash\",\n      interpreter: \"none\",")]);
+        $next = Website::factory()->create(['type' => 'nextjs', 'node_version' => '24', 'process_config' => $old("      script: \"server.js\",\n      interpreter: \"node\",")]);
+
+        $this->artisan('laravelify:node-env')->assertSuccessful();
+        $this->artisan('laravelify:node-env')->assertSuccessful();
+
+        $this->assertStringContainsString("      env: {\n        LARAVELIFY_ENV_FILE: \"/var/www/demo/.env\",\n        NODE_ENV", $nuxt->refresh()->process_config);
+        $this->assertStringNotContainsString('env_file', $nuxt->process_config);
+        $this->assertStringContainsString('with-node.sh", "24", "node", "server.js"]', $next->refresh()->process_config);
+        $this->assertStringContainsString('interpreter: "none"', $next->process_config);
     }
 
     public function test_build_output_is_found_in_the_usual_places(): void

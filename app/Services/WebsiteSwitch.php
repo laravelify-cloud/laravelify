@@ -102,7 +102,7 @@ class WebsiteSwitch
 
     /**
      * Remove a website: its nginx, worker, and PM2 files, then the website itself. The folder
-     * in /var/www stays, as when one website is deleted from its own page.
+     * moves to /var/www/.trash (<slug>-<date>), as when one website is deleted from its own page.
      */
     public function delete(Website $website): void
     {
@@ -172,7 +172,7 @@ class WebsiteSwitch
         return [
             'message' => match (true) {
                 $count === 0 => 'No websites to delete.',
-                $failed === 0 && $tunnelNote === null => 'Deleted '.$sites.'. Their folders in /var/www are kept.',
+                $failed === 0 && $tunnelNote === null => 'Deleted '.$sites.'. Their folders moved to /var/www/.trash.',
                 $failed === 0 => 'Deleted '.$sites.'. '.$tunnelNote['note'],
                 default => $failed.' of '.$sites.' could not be deleted.',
             },
@@ -182,7 +182,7 @@ class WebsiteSwitch
     }
 
     /**
-     * Take the site off nginx, Supervisor, and PM2, then delete its panel record. The folder stays.
+     * Take the site off nginx, Supervisor, PM2, and GlitchTip, then delete its panel record. The folder goes to the trash.
      */
     private function removeLocally(Website $website): void
     {
@@ -201,6 +201,15 @@ class WebsiteSwitch
                 app(LiveServer::class)->release($website);
             } catch (Throwable) {
                 // As above.
+            }
+        }
+
+        // And its GlitchTip project, with the errors in it.
+        if ($website->glitchtip_project !== null) {
+            try {
+                app(Glitchtip::class)->forget($website);
+            } catch (Throwable) {
+                // GlitchTip unreachable: the project stays there, and can be deleted in GlitchTip.
             }
         }
 

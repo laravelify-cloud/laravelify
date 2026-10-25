@@ -151,6 +151,15 @@ class WebsiteCreator
         $this->renderer->fillNewWebsite($website);
         $website->save();
 
+        // With error tracking on, the new website gets its GlitchTip project and key right away.
+        if (app(Glitchtip::class)->installed()) {
+            try {
+                app(Glitchtip::class)->connect($website);
+            } catch (Throwable) {
+                // The Errors section of the website still offers to connect it.
+            }
+        }
+
         try {
             // A folder left by a deleted website of the same name belongs to the shared user again;
             // a new website has no visitors yet, so it takes the folder over with its own user now.

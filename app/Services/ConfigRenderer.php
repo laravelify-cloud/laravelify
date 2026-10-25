@@ -580,6 +580,8 @@ CONF;
         $port = $website->port ?: 3000;
         $path = $website->deploy_path;
         $slug = $website->slug;
+        $node = $website->node_version ?: '22';
+        $withNode = base_path('scripts/with-node.sh');
 
         return <<<JS
 module.exports = {
@@ -587,10 +589,11 @@ module.exports = {
     {
       name: "{$slug}",
       cwd: "{$path}/.next/standalone",
-      script: "server.js",
-      interpreter: "node",
-      env_file: "{$path}/.env",
+      script: "/bin/bash",
+      args: [{$this->jsString($withNode)}, "{$node}", "node", "server.js"],
+      interpreter: "none",
       env: {
+        LARAVELIFY_ENV_FILE: "{$path}/.env",
         NODE_ENV: "production",
         PORT: "{$port}",
         HOSTNAME: "127.0.0.1",
@@ -632,8 +635,8 @@ module.exports = {
       script: "/bin/bash",
       args: [{$this->jsString($withNode)}, "{$node}", "bash", "-c", {$this->jsString('exec '.$command)}],
       interpreter: "none",
-      env_file: "{$path}/.env",
       env: {
+        LARAVELIFY_ENV_FILE: "{$path}/.env",
         NODE_ENV: "production",
         PORT: "{$port}",
         HOST: "127.0.0.1",
@@ -643,6 +646,23 @@ module.exports = {
   ],
 };
 JS;
+    }
+
+    /**
+     * A PM2 file saved before Node apps read their .env through with-node.sh (PM2 ignores
+     * env_file): the .env path moves into env, and Next.js starts through with-node.sh too.
+     * Anything else in the file, including the user's own changes, stays as it is.
+     */
+    public function upgradeNodeEnv(Website $website, string $config): string
+    {
+        $config = (string) preg_replace('/^([ \t]*)env_file:[ \t]*("[^"\n]*"),[ \t]*\n([ \t]*env:[ \t]*\{[ \t]*\n)/m', "\$3\$1  LARAVELIFY_ENV_FILE: \$2,\n", $config);
+
+        if ($website->isNextjs()) {
+            $args = '      script: "/bin/bash",'."\n".'      args: ['.$this->jsString(base_path('scripts/with-node.sh')).', "'.($website->node_version ?: '22').'", "node", "server.js"],'."\n".'      interpreter: "none",';
+            $config = (string) preg_replace('/^[ \t]*script:[ \t]*"server\.js",[ \t]*\n[ \t]*interpreter:[ \t]*"node",/m', str_replace(['\\', '$'], ['\\\\', '\\$'], $args), $config);
+        }
+
+        return $config;
     }
 
     private function jsString(string $value): string

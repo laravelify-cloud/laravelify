@@ -324,6 +324,31 @@ UNIT;
         return $this->apply(['workspace-start', $key, (string) $port, $token, ...$slugs]);
     }
 
+    /**
+     * Install or update GlitchTip at /glitchtip on the panel's address (see host-apply.sh
+     * glitchtip-install). Returns its API token, its admin's email, and the admin's password the
+     * first time.
+     *
+     * @return array{token: string, email: ?string, password: ?string}
+     */
+    public function glitchtipInstall(string $panelUrl, string $version, string $email): array
+    {
+        preg_match_all('/^(TOKEN|EMAIL|PASSWORD)=(.+)$/m', $this->apply(['glitchtip-install', rtrim($panelUrl, '/'), $version, $email]), $matches, PREG_SET_ORDER);
+        $values = [];
+
+        foreach ($matches as [, $key, $value]) {
+            $values[strtolower($key)] = trim($value);
+        }
+
+        return ['token' => $values['token'] ?? throw new RuntimeException('GlitchTip gave no API token.'), 'email' => $values['email'] ?? null, 'password' => $values['password'] ?? null];
+    }
+
+    /** Remove GlitchTip with its database (see host-apply.sh glitchtip-remove). */
+    public function glitchtipRemove(): string
+    {
+        return $this->apply(['glitchtip-remove', 'all']);
+    }
+
     /** The panel AI chat's own user and home (see host-apply.sh ai-chat-user). */
     public function aiChatUser(): string
     {

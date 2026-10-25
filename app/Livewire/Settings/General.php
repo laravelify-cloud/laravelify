@@ -5,11 +5,13 @@ namespace App\Livewire\Settings;
 use App\Livewire\PanelComponent;
 use App\Models\Setting;
 use App\Services\DisplayTime;
+use App\Support\ServerAddress;
 use Illuminate\Validation\Rule;
 
 /**
- * Panel-wide display settings: the timezone and format of every date and time. Left on
- * Automatic, each person sees their browser's timezone and their country's format.
+ * Panel-wide settings: the timezone and format of every date and time (left on Automatic, each
+ * person sees their browser's timezone and their country's format), and the server's address for
+ * links to websites on a port.
  */
 class General extends PanelComponent
 {
@@ -22,6 +24,9 @@ class General extends PanelComponent
 
     public bool $relative = false;
 
+    /** The address port links use (http://address:port), "" to find it automatically. */
+    public string $server_address = '';
+
     public function mount(DisplayTime $time): void
     {
         $settings = $time->settings();
@@ -29,6 +34,25 @@ class General extends PanelComponent
         $this->date_format = $settings['date'];
         $this->time_format = $settings['time'];
         $this->relative = $settings['relative'];
+        $this->server_address = (string) Setting::getValue(ServerAddress::SETTING);
+    }
+
+    public function saveServerAddress(): void
+    {
+        $this->server_address = trim(preg_replace('#^https?://#i', '', $this->server_address) ?? '', " /\t\n");
+        $this->validate([
+            'server_address' => ['nullable', 'string', 'max:190', function (string $attribute, string $value, \Closure $fail): void {
+                $host = preg_replace('/:\d+$/', '', $value);
+
+                if ($value !== '' && filter_var($host, FILTER_VALIDATE_IP) === false && preg_match('/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i', (string) $host) !== 1) {
+                    $fail('Enter an IP address like 192.168.1.20, or a host name like server.lan.');
+                }
+            }],
+        ]);
+        $this->server_address = (string) preg_replace('/:\d+$/', '', $this->server_address);
+
+        Setting::putValue(ServerAddress::SETTING, $this->server_address);
+        $this->toast($this->server_address === '' ? 'The server address is found automatically again.' : 'Port links now use '.$this->server_address.'.');
     }
 
     public function save(DisplayTime $time): void
@@ -60,6 +84,8 @@ class General extends PanelComponent
 
         return view('livewire.settings.general', [
             'timezones' => DisplayTime::timezones(),
+            'detectedAddress' => ServerAddress::detected(),
+            'localIps' => ServerAddress::localIps(),
             'browserZone' => $settings['browser_timezone'],
             'browserLocale' => str_replace('_', '-', $settings['locale']),
             'autoExample' => $preview->autoExample(),

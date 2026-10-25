@@ -66,7 +66,7 @@ use Laravel\Mcp\Server\Attributes\Version;
     - Files and data: files the repository does not carry, like a Firebase key in storage/app/private [upload-file, up to 20 MB, a .zip/.tgz can be
       unpacked]; delete a file, which goes to the Trash [delete-file]; import a .sql or .sql.gz dump into the site's database [import-database, then get-task].
     - Backups to S3: [list-backups, run-backup].
-    - Clean up: [delete-website, delete-group, update-group]. These keep the site's folder and database on the server. Always ask the user first.
+    - Clean up: [delete-website, delete-group, update-group]. The site's folder moves to /var/www/.trash and its database stays on the server. Always ask the user first.
 
     Ports are picked by themselves: every new site gets a port nothing else uses, including apps still running from an old server.
     Ports in an old server's nginx files do not matter, only the domains.

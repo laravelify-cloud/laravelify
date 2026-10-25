@@ -2,6 +2,18 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.72] - 2026-10-25
+
+- **Error tracking with GlitchTip.** Turn it on from any website's GlitchTip tab: GlitchTip (open source) is installed on your own server at `/glitchtip`, and every website gets its own project, with its key put in its `.env` under the name its Sentry SDK reads. Errors from the server (Laravel, PHP, Node, Express, NestJS, and the server side of Nuxt, Next.js and SvelteKit) and from visitors' browsers land there. New websites are connected by themselves; deleting a website deletes its project.
+- **The GlitchTip tab.** It shows what is set up and what is left (GlitchTip installed, website connected, key in `.env` or in the code, Sentry SDK in the code, errors received), the open errors, and the setup steps for the website's framework.
+- **Install SDK in the code, in one click.** It adds the Sentry package and its setup to the website's code for Laravel, PHP, Next.js, Nuxt, React, Vue, Svelte, SvelteKit (2 and 3), Astro, Angular, plain HTML, Express, NestJS and Node, then commits, pushes and deploys. When a file does not look as expected, it says what to add by hand instead of guessing.
+- **GlitchTip opens signed in, behind the panel's login.** Its own sign-in page no longer shows: a GlitchTip page opened without a session goes through the panel first. The menus the panel manages (organization, profile, tokens, password) are hidden and refused, and Performance, Logs and Releases explain how to fill them.
+- **Turn off error tracking.** Removes GlitchTip and its database from the server and takes each website's key out of its `.env`. Turning it on again reconnects every website, and the SDK button puts the new key into code that holds it (Angular, plain HTML, PHP).
+- **Set the server address in Settings → General.** Websites on a port link to `http://address:port`. When the address found by itself is wrong (behind NAT, on a local network, in WSL), pick one of the server's own addresses or type one.
+- **Deleting a website moves its folder to `/var/www/.trash/<name>-<date>`** instead of leaving it in `/var/www`.
+- **Fixed: Node apps did not get their `.env`.** PM2 ignores its `env_file` setting, so Nuxt, Next.js, SvelteKit, Express and other Node servers started without their variables. The `.env` is now loaded when the app starts, and every update fixes existing apps.
+- **Fixed: a deploy failed when the repository started tracking a file an earlier install made** (like `package-lock.json`).
+
 ## [0.3.0-beta.71] - 2026-10-24
 
 - **Sign AI agents in from the AI chat.** An agent that is installed but not signed in has a Sign in button. A dialog runs its sign-in on the server and shows the link to open, the device code to type (Copilot), or a box for the code the sign-in page shows (Claude), then says who is signed in. The sign-in reaches every website's VS Code within a minute. Closing the dialog stops the sign-in.

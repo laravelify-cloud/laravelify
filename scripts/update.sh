@@ -115,7 +115,10 @@ export COMPOSER_ALLOW_SUPERUSER=1
 "${PHP_BIN}" artisan migrate --force --no-ansi
 "${PHP_BIN}" artisan laravelify:mysql-defaults --no-ansi || true
 "${PHP_BIN}" artisan laravelify:upload-limits --no-ansi || true
+"${PHP_BIN}" artisan laravelify:glitchtip-connect --no-ansi || true
+"${PHP_BIN}" artisan laravelify:node-env --no-ansi || true
 bash "${APP_ROOT}/scripts/host-apply.sh" phpmyadmin-hide all || true
+bash "${APP_ROOT}/scripts/host-apply.sh" glitchtip-nginx all || true
 
 # The panel runs as its own user (laravelify), websites as www-data. The first update with this
 # moves an older install over (users, PHP-FPM pool, nginx, sudo, Supervisor, PM2); later ones

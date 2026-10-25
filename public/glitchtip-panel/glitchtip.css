@@ -1,0 +1,61 @@
+/* Laravelify's additions to GlitchTip (see glitchtip.js). */
+[data-laravelify-hidden] {
+    display: none !important;
+}
+
+/* GlitchTip's own font: the containers these sit in do not set one. */
+.laravelify-back,
+.laravelify-tip {
+    font-family: "Plex Sans", system-ui, sans-serif;
+}
+
+.laravelify-back {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 12px 0;
+    padding: 10px 12px;
+    border-top: 1px solid rgb(255 255 255 / 0.12);
+    color: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    opacity: 0.85;
+}
+
+.laravelify-back:hover {
+    opacity: 1;
+}
+
+.laravelify-back-arrow {
+    width: 24px;
+    text-align: center;
+    font-size: 18px;
+}
+
+.laravelify-tip {
+    margin: 16px 24px 0;
+    padding: 14px 16px;
+    border: 1px solid rgb(124 58 237 / 0.45);
+    border-radius: 10px;
+    background: rgb(124 58 237 / 0.12);
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+.laravelify-tip strong {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 15px;
+}
+
+.laravelify-tip p {
+    margin: 0;
+}
+
+.laravelify-tip code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgb(127 127 127 / 0.2);
+    font-size: 12.5px;
+}

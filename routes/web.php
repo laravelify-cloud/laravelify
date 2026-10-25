@@ -6,6 +6,7 @@ use App\Http\Controllers\DeploymentLogController;
 use App\Http\Controllers\GithubAppHookController;
 use App\Http\Controllers\GithubAppManifestController;
 use App\Http\Controllers\GithubHookController;
+use App\Http\Controllers\GlitchtipLoginController;
 use App\Http\Controllers\HeartbeatController;
 use App\Http\Controllers\LiveServerHookController;
 use App\Http\Controllers\MonitoringLiveController;
@@ -136,6 +137,7 @@ Route::post('/database/export', DatabaseExportController::class)->name('database
 Route::get('/database/{database}', DatabaseShow::class)->where('database', '[A-Za-z0-9_-]+')->name('database.show');
 Route::get('/database/{database}/{table}', DatabaseTable::class)->where(['database' => '[A-Za-z0-9_-]+', 'table' => '[A-Za-z0-9_$-]+'])->name('database.table');
 Route::get('/tools/phpmyadmin', PhpMyAdminController::class)->name('tools.phpmyadmin');
+Route::get('/tools/glitchtip', GlitchtipLoginController::class)->name('tools.glitchtip');
 
 Route::get('/domains', DomainIndex::class)->name('domains.index');
 Route::get('/tunnels', TunnelIndex::class)->name('tunnels.index');

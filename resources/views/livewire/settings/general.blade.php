@@ -1,5 +1,5 @@
 <div class="flex flex-col gap-6">
-    <x-page-header title="General" summary="How the panel shows dates and times. Everything is stored in UTC; only what you see changes." />
+    <x-page-header title="General" summary="How the panel shows dates and times, and the address links to websites on a port use." />
 
     <form class="flex max-w-3xl flex-col gap-6" wire:submit="save" x-data>
         <x-layer-card title="Date and time" helper="Used on every page: deployments, logs, monitoring, files, charts, and live feeds.">
@@ -69,6 +69,34 @@
                 <div><p class="mon-label">Date</p><p class="mt-1.5 font-mono text-[15px] font-semibold">{{ $preview['date'] }}</p></div>
                 <div><p class="mon-label">Time</p><p class="mt-1.5 font-mono text-[15px] font-semibold">{{ $preview['time'] }}</p></div>
                 <div><p class="mon-label">A deploy 5 minutes ago</p><p class="mt-1.5 font-mono text-[15px] font-semibold">{{ $preview['earlier'] }}</p></div>
+            </div>
+        </x-layer-card>
+    </form>
+
+    <form class="flex max-w-3xl flex-col gap-6" wire:submit="saveServerAddress">
+        <x-layer-card title="Server address" helper="Websites without a domain open on http://address:port. Set it when the found address is wrong, like a server behind NAT or on a local network (WSL).">
+            <x-slot:actions>
+                <button class="btn btn-primary" type="submit" wire:loading.attr="disabled" wire:target="saveServerAddress">Save</button>
+            </x-slot:actions>
+
+            <div class="flex flex-col gap-3">
+                <label class="field">
+                    <span class="label">IP address or host name</span>
+                    <input class="input font-mono" type="text" wire:model="server_address" placeholder="{{ $detectedAddress ?? '192.168.1.20' }}" autocomplete="off" spellcheck="false">
+                    <span class="text-[12px] text-muted">
+                        Leave empty to find it automatically{{ $detectedAddress ? ': now '.$detectedAddress : '' }}.
+                    </span>
+                    @error('server_address') <span class="error text-[12px]">{{ $message }}</span> @enderror
+                </label>
+
+                @if ($localIps !== [] || $detectedAddress)
+                    <div class="flex flex-wrap items-center gap-2 text-[12px] text-muted">
+                        <span>Use:</span>
+                        @foreach (array_values(array_unique(array_filter([$detectedAddress, ...$localIps]))) as $ip)
+                            <button class="btn btn-sm font-mono" type="button" wire:click="$set('server_address', '{{ $ip }}')">{{ $ip }}</button>
+                        @endforeach
+                    </div>
+                @endif
             </div>
         </x-layer-card>
     </form>

@@ -13,7 +13,7 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 
 #[IsDestructive]
-#[Description('Delete a website from the panel: its nginx, worker, and PM2 files go, its deployments and settings are deleted, and its domains are taken off the Cloudflare tunnel (and their CNAMEs deleted when a Cloudflare token is saved). The folder in /var/www and the MySQL database stay, so nothing is lost for good. Ask the user first, and pass the website\'s slug as confirm.')]
+#[Description('Delete a website from the panel: its nginx, worker, and PM2 files go, its deployments and settings are deleted, and its domains are taken off the Cloudflare tunnel (and their CNAMEs deleted when a Cloudflare token is saved). The folder moves to /var/www/.trash/<slug>-<date> and the MySQL database stays, so nothing is lost for good. Ask the user first, and pass the website\'s slug as confirm.')]
 class DeleteWebsite extends Tool
 {
     use DescribesWebsites;

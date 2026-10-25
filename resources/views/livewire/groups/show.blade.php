@@ -109,7 +109,7 @@
         <x-bulk-delete-dialog
             action="$wire.deleteWebsites(selected)"
             what="websites"
-            :actions="['Their nginx, worker, and PM2 files are removed and they stop being served.', 'Their deployments, monitoring, and settings are deleted.', 'Their folders in /var/www are kept.']"
+            :actions="['Their nginx, worker, and PM2 files are removed and they stop being served.', 'Their deployments, monitoring, and settings are deleted.', 'Their folders move to /var/www/.trash, named with the date.']"
         />
     </section>
 </div>

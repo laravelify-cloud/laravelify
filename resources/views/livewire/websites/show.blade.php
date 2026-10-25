@@ -4,7 +4,7 @@
     $repositoryUrl = preg_match('#^https?://#', (string) $website->repository) === 1 ? preg_replace('/\.git$/', '', (string) $website->repository) : null;
     $navGroups = [
         'settings' => ['Settings', ['general' => ['General', 'settings'], 'environment' => ['Environment', 'variables'], 'runtime' => ['Runtime', 'runtime'], 'nginx' => ['Nginx', 'nginx'], 'security' => ['Security', 'shield'], 'redirects' => ['Redirects', 'arrow-up-right']]],
-        'observe' => ['Observe', ['monitoring' => ['Monitoring', 'chart'], 'deployments' => ['Deployments', 'deployments'], 'logs' => ['Logs', 'logs'], 'health' => ['Health', 'pulse'], 'processes' => ['Processes', 'processes'], 'terminal' => ['Terminal', 'terminal'], 'files' => ['Files', 'files']]],
+        'observe' => ['Observe', ['monitoring' => ['Monitoring', 'chart'], 'deployments' => ['Deployments', 'deployments'], 'logs' => ['Logs', 'logs'], 'glitchtip' => ['GlitchTip', 'bug'], 'health' => ['Health', 'pulse'], 'processes' => ['Processes', 'processes'], 'terminal' => ['Terminal', 'terminal'], 'files' => ['Files', 'files']]],
         'operations' => ['Operations', ['danger' => ['Danger zone', 'danger']]],
     ];
 
@@ -817,6 +817,141 @@
             <section x-show="tab === 'logs'" x-cloak>
                 <livewire:websites.logs :website="$website" :key="'site-logs-'.$website->id" />
             </section>
+
+            {{-- GlitchTip: where this website's error tracking stands, its errors, and how to send them --}}
+            <div class="flex flex-col gap-6" x-show="tab === 'glitchtip'" x-cloak>
+                <x-layer-card title="Status" helper="What is set up for this website's error tracking, and what is left.">
+                    @if ($errorTracking['connected'] || $errorTracking['canSetUp'])
+                        <x-slot:actions>
+                            @if ($errorTracking['connected'])
+                                <a class="btn" href="{{ $errorTracking['url'] }}" target="_blank" rel="noopener"><x-menu-icon name="external" /> Open in GlitchTip</a>
+                            @endif
+                            @if ($errorTracking['canSetUp'])
+                                <button
+                                    class="btn btn-primary"
+                                    type="button"
+                                    wire:click="setUpErrorTracking"
+                                    wire:loading.attr="disabled"
+                                    wire:target="setUpErrorTracking"
+                                    wire:confirm="Add the Sentry SDK to {{ $website->name }}? Laravelify installs the package, adds its setup to the code, commits and pushes it to {{ $website->branch }}, then deploys."
+                                    title="Install the Sentry SDK in the code, commit, push, and deploy"
+                                ><x-menu-icon name="bolt" /> Install SDK in the code</button>
+                            @endif
+                        </x-slot:actions>
+                    @endif
+                    <ul class="glitchtip-checks">
+                        @foreach ($errorTracking['checks'] as $check)
+                            <li @class(['is-ok' => $check['ok'] === true, 'is-todo' => $check['ok'] === false, 'is-waiting' => $check['ok'] === null])>
+                                <span class="glitchtip-check-icon" aria-hidden="true">
+                                    <x-menu-icon :name="match ($check['ok']) { true => 'check', false => 'close', null => 'clock' }" class="size-3.5" />
+                                </span>
+                                <span class="min-w-0">
+                                    <b class="block text-[13.5px]">{{ $check['label'] }}</b>
+                                    <small class="block break-words text-muted">{{ $check['detail'] }}</small>
+                                </span>
+                                <span class="sr-only">{{ match ($check['ok']) { true => 'Done', false => 'Not done', null => 'Waiting' } }}</span>
+                            </li>
+                        @endforeach
+                    </ul>
+                </x-layer-card>
+
+                @if (! $errorTracking['installed'])
+                    <x-layer-card title="Error tracking" helper="See every error of this website, from its server and from visitors' browsers, grouped, with the line that failed.">
+                        <div class="errors-intro">
+                            <ul>
+                                <li><x-menu-icon name="bug" class="size-4" /> Laravel, PHP, Node, Next.js and browser apps (React, Vue, Svelte, Angular, plain HTML)</li>
+                                <li><x-menu-icon name="check" class="size-4" /> Errors grouped, with how often and for how many visitors, and the stack trace</li>
+                                <li><x-menu-icon name="shield" class="size-4" /> On this server: GlitchTip (open source), nothing is sent to anyone else. About 250 MB of RAM</li>
+                            </ul>
+                            <button class="btn btn-primary" type="button" wire:click="enableErrorTracking"><x-menu-icon name="bolt" /> Turn on error tracking</button>
+                            <p class="text-[12.5px] text-muted">Installs GlitchTip for the whole server in a minute or two, at {{ rtrim((string) config('app.url'), '/') }}/glitchtip.</p>
+                        </div>
+                    </x-layer-card>
+                @elseif (! $errorTracking['connected'])
+                    <x-layer-card title="Error tracking" helper="Error tracking is on for this server. Connect this website to give it a project and its key.">
+                        <div class="errors-intro">
+                            <p class="text-[13.5px]">The key goes into this website's .env{{ $errorTracking['keys'] ? ' as '.implode(' and ', $errorTracking['keys']) : '' }}, where the Sentry SDK reads it. Then add the SDK with the steps that show here.</p>
+                            <button class="btn btn-primary" type="button" wire:click="connectErrorTracking" wire:loading.attr="disabled"><x-menu-icon name="bolt" /> Connect {{ $website->name }}</button>
+                        </div>
+                    </x-layer-card>
+
+                    <x-layer-card title="Send this website's errors" helper="The steps for {{ \App\Support\SiteTypes::label($website->type) }}. Connect first: the key then shows here and goes into .env.">
+                        @include('livewire.websites.partials.error-guide')
+                    </x-layer-card>
+                @else
+                    <x-layer-card title="Errors" helper="Open errors of this website, newest first." flush>
+                        @if ($errorTracking['problem'])
+                            <p class="error px-4 py-3">{{ $errorTracking['problem'] }}</p>
+                        @endif
+                        <div class="errors-list">
+                            @forelse ($errorTracking['issues'] as $issue)
+                                <a class="errors-row" href="{{ $issue['url'] }}" target="_blank" rel="noopener" wire:key="issue-{{ $issue['id'] }}">
+                                    <span @class(['errors-level', 'is-'.$issue['level']])></span>
+                                    <span class="min-w-0 flex-1">
+                                        <b class="block truncate">{{ $issue['title'] }}</b>
+                                        <small class="block truncate text-muted">{{ $issue['culprit'] ?: '—' }}</small>
+                                    </span>
+                                    <span class="errors-meta">
+                                        <b>{{ number_format($issue['count']) }}</b> <small>events</small>
+                                        @if ($issue['lastSeen']) <small class="max-sm:hidden">· {{ \Illuminate\Support\Carbon::parse($issue['lastSeen'])->diffForHumans() }}</small> @endif
+                                    </span>
+                                </a>
+                            @empty
+                                <div class="table-empty">No errors yet. Once the SDK below is in the code and deployed, errors show here.</div>
+                            @endforelse
+                        </div>
+                    </x-layer-card>
+
+                    <x-layer-card title="Send this website's errors" helper="Add the Sentry SDK (GlitchTip speaks its language) with these steps, then commit and deploy.">
+                        <div class="flex flex-col gap-4">
+                            <div class="field">
+                                <span>Key (DSN){{ $errorTracking['keys'] ? ', already in .env as '.implode(' and ', $errorTracking['keys']) : '' }}</span>
+                                <div class="copy-field">
+                                    <input class="input font-mono text-[12.5px]" value="{{ $errorTracking['dsn'] }}" readonly aria-label="DSN">
+                                    <x-copy-button :text="\Illuminate\Support\Js::from((string) $errorTracking['dsn'])" />
+                                </div>
+                            </div>
+                            @include('livewire.websites.partials.error-guide')
+                        </div>
+                    </x-layer-card>
+
+                    @if ($errorTracking['login']['email'])
+                        <x-layer-card title="GlitchTip sign-in" helper="Open in GlitchTip signs you in by itself. This is its admin, for signing in elsewhere; if you change the password in GlitchTip, the panel cannot sign you in any more.">
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <div class="field">
+                                    <span>Email</span>
+                                    <div class="copy-field"><input class="input" value="{{ $errorTracking['login']['email'] }}" readonly aria-label="GlitchTip email"><x-copy-button :text="\Illuminate\Support\Js::from((string) $errorTracking['login']['email'])" /></div>
+                                </div>
+                                @if ($errorTracking['login']['password'])
+                                    <div class="field" x-data="{ show: false }">
+                                        <span>Password</span>
+                                        <div class="copy-field has-reveal">
+                                            <input class="input font-mono" :type="show ? 'text' : 'password'" value="{{ $errorTracking['login']['password'] }}" readonly aria-label="GlitchTip password">
+                                            <button class="icon-btn reveal-button" type="button" @click="show = ! show" :aria-label="show ? 'Hide password' : 'Show password'" :title="show ? 'Hide' : 'Show'"><x-menu-icon name="eye" class="size-4" /></button>
+                                            <x-copy-button :text="\Illuminate\Support\Js::from((string) $errorTracking['login']['password'])" />
+                                        </div>
+                                    </div>
+                                @endif
+                            </div>
+                        </x-layer-card>
+                    @endif
+                @endif
+
+                @if ($errorTracking['installed'])
+                    <x-layer-card title="Turn off error tracking" helper="For the whole server, not only this website.">
+                        <div class="flex flex-wrap items-center justify-between gap-4">
+                            <p class="min-w-0 flex-1 text-[13px] text-muted">Removes GlitchTip from this server with every error it kept, and takes the key out of each website's .env. The Sentry SDK stays in the code and sends nothing without a key. You can turn error tracking on again later; it starts empty.</p>
+                            <x-confirm-delete
+                                title="Turn off error tracking?"
+                                name="glitchtip"
+                                action="disableErrorTracking"
+                                button="Turn off error tracking"
+                                :actions="['GlitchTip stops and is removed from this server, with its database: every error, project, and release in it.', 'Each website\'s GlitchTip key leaves its .env. Websites stop sending errors from their next deploy.', 'The Sentry SDK and its setup stay in the websites\' code.', 'PostgreSQL itself stays installed.']"
+                            />
+                        </div>
+                    </x-layer-card>
+                @endif
+            </div>
 
             <section x-show="tab === 'health'" x-cloak>
                 <livewire:websites.health :website="$website" :key="'site-health-'.$website->id" />

@@ -155,7 +155,9 @@ class Deployer
                 'git', '-C', $path, 'fetch', '--', $repository,
                 '+refs/heads/'.$website->branch.':refs/remotes/origin/'.$website->branch,
             ]), $log);
-            $this->must($this->runner->runAsSite(['git', '-C', $path, 'checkout', '-B', $website->branch, 'origin/'.$website->branch]), $log);
+            // -f: files a build or install left untracked (a package-lock.json) do not block a
+            // commit that adds them; the reset below throws away local changes anyway.
+            $this->must($this->runner->runAsSite(['git', '-C', $path, 'checkout', '-f', '-B', $website->branch, 'origin/'.$website->branch]), $log);
             $this->must($this->runner->runAsSite(['git', '-C', $path, 'reset', '--hard', 'origin/'.$website->branch]), $log);
 
             return;

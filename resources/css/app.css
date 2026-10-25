@@ -2004,6 +2004,16 @@ button.domain-suggest-row:hover { background: var(--color-fill); }
         transform: translateY(-50%);
     }
 
+    /* A secret with a show/hide button next to the copy button, both inside the field. */
+    .copy-field.has-reveal .input { padding-right: 76px; }
+
+    .copy-field .reveal-button {
+        position: absolute;
+        top: 50%;
+        right: 38px;
+        transform: translateY(-50%);
+    }
+
     .task-spinner {
         width: 14px;
         height: 14px;
@@ -2559,3 +2569,29 @@ main:has(> .ai-page) { max-width: none; padding: 0; gap: 0; }
 .ai-login-done p { font-size: 13px; color: var(--color-muted); }
 .ai-login-check { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 999px; background: color-mix(in srgb, var(--color-success) 16%, transparent); color: var(--color-success); }
 .ai-login-log { margin-top: 6px; white-space: pre-wrap; font-size: 12px; }
+
+/* Website page, Errors (GlitchTip): the intro, the open errors, and the SDK steps. */
+.errors-intro { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.errors-intro ul { display: grid; gap: 8px; font-size: 13.5px; }
+.errors-intro li { display: flex; align-items: flex-start; gap: 10px; }
+.errors-intro li svg { margin-top: 2px; flex-shrink: 0; color: var(--color-accent); }
+.glitchtip-checks { display: grid; gap: 12px; }
+.glitchtip-checks li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.glitchtip-check-icon { display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; margin-top: 1px; border-radius: 999px; background: var(--color-fill); color: var(--color-muted); }
+.glitchtip-checks .is-ok .glitchtip-check-icon { background: color-mix(in srgb, var(--color-success) 16%, transparent); color: var(--color-success); }
+.glitchtip-checks .is-todo .glitchtip-check-icon { background: color-mix(in srgb, var(--color-danger) 14%, transparent); color: var(--color-danger); }
+.errors-list { display: flex; flex-direction: column; }
+.errors-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--color-line); font-size: 13.5px; }
+.errors-row:first-child { border-top: 0; }
+.errors-row:hover { background: var(--color-fill); }
+.errors-level { width: 4px; align-self: stretch; flex-shrink: 0; border-radius: 4px; background: var(--color-danger); }
+.errors-level.is-warning { background: var(--color-warning); }
+.errors-level.is-info, .errors-level.is-debug { background: var(--color-muted); }
+.errors-meta { display: flex; align-items: baseline; gap: 4px; flex-shrink: 0; color: var(--color-muted); }
+.errors-meta b { color: var(--color-ink); }
+.guide-steps { display: grid; gap: 16px; counter-reset: step; }
+.guide-steps li { position: relative; display: grid; gap: 8px; min-width: 0; padding-left: 36px; counter-increment: step; font-size: 13.5px; }
+.guide-steps li::before { content: counter(step); position: absolute; left: 0; top: -2px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 999px; background: var(--color-fill); font-size: 12.5px; font-weight: 600; }
+.guide-code { position: relative; min-width: 0; }
+.guide-code pre { overflow-x: auto; padding: 12px 44px 12px 14px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-recessed); font-size: 12.5px; line-height: 1.55; }
+.guide-code .copy-button { position: absolute; top: 6px; right: 6px; }

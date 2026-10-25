@@ -80,6 +80,14 @@
                             <x-menu-icon name="external" class="ml-auto size-3.5 opacity-50" />
                         </a>
                     @endif
+                    @php($hasGlitchtip = app(\App\Services\Glitchtip::class)->installed())
+                    @if ($hasGlitchtip)
+                        <a class="menu-item" href="{{ route('tools.glitchtip') }}" target="_blank" rel="noopener" title="Error tracking: opens signed in">
+                            <x-menu-icon name="bug" />
+                            <span>GlitchTip</span>
+                            <x-menu-icon name="external" class="ml-auto size-3.5 opacity-50" />
+                        </a>
+                    @endif
                     @foreach ($sidebarLinks as $link)
                         <a class="menu-item" href="{{ $link['url'] }}" target="_blank" rel="noopener noreferrer" title="{{ $link['url'] }}">
                             <x-menu-icon name="link" />
@@ -87,7 +95,7 @@
                             <x-menu-icon name="external" class="ml-auto size-3.5 opacity-50" />
                         </a>
                     @endforeach
-                    @if (! $hasPhpMyAdmin && $sidebarLinks === [])
+                    @if (! $hasPhpMyAdmin && ! $hasGlitchtip && $sidebarLinks === [])
                         <a class="menu-item" href="{{ route('settings.links') }}" wire:navigate>
                             <x-menu-icon name="plus" />
                             <span>Add a link</span>

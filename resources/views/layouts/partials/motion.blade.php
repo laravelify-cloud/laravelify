@@ -64,9 +64,10 @@
     };
 
     window.websitePage = function () {
-        var allowed = ['general', 'environment', 'runtime', 'nginx', 'security', 'redirects', 'processes', 'deployments', 'monitoring', 'logs', 'health', 'terminal', 'files', 'danger'];
+        var allowed = ['general', 'environment', 'runtime', 'nginx', 'security', 'redirects', 'processes', 'deployments', 'monitoring', 'logs', 'glitchtip', 'health', 'terminal', 'files', 'danger'];
         var params = new URLSearchParams(window.location.search);
-        var requested = params.get('tab');
+        // ?tab=errors is the GlitchTip tab's old name.
+        var requested = params.get('tab') === 'errors' ? 'glitchtip' : params.get('tab');
         var tab = allowed.indexOf(requested) === -1 ? 'general' : requested;
 
         return {

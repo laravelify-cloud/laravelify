@@ -10,6 +10,7 @@ use App\Models\GithubApp;
 use App\Models\Website;
 use App\Services\ConfigRenderer;
 use App\Services\DatabaseProvisioner;
+use App\Services\Glitchtip;
 use App\Services\HostWriter;
 use App\Services\PanelPreview;
 use App\Services\PanelTaskRunner;
@@ -22,6 +23,9 @@ use App\Support\BuildOutput;
 use App\Support\EnvFile;
 use App\Support\GitInput;
 use App\Support\Redirects;
+use App\Support\SentrySetup;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Renderless;
@@ -613,8 +617,47 @@ class Show extends PanelComponent
             'website_ids' => [$this->website->id],
         ]);
 
-        $this->toastAfterRedirect($name.' is being deleted. Its folder in /var/www is kept.');
+        $this->toastAfterRedirect($name.' is being deleted. Its folder moves to /var/www/.trash.');
         $this->redirect(route('groups.show', $group), navigate: true);
+    }
+
+    /** Install GlitchTip for the whole server, in the background (a minute or two). */
+    public function enableErrorTracking(): void
+    {
+        $this->runInBackground('glitchtip.install', 'glitchtip', 'Turning on error tracking (GlitchTip)', ['user_id' => Auth::id()]);
+    }
+
+    /** Remove GlitchTip from the server, with every error it kept, in the background. */
+    public function disableErrorTracking(): void
+    {
+        if (! $this->confirmed('glitchtip')) {
+            return;
+        }
+
+        $this->runInBackground('glitchtip.remove', 'glitchtip', 'Turning off error tracking (GlitchTip)', []);
+    }
+
+    /** Add the Sentry SDK to this website's code (connecting it first), push it, and deploy, in the background. */
+    public function setUpErrorTracking(): void
+    {
+        $this->runInBackground('glitchtip.sdk', 'website:'.$this->website->id, 'Adding the Sentry SDK to '.$this->website->name, ['website_id' => $this->website->id]);
+    }
+
+    /** Give this website a GlitchTip project and put its key in the .env. */
+    public function connectErrorTracking(Glitchtip $glitchtip): void
+    {
+        try {
+            $result = $glitchtip->connect($this->website);
+        } catch (Throwable $exception) {
+            $this->toast('Could not connect error tracking: '.$exception->getMessage(), 'error');
+
+            return;
+        }
+
+        $this->website->refresh();
+        $this->toast($result['keys'] === []
+            ? 'Connected. Add the key below to your code, then deploy.'
+            : 'Connected: '.implode(' and ', $result['keys']).' set in .env. Add the SDK below, then deploy.');
     }
 
     public function render()
@@ -631,7 +674,84 @@ class Show extends PanelComponent
                 : $this->website->deployments()->first(),
             'webhookUrl' => url('/hooks/github/'.$this->website->slug),
             'deployApp' => $this->website->githubApp,
+            'errorTracking' => $this->errorTracking(),
         ])->layout('layouts.app', ['mobile' => true])->title($this->website->name);
+    }
+
+    /**
+     * Error tracking for the Errors section: whether GlitchTip is on, this website's key, its open
+     * issues (asked of GlitchTip at most every 30 seconds), and which setup guide fits.
+     *
+     * @return array<string, mixed>
+     */
+    private function errorTracking(): array
+    {
+        $glitchtip = app(Glitchtip::class);
+        $connected = $glitchtip->installed() && $this->website->glitchtip_project !== null;
+        $issues = [];
+        $dsn = null;
+        $problem = null;
+
+        if ($connected) {
+            try {
+                [$dsn, $issues] = Cache::remember('glitchtip:website:'.$this->website->id, 30, fn () => [$glitchtip->dsn($this->website), $glitchtip->issues($this->website)]);
+            } catch (Throwable $exception) {
+                $problem = 'GlitchTip did not answer: '.$exception->getMessage();
+            }
+        }
+
+        $keys = $glitchtip->envKeys($this->website);
+        $keysSet = $keys !== [] && ! in_array(null, EnvFile::values((string) $this->website->env_content, $keys), true);
+        $sdk = $glitchtip->sdkFound($this->website);
+        // Sites that have no .env when they run carry the key in a file: is it this GlitchTip's?
+        $keyFile = SentrySetup::keyFile($this->website);
+        $keyPath = rtrim((string) $this->website->deploy_path, '/').'/'.$keyFile;
+        $keyInCode = $keyFile === null || $dsn === null || ! is_file($keyPath) || ! is_readable($keyPath)
+            ? null
+            : str_contains((string) file_get_contents($keyPath), $dsn);
+        $sdkFile = match ($this->website->type) {
+            'laravel', 'php' => 'composer.json',
+            'static' => 'index.html',
+            default => 'package.json',
+        };
+
+        // ok: true is done, false needs doing, null is waiting or does not apply.
+        $checks = [
+            ['label' => 'GlitchTip on this server', 'ok' => $glitchtip->installed(), 'detail' => $glitchtip->installed() ? 'Installed at '.$glitchtip->url() : 'Not installed yet'],
+            ['label' => 'Website connected', 'ok' => $connected, 'detail' => $connected ? 'Project '.$this->website->glitchtip_project : 'No GlitchTip project yet'],
+            $keyFile === null
+                ? ['label' => 'Key in .env', 'ok' => $keys === [] ? null : ($connected && $keysSet), 'detail' => match (true) {
+                    $keys === [] => 'This kind of site has no .env at run time: the key goes in the code (see the steps)',
+                    $connected && $keysSet => implode(' and ', $keys),
+                    default => 'Set when the website is connected',
+                }]
+                : ['label' => 'Key in the code', 'ok' => $keyInCode, 'detail' => match ($keyInCode) {
+                    true => 'In '.$keyFile,
+                    false => 'Not in '.$keyFile.' yet, or an old one: click Install SDK in the code',
+                    null => $connected ? 'No '.$keyFile.' yet: deploy the website first' : 'Set when the website is connected',
+                }],
+            ['label' => 'Sentry SDK in the code', 'ok' => $sdk, 'detail' => match ($sdk) {
+                true => 'Found in '.$sdkFile,
+                false => 'Not in '.$sdkFile.' yet: click Install SDK in the code, or follow the steps below',
+                null => 'No '.$sdkFile.' yet: deploy the website first',
+            }],
+            ['label' => 'Errors received', 'ok' => $issues !== [] ? true : null, 'detail' => $issues !== [] ? count($issues).' open '.str('issue')->plural(count($issues)) : 'None yet'],
+        ];
+
+        return [
+            'checks' => $checks,
+            // One click adds the SDK to the code, once GlitchTip is on and the site has a repository.
+            'canSetUp' => $glitchtip->installed() && ($sdk !== true || $keyInCode === false) && filled($this->website->repository),
+            'installed' => $glitchtip->installed(),
+            'connected' => $connected,
+            'dsn' => $dsn,
+            'keys' => $glitchtip->envKeys($this->website),
+            'guide' => $glitchtip->guide($this->website),
+            'issues' => $issues,
+            'problem' => $problem,
+            'url' => $connected ? $glitchtip->projectUrl($this->website) : $glitchtip->open(),
+            'login' => $glitchtip->login(),
+        ];
     }
 
     private function saved(): void

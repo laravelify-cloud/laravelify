@@ -2,17 +2,20 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\Settings\General;
 use App\Livewire\Websites\Form;
 use App\Mcp\Servers\LaravelifyServer;
 use App\Mcp\Tools\CreateWebsite;
 use App\Mcp\Tools\ListPorts;
 use App\Mcp\Tools\UploadFile;
 use App\Models\Group;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\PortAllocator;
 use App\Services\ServerProcesses;
 use App\Services\TwoFactor;
+use App\Support\ServerAddress;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
@@ -174,6 +177,26 @@ class PortsAndUploadsTest extends TestCase
 
         config(['laravelify.public_ip' => null]);
         $this->assertSame('http://127.0.0.1:8090', $website->publicUrl(), 'Without host commands nothing is looked up.');
+    }
+
+    public function test_the_server_address_set_in_general_settings_wins_for_port_links(): void
+    {
+        config(['laravelify.public_ip' => '187.7.72.156']);
+        $this->actingAs($this->admin);
+        $website = Website::factory()->create(['domain' => null, 'http_port' => 8090]);
+
+        Livewire::test(General::class)
+            ->assertSee('Server address')
+            ->set('server_address', 'not a host!')
+            ->call('saveServerAddress')
+            ->assertHasErrors('server_address')
+            ->set('server_address', 'http://172.28.1.5:8080/')
+            ->call('saveServerAddress')
+            ->assertHasNoErrors()
+            ->assertSet('server_address', '172.28.1.5');
+
+        $this->assertSame('172.28.1.5', Setting::getValue(ServerAddress::SETTING));
+        $this->assertSame('http://172.28.1.5:8090', $website->publicUrl());
     }
 
     public function test_the_add_website_form_offers_the_used_ports_list(): void

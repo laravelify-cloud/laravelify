@@ -127,6 +127,9 @@ class PanelTaskRunner
             'websites.domains' => $this->domainsTask($task),
             'websites.redirects' => $this->redirectsTask($task),
             'ai.install' => $this->aiInstallTask($task),
+            'glitchtip.install' => ['message' => app(Glitchtip::class)->install(User::query()->findOrFail((int) ($task->payload['user_id'] ?? 0)))],
+            'glitchtip.remove' => ['message' => app(Glitchtip::class)->uninstall()],
+            'glitchtip.sdk' => app(GlitchtipSdk::class)->setUp(Website::query()->findOrFail((int) ($task->payload['website_id'] ?? 0))),
             default => throw new RuntimeException('Unknown task.'),
         };
     }
