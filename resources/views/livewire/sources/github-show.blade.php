@@ -27,7 +27,7 @@
                 </label>
                 <div class="rounded-lg border border-line p-3 text-[12px]">
                     <p class="font-medium">Permissions the App asks for</p>
-                    <p class="text-muted">Contents: read · Metadata: read · Email: read, and push events, so every push deploys the sites that use this App.</p>
+                    <p class="text-muted">Contents: read and write · Administration: write · Metadata: read · Email: read, and push events, so every push deploys the sites that use this App. Writing lets the panel commit for you (the Sentry SDK) and make new repositories.</p>
                 </div>
                 <button class="btn btn-primary mt-auto w-full" type="button" x-data x-on:click="registerGithubApp($wire)">Register with GitHub</button>
             </section>

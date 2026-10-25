@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\Sources\Index as SourcesIndex;
 use App\Models\CloudflareTunnel;
 use App\Models\GithubApp;
 use App\Models\Group;
 use App\Models\Setting;
+use App\Models\User;
 use App\Models\Website;
 use App\Services\CloudflareApi;
 use App\Services\CloudflareRoutes;
@@ -17,6 +19,7 @@ use App\Services\HostWriter;
 use App\Services\PanelPreview;
 use App\Services\ProjectWorkspace;
 use App\Services\SiteUser;
+use App\Services\TwoFactor;
 use App\Services\WebsiteCreator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -24,6 +27,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
 
@@ -153,6 +157,30 @@ class ProjectRepositoriesTest extends TestCase
 
         $previews->disable($website->fresh());
         $this->assertNull($previews->mode($website->fresh()));
+    }
+
+    public function test_a_source_can_be_registered_again_or_deleted_from_the_list(): void
+    {
+        $this->actingAs(User::factory()->create(['two_factor_secret' => app(TwoFactor::class)->generateSecret(), 'two_factor_confirmed_at' => now()]));
+        $source = $this->githubApp();
+        $website = Website::factory()->create(['github_app_id' => $source->id]);
+
+        Livewire::test(SourcesIndex::class)
+            ->assertSee('Re-register')
+            ->call('reregister', $source->id)
+            ->assertRedirect(route('sources.github.show', $source));
+
+        $source->refresh();
+        $this->assertFalse($source->isConnected());
+        $this->assertNull($source->installation_id);
+        $this->assertSame($source->id, $website->refresh()->github_app_id, 'Its websites keep using it.');
+
+        Livewire::test(SourcesIndex::class)
+            ->set('confirmName', 'nope')->call('delete', $source->id)->assertHasErrors('confirmName')
+            ->set('confirmName', $source->name)->call('delete', $source->id);
+
+        $this->assertModelMissing($source);
+        $this->assertNull($website->refresh()->github_app_id);
     }
 
     public function test_a_new_github_app_is_offered_the_known_organizations(): void

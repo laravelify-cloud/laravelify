@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.74] - 2026-10-25
+
+- **Re-register and delete sources from the Sources list.** Re-register clears a GitHub App's connection and opens its registration, so GitHub makes a new App with the permissions the panel asks for now (Contents: read and write); the websites using it keep it and work again once it is installed. Delete asks for the name and says how many websites use the source.
+- **The registration lists the right permissions.** It said Contents: read, while the App asks for read and write (to commit the Sentry SDK and make repositories).
+
 ## [0.3.0-beta.73] - 2026-10-25
 
 - **Fixed: Next.js sites could answer 502 after updating to 0.3.0-beta.72.** The update changed how Node apps start (so they read their `.env`), but PM2 kept a running app's old start command and only took the new environment, so a Next.js app that was restarted, not redeployed, did not start while PM2 showed it as online. When the way an app starts changes, it is now removed from PM2 and started fresh from its file. If a Next.js site still shows 502 after updating, deploy it once.

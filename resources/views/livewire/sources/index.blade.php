@@ -37,6 +37,7 @@
                     <th>Source</th>
                     <th>Provider</th>
                     <th>Status</th>
+                    <th class="sr-only">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -52,10 +53,27 @@
                         <td>
                             <span class="status-badge" style="--status-color: {{ $source->isConnected() ? 'var(--color-success)' : 'var(--color-warning)' }}">{{ $source->isConnected() ? 'Connected' : 'Setup incomplete' }}</span>
                         </td>
+                        <td>
+                            <div class="row-actions justify-end">
+                                <button
+                                    class="btn btn-sm"
+                                    type="button"
+                                    wire:click="reregister({{ $source->id }})"
+                                    wire:confirm="Register {{ $source->name }} with GitHub again? Its connection is cleared, and GitHub makes a new App with the permissions the panel asks for now (Contents: read and write). Its {{ $source->websites_count }} {{ str('website')->plural($source->websites_count) }} keep using it once it is installed. Delete the old App on GitHub afterwards."
+                                    title="Register this App with GitHub again"
+                                ><x-menu-icon name="restore" /> Re-register</button>
+                                <x-confirm-delete
+                                    title="Delete this GitHub App source?"
+                                    :name="$source->name"
+                                    :action="'delete('.$source->id.')'"
+                                    :actions="['The source is removed from the panel. The App on GitHub is not uninstalled.', $source->websites_count.' '.str('website')->plural($source->websites_count).' using it keep their repository, but stop deploying on push until you pick another source in their General tab.']"
+                                />
+                            </div>
+                        </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="3" class="table-empty">No sources yet. Add a GitHub App to deploy private repositories.</td>
+                        <td colspan="4" class="table-empty">No sources yet. Add a GitHub App to deploy private repositories.</td>
                     </tr>
                 @endforelse
             </tbody>
