@@ -4,9 +4,12 @@ namespace App\Services;
 
 use App\Models\GithubApp;
 use App\Models\PrivateKey;
+use App\Models\Setting;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
+use Throwable;
 
 class GithubAppClient
 {
@@ -66,6 +69,38 @@ class GithubAppClient
             'type' => (string) $response->json('account.type'),
             'permissions' => array_map('strval', (array) $response->json('permissions', [])),
         ];
+    }
+
+    /**
+     * GitHub organizations to offer when a new App is made: those of the Apps already saved, and
+     * those the saved GitHub token belongs to (asked of GitHub at most every 10 minutes).
+     *
+     * @return list<string>
+     */
+    public static function knownOrganizations(): array
+    {
+        $saved = GithubApp::query()->whereNotNull('organization')->pluck('organization')->all();
+        $token = (string) Setting::getValue('github_token');
+        $fromToken = $token === '' ? [] : Cache::remember('github:token-organizations:'.md5($token), 600, function () use ($token): array {
+            try {
+                $response = Http::withToken($token)->acceptJson()->timeout(8)->get('https://api.github.com/user/orgs', ['per_page' => 100]);
+
+                return $response->successful() ? array_values(array_filter(array_map(fn ($org) => (string) ($org['login'] ?? ''), (array) $response->json()))) : [];
+            } catch (Throwable) {
+                return [];
+            }
+        });
+
+        $organizations = array_values(array_unique([...$saved, ...$fromToken]));
+        natcasesort($organizations);
+
+        return array_values($organizations);
+    }
+
+    /** Whether the installation may push commits (Contents: read and write). */
+    public function canPush(GithubApp $app): bool
+    {
+        return ($this->installation($app)['permissions']['contents'] ?? null) === 'write';
     }
 
     /**

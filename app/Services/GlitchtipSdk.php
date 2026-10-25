@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\GithubApp;
 use App\Models\Website;
 use App\Support\GitInput;
 use App\Support\SentrySetup;
@@ -44,7 +45,7 @@ class GlitchtipSdk
         $site = app(SiteUser::class)->for($website);
         $this->runner->actAs($site);
         $work = $site->home().'/glitchtip-setup/'.$website->slug;
-        $pushUrl = Deployer::repositoryWithToken($website);
+        $pushUrl = $this->pushUrl($website);
 
         try {
             if ($this->exists($site, $work)) {
@@ -101,6 +102,39 @@ class GlitchtipSdk
 
         return ['message' => $what.', committed and pushed to '.$website->branch.'. '
             .($deploying ? 'Deploying now: errors show in GlitchTip after that.' : 'Deploy it to start sending errors.')];
+    }
+
+    /**
+     * The URL to clone and push with. Deploys only read, so a website's own GitHub App may be
+     * read-only: another connected App that may push (Contents: read and write) and reaches the
+     * repository is used then. Without one, the website's own token (the push then says why).
+     */
+    private function pushUrl(Website $website): string
+    {
+        $fullName = GithubAppClient::fullName((string) $website->repository);
+
+        if ($fullName === null || preg_match('#^https://github\.com/#', (string) $website->repository) !== 1) {
+            return Deployer::repositoryWithToken($website);
+        }
+
+        $github = app(GithubAppClient::class);
+        $apps = GithubApp::query()->get()
+            ->filter(fn (GithubApp $app) => $app->isConnected())
+            ->sortByDesc(fn (GithubApp $app) => $app->id === $website->github_app_id);
+
+        foreach ($apps as $app) {
+            try {
+                if ($github->canPush($app)) {
+                    $token = $github->installationToken($app, $fullName);
+
+                    return 'https://x-access-token:'.rawurlencode($token).'@github.com/'.$fullName.'.git';
+                }
+            } catch (Throwable) {
+                // Not installed on this repository, or GitHub did not answer: try the next one.
+            }
+        }
+
+        return Deployer::repositoryWithToken($website);
     }
 
     /**
@@ -166,6 +200,11 @@ class GlitchtipSdk
 
         if (! $result->ok) {
             $verb = collect($arguments)->first(fn (string $argument) => ! str_starts_with($argument, '-') && ! str_contains($argument, '='));
+
+            // A GitHub App that may only read (enough for deploys) cannot push the SDK.
+            if ($verb === 'push' && preg_match('/Write access to repository not granted|returned error: 403|Permission to .* denied/i', $result->output) === 1) {
+                throw new RuntimeException('GitHub did not let the panel push to '.$website->repository.': its GitHub App may only read. On GitHub, edit the app → Permissions → Repository → Contents: Read and write, accept the new permission where the app is installed, then click again. Or follow the steps below by hand and push yourself.');
+            }
 
             throw new RuntimeException('git '.$verb.' failed: '.str_replace($pushUrl, (string) $website->repository, $result->output));
         }

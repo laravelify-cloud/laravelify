@@ -5,12 +5,14 @@ namespace Tests\Feature;
 use App\Models\CloudflareTunnel;
 use App\Models\GithubApp;
 use App\Models\Group;
+use App\Models\Setting;
 use App\Models\Website;
 use App\Services\CloudflareApi;
 use App\Services\CloudflareRoutes;
 use App\Services\DomainSuggestions;
 use App\Services\ExampleRepositories;
 use App\Services\GithubAppClient;
+use App\Services\GlitchtipSdk;
 use App\Services\HostWriter;
 use App\Services\PanelPreview;
 use App\Services\ProjectWorkspace;
@@ -151,6 +153,34 @@ class ProjectRepositoriesTest extends TestCase
 
         $previews->disable($website->fresh());
         $this->assertNull($previews->mode($website->fresh()));
+    }
+
+    public function test_a_new_github_app_is_offered_the_known_organizations(): void
+    {
+        $this->githubApp()->update(['organization' => 'acme']);
+        Setting::putValue('github_token', 'ghp_test');
+        Http::fake(['api.github.com/user/orgs*' => Http::response([['login' => 'Zeta-Org'], ['login' => 'acme'], ['login' => 'beta']])]);
+
+        $this->assertSame(['acme', 'beta', 'Zeta-Org'], GithubAppClient::knownOrganizations());
+    }
+
+    public function test_the_sdk_setup_pushes_with_an_app_that_may_write(): void
+    {
+        $this->withoutAppSigning();
+        $readOnly = $this->githubApp();
+        $writer = GithubApp::query()->create([...$readOnly->only(['html_url', 'api_url', 'git_user', 'git_port', 'private_key', 'webhook_secret']), 'name' => 'brave-wolf', 'slug' => 'brave-wolf', 'app_id' => '124', 'installation_id' => '789']);
+        $website = Website::factory()->create(['repository' => 'https://github.com/acme/shop.git', 'github_app_id' => $readOnly->id]);
+        Http::fake([
+            'api.github.com/app/installations/456/access_tokens' => Http::response(['token' => 'ghs_read']),
+            'api.github.com/app/installations/456' => Http::response(['account' => ['login' => 'acme', 'type' => 'Organization'], 'permissions' => ['contents' => 'read']]),
+            'api.github.com/app/installations/789/access_tokens' => Http::response(['token' => 'ghs_write']),
+            'api.github.com/app/installations/789' => Http::response(['account' => ['login' => 'acme', 'type' => 'Organization'], 'permissions' => ['contents' => 'write']]),
+        ]);
+
+        $pushUrl = (fn () => $this->pushUrl($website))->call(app(GlitchtipSdk::class));
+
+        $this->assertSame('https://x-access-token:ghs_write@github.com/acme/shop.git', $pushUrl);
+        $this->assertTrue($writer->isConnected());
     }
 
     private function githubApp(): GithubApp

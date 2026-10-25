@@ -9,7 +9,12 @@
         </label>
         <label class="field">
             <span>Organization</span>
-            <input class="input" wire:model="organization" placeholder="Personal account when empty">
+            <input class="input" wire:model="organization" list="github-organizations" autocomplete="off" placeholder="Personal account when empty">
+            <datalist id="github-organizations">
+                @foreach (\App\Services\GithubAppClient::knownOrganizations() as $knownOrganization)
+                    <option value="{{ $knownOrganization }}"></option>
+                @endforeach
+            </datalist>
             @error('organization') <small class="error">{{ $message }}</small> @enderror
         </label>
     </div>

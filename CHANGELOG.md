@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.73] - 2026-10-25
+
+- **Fixed: Next.js sites could answer 502 after updating to 0.3.0-beta.72.** The update changed how Node apps start (so they read their `.env`), but PM2 kept a running app's old start command and only took the new environment, so a Next.js app that was restarted, not redeployed, did not start while PM2 showed it as online. When the way an app starts changes, it is now removed from PM2 and started fresh from its file. If a Next.js site still shows 502 after updating, deploy it once.
+- **Install SDK in the code pushes with any GitHub App that may write.** Deploys only need to read, so a website's own GitHub App may be read-only: the button now uses another connected App with Contents: read and write on that repository. With none, it says how to give one write access instead of git's 403.
+- **The organization field suggests your organizations** when you make or edit a GitHub App: those of your other Apps and of a saved GitHub token. Leave it empty for your personal account.
+
 ## [0.3.0-beta.72] - 2026-10-25
 
 - **Error tracking with GlitchTip.** Turn it on from any website's GlitchTip tab: GlitchTip (open source) is installed on your own server at `/glitchtip`, and every website gets its own project, with its key put in its `.env` under the name its Sentry SDK reads. Errors from the server (Laravel, PHP, Node, Express, NestJS, and the server side of Nuxt, Next.js and SvelteKit) and from visitors' browsers land there. New websites are connected by themselves; deleting a website deletes its project.

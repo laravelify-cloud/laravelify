@@ -777,10 +777,20 @@ node_site_ready() {
 
 pm2_start_site() {
   local slug="$1"
-  local output
+  local output config="${PM2_APPS}/${slug}.config.cjs" applied="${PM2_APPS}/${slug}.start"
+  local start
   pm2_leave_root "${slug}"
+  # startOrReload keeps a running app's old script, interpreter, cwd and args (it only takes
+  # the new env), so an app whose way of starting changed would run its old command. Those
+  # lines are kept from the last start: when they differ (or are not known yet), the app is
+  # removed from PM2 and started from its file.
+  start="$(grep -E '^[[:space:]]*(cwd|script|args|interpreter):' "${config}" 2>/dev/null || true)"
+  if site_pm2 describe "${slug}" >/dev/null 2>&1 && [[ "${start}" != "$(cat "${applied}" 2>/dev/null)" ]]; then
+    site_pm2 delete "${slug}" >/dev/null 2>&1 || true
+  fi
   # PM2 prints its whole process table; keep only what went wrong.
-  if output="$(site_pm2 startOrReload "${PM2_APPS}/${slug}.config.cjs" --update-env 2>&1)"; then
+  if output="$(site_pm2 startOrReload "${config}" --update-env 2>&1)"; then
+    printf '%s' "${start}" > "${applied}"
     echo "PM2: ${slug} started as ${SITE_USER}."
   else
     echo "${output}" | grep -vE '[│┌├└]' >&2
@@ -2247,7 +2257,8 @@ PHP
       "/etc/nginx/laravelify-panel.d/preview-${TARGET}.conf" \
       "/etc/supervisor/conf.d/laravelify-${TARGET}.conf" \
       "/var/log/laravelify/${TARGET}.metrics.log" \
-      "${PM2_APPS}/${TARGET}.config.cjs"
+      "${PM2_APPS}/${TARGET}.config.cjs" \
+      "${PM2_APPS}/${TARGET}.start"
     rm -rf -- "${SITE_LOGS:?}/${TARGET}"
     nginx -t && systemctl reload nginx || true
     supervisorctl reread || true
