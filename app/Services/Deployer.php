@@ -231,7 +231,7 @@ class Deployer
     {
         $path = $website->deploy_path;
         $php = '/usr/bin/php'.($website->php_version ?: '8.4');
-        $this->composerInstall($path, $log);
+        $this->composerInstall($website, $log);
 
         // A key may be quoted ('base64:…' or "base64:…"); only a missing or empty one is replaced.
         if (preg_match('/^\s*APP_KEY\s*=\s*["\']?base64:[A-Za-z0-9+\/=]{20,}/m', (string) file_get_contents($path.'/.env')) !== 1) {
@@ -256,7 +256,7 @@ class Deployer
     private function installPhp(Website $website, DeploymentLogger $log): void
     {
         if (is_file($website->deploy_path.'/composer.json')) {
-            $this->composerInstall($website->deploy_path, $log);
+            $this->composerInstall($website, $log);
         } else {
             $log->line('No composer.json, so there is nothing to install.');
         }
@@ -299,10 +299,24 @@ class Deployer
         $this->linkBuildOutput($website, $log);
     }
 
-    private function composerInstall(string $path, DeploymentLogger $log): void
+    private function composerInstall(Website $website, DeploymentLogger $log): void
+    {
+        $this->must($this->runner->runAsSite([...self::composer($website), 'install', '--no-dev', '--optimize-autoloader', '--no-interaction', '--no-ansi', '--no-progress'], $website->deploy_path), $log);
+    }
+
+    /**
+     * Composer run by the website's own PHP version, not the server's default: it then refuses
+     * a lock file made for a newer PHP before it changes anything, and picks package versions
+     * that PHP can run.
+     *
+     * @return list<string>
+     */
+    public static function composer(Website $website): array
     {
         $composer = is_executable('/usr/local/bin/composer') ? '/usr/local/bin/composer' : 'composer';
-        $this->must($this->runner->runAsSite([$composer, 'install', '--no-dev', '--optimize-autoloader', '--no-interaction', '--no-ansi', '--no-progress'], $path), $log);
+        $php = '/usr/bin/php'.($website->php_version ?: '8.4');
+
+        return is_executable($php) && is_file($composer) ? [$php, $composer] : [$composer];
     }
 
     /**

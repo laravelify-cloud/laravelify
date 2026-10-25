@@ -151,14 +151,15 @@ class GlitchtipSdk
         }
 
         if ($package['manager'] === 'composer') {
-            if (str_contains((string) $this->read($site, $work.'/composer.json'), '"'.$package['package'].'"')) {
-                return [];
-            }
+            // The website's own PHP picks the versions (the server's default may be newer). A package
+            // already there is resolved again for it, which also repairs a lock made for a newer PHP.
+            $present = str_contains((string) $this->read($site, $work.'/composer.json'), '"'.$package['package'].'"');
+            $command = $present
+                ? ['update', $package['package'], '--with-all-dependencies']
+                : ['require', $package['package']];
+            $this->must($this->runner->runAsSite($this->in($work, [...Deployer::composer($website), ...$command, '--no-install', '--no-scripts', '--no-interaction', '--no-ansi', '--no-progress'])), 'composer '.$command[0].' '.$package['package']);
 
-            $composer = is_executable('/usr/local/bin/composer') ? '/usr/local/bin/composer' : 'composer';
-            $this->must($this->runner->runAsSite($this->in($work, [$composer, 'require', '--no-install', '--no-scripts', '--no-interaction', '--no-ansi', '--no-progress', $package['package']])), 'composer require '.$package['package']);
-
-            return ['composer.json', 'composer.lock'];
+            return $present ? ['composer.lock'] : ['composer.json', 'composer.lock'];
         }
 
         if ($this->exists($site, $work.'/pnpm-lock.yaml') || $this->exists($site, $work.'/yarn.lock')) {

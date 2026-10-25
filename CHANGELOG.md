@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.76] - 2026-10-25
+
+- **Fixed: Install SDK in the code could break a PHP site on an older PHP version.** It ran Composer with the server's default PHP, so a Laravel site on PHP 8.2 got packages that need 8.4, and its next deploy answered 500. Composer now runs with the website's own PHP version, in the button and in every deploy. A deploy now refuses a lock file made for a newer PHP before it changes the site. Pressing the button again on a site that already has the package resolves it again for its PHP, which repairs such a commit.
+
 ## [0.3.0-beta.75] - 2026-10-25
 
 - **Pick where a GitHub App is made.** The organization field shows Personal account and every organization the panel knows as buttons (those of your other Apps, and all of yours once a GitHub token is saved in Settings → GitHub), or type another. It also says that an App can only be installed in the account it is made in.
