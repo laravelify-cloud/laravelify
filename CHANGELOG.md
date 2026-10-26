@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.79] - 2026-10-26
+
+- **A failed background task shows why.** Its message kept only the first 500 characters, so a long error (like turning on error tracking, whose Python traceback says what went wrong in its last line) was cut before the cause. It now keeps the first line and the end.
+
 ## [0.3.0-beta.78] - 2026-10-25
 
 - **Fixed: a pnpm site's deploy could skip installing its packages.** When pnpm wanted to remove and rebuild `node_modules`, it asked "Proceed? (Y/n)", which no one can answer in a deploy, so it installed nothing and the build failed ("Module not found", for example `@sentry/nextjs`). Deploys now let pnpm rebuild `node_modules` without asking.

@@ -62,10 +62,27 @@ class PanelTaskRunner
         } catch (Throwable $exception) {
             $task->forceFill([
                 'status' => PanelTask::FAILED,
-                'message' => Str::limit($exception->getMessage(), 500),
+                'message' => self::failureMessage($exception->getMessage()),
                 'finished_at' => now(),
             ])->save();
         }
+    }
+
+    /**
+     * A failure short enough to show, keeping its first line (what failed) and its end: a
+     * command's output, like a Python traceback, says why in its last lines.
+     */
+    public static function failureMessage(string $message): string
+    {
+        $message = trim($message);
+
+        if (mb_strlen($message) <= 1200) {
+            return $message;
+        }
+
+        $first = Str::limit(strtok($message, "\n") ?: '', 300);
+
+        return $first."\n…\n".ltrim(mb_substr($message, -800));
     }
 
     /**

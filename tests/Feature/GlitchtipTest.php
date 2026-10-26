@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Website;
 use App\Services\Glitchtip;
 use App\Services\HostWriter;
+use App\Services\PanelTaskRunner;
 use App\Services\TwoFactor;
 use App\Services\WebsiteCreator;
 use App\Services\WebsiteSwitch;
@@ -151,6 +152,18 @@ class GlitchtipTest extends TestCase
         $this->assertSame("APP_NAME=Shop\n", $shop->env_content);
         $this->assertFalse(app(Glitchtip::class)->installed());
         $this->assertNull(Setting::getValue('glitchtip.password'));
+    }
+
+    public function test_a_long_failure_keeps_its_first_line_and_its_end(): void
+    {
+        $output = "Preparing its database...\nTraceback (most recent call last):\n".str_repeat("  File \"dbapi.py\", line 1938, in _batch_execute_sync\n", 60).'vpg.errors.InsufficientPrivilege: permission denied for schema public';
+
+        $message = PanelTaskRunner::failureMessage($output);
+
+        $this->assertStringStartsWith('Preparing its database...', $message);
+        $this->assertStringEndsWith('permission denied for schema public', $message);
+        $this->assertLessThan(1200, mb_strlen($message));
+        $this->assertSame('short', PanelTaskRunner::failureMessage(' short '));
     }
 
     public function test_opening_glitchtip_signs_the_browser_in_and_stays_on_glitchtip(): void
