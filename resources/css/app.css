@@ -2783,7 +2783,9 @@ label.conn-option:hover { background: var(--color-fill); }
 .local-grid .db-ag-num { color: var(--color-muted); font-size: 11px; text-align: right; }
 .local-grid .db-ag-actions .row-actions { justify-content: flex-end; height: 100%; align-items: center; }
 
-.local-grid .ag-cell { display: flex; align-items: center; }
+.local-grid .ag-cell { display: flex; align-items: center; overflow: hidden; }
+/* Long values (hashes, codes, JSON) stop at the cell's edge with "…", never under the next column. */
+.local-grid .ag-cell > :not(.row-actions), .local-grid .ag-cell-wrapper, .local-grid .ag-cell-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .local-grid .ag-cell.db-ag-number { justify-content: flex-end; }
 .local-grid .db-engine { padding: 1px 8px; font-size: 10.5px; line-height: 16px; }
 .local-grid .db-ag-actions .btn { font-family: var(--font-sans); }
