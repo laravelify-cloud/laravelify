@@ -21,6 +21,7 @@ use App\Livewire\Backups\Index as BackupsIndex;
 use App\Livewire\Backups\ScheduleForm as BackupScheduleForm;
 use App\Livewire\Backups\Storages as BackupStorages;
 use App\Livewire\Dashboard;
+use App\Livewire\Database\Engine;
 use App\Livewire\Database\Index as DatabaseIndex;
 use App\Livewire\Database\Show as DatabaseShow;
 use App\Livewire\Database\Table as DatabaseTable;
@@ -29,6 +30,7 @@ use App\Livewire\Domains\Index as DomainIndex;
 use App\Livewire\Groups\Form as GroupForm;
 use App\Livewire\Groups\Index as GroupIndex;
 use App\Livewire\Groups\Show as GroupShow;
+use App\Livewire\Monitoring\Errors as MonitoringErrors;
 use App\Livewire\Monitoring\Index as MonitoringIndex;
 use App\Livewire\Monitoring\Server as MonitoringServer;
 use App\Livewire\Security\Access as SecurityAccess;
@@ -115,6 +117,7 @@ Route::get('/deployments/{deployment}/log', DeploymentLogController::class)->nam
 
 Route::get('/monitoring', MonitoringIndex::class)->name('monitoring.index');
 Route::get('/monitoring/server', MonitoringServer::class)->name('monitoring.server');
+Route::get('/monitoring/errors/{section}', MonitoringErrors::class)->whereIn('section', ['issues', 'performance', 'logs'])->name('monitoring.errors');
 Route::get('/monitoring/server/live', [MonitoringLiveController::class, 'server'])->name('monitoring.server.live');
 Route::get('/monitoring/websites/{website}/live', [MonitoringLiveController::class, 'website'])->name('monitoring.website.live');
 
@@ -134,6 +137,7 @@ Route::post('/terminal/sessions/{session}/input', [TerminalSessionController::cl
 Route::post('/terminal/sessions/{session}/stop', [TerminalSessionController::class, 'stop'])->name('terminal.sessions.stop');
 Route::get('/database', DatabaseIndex::class)->name('database.index');
 Route::post('/database/export', DatabaseExportController::class)->name('database.export');
+Route::get('/databases/{engine}/{database}', Engine::class)->whereIn('engine', ['postgresql', 'sqlite', 'mongodb', 'remote'])->where('database', '[A-Za-z0-9_-]+')->name('database.engine');
 Route::get('/database/{database}', DatabaseShow::class)->where('database', '[A-Za-z0-9_-]+')->name('database.show');
 Route::get('/database/{database}/{table}', DatabaseTable::class)->where(['database' => '[A-Za-z0-9_-]+', 'table' => '[A-Za-z0-9_$-]+'])->name('database.table');
 Route::get('/tools/phpmyadmin', PhpMyAdminController::class)->name('tools.phpmyadmin');

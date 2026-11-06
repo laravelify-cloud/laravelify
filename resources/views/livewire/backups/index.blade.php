@@ -5,9 +5,11 @@
 
 <div
     class="flex flex-col gap-6"
-    @if ($polling) wire:poll.2s="pollTasks" @endif
     @download-ready.window="window.location.href = $event.detail.url"
 >
+    @if ($polling)
+        <span hidden wire:poll.2s="pollTasks"></span>
+    @endif
     <x-page-header
         :title="$isDatabase ? 'Database backups' : 'File backups'"
         :summary="$isDatabase ? 'Dump databases to your storage (S3 or a folder on this server) on a schedule. Restore a whole database or some tables, look inside a backup, or download parts of it as SQL.' : 'Archive folders to your storage (S3 or a folder on this server) on a schedule. Restore everything or picked folders and files, or download a backup.'"
@@ -133,7 +135,7 @@
             @endif
         </x-slot:actions>
 
-        <div x-data="{ selected: [], all: @js($runs->filter->restorable()->pluck('id')->values()->all()) }" @bulk-done.window="selected = []">
+        <div x-data="{ selected: [], all: @js($runs->getCollection()->filter->restorable()->pluck('id')->values()->all()) }" @bulk-done.window="selected = []">
         <div class="fm-selection" x-cloak x-show="selected.length > 0">
             <div class="flex items-center gap-2">
                 <button class="icon-btn" type="button" @click="selected = []" aria-label="Clear selection"><x-menu-icon name="close" class="size-4" /></button>
@@ -174,6 +176,7 @@
                 @endforelse
         </table>
         </div>
+        <x-pager :rows="$runs" name="runs" noun="runs" />
     </x-layer-card>
 
     {{-- Log --}}

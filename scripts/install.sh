@@ -13,7 +13,10 @@
 # Optional environment variables:
 #   MYSQL_ROOT_PASSWORD       skip the password prompt
 #   PANEL_DOMAIN              skip the panel domain prompt
-#   PHPMYADMIN_DOMAIN         skip the phpMyAdmin domain prompt
+#   PHPMYADMIN_DOMAIN         phpMyAdmin on a domain of its own (old style)
+#   PHPMYADMIN_PATH           phpMyAdmin at this path of the panel's address (default /phpmyadmin)
+#   LARAVELIFY_PACK           full (default) or minimal: no phpMyAdmin, no VS Code
+#   LARAVELIFY_TOOLS          exactly which tools: phpmyadmin,vscode,glitchtip (default: vscode), or --tools=
 #   CLOUDFLARE_TUNNEL_TOKEN   skip the tunnel token prompt
 #   LARAVELIFY_VERSION        release to install, like 1.2.0 (default: latest)
 #   LARAVELIFY_REPO           GitHub owner/name to download releases from
@@ -21,10 +24,11 @@
 #   LARAVELIFY_ARCHIVE_URL    tar.gz of the panel to download instead
 #   LARAVELIFY_PHP_VERSIONS   PHP-FPM versions to install, like "8.3 8.4" (default: 8.0 to 8.5)
 #   LARAVELIFY_NODE_VERSIONS  Node.js majors to install, like "22 24" (default: 20 22 24)
+#   LARAVELIFY_DATABASES      database servers to install, like "mysql postgresql" (default: mysql)
 #
 # The same choices as options (the install command builder on laravelify.cloud writes these):
-#   curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- --php=8.3,8.4 --node=22
-#   --php=LIST  --node=LIST  --panel-domain=HOST  --phpmyadmin-domain=HOST  --help
+#   curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- --php=8.3,8.4 --node=22 --databases=postgresql
+#   --php=LIST  --node=LIST  --databases=LIST  --tools=LIST  --panel-domain=HOST  --phpmyadmin-domain=HOST  --help
 
 set -Eeuo pipefail
 
@@ -36,13 +40,21 @@ Laravelify installer
   curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- [options]
 
 Options:
-  --php=8.3,8.4               PHP-FPM versions to install (8.0 to 8.5; default: all)
-  --node=22,24                Node.js majors to install (20, 22, 24; default: all three)
+  --php=8.3,8.4               PHP-FPM versions to install (7.4, 8.0 to 8.5; default: 8.0 to 8.5).
+                              Websites can pick another later: the panel installs it.
+  --node=22,24                Node.js majors to install (18, 20, 22, 24; default: 20, 22, 24)
+  --databases=mysql,postgresql
+                              database servers for the websites: mysql or mariadb (one of
+                              the two), postgresql, mongodb, or none (default: mysql).
+                              SQLite needs no server and always works.
   --panel-domain=HOST         the panel's domain, like panel.example.com
-  --phpmyadmin-domain=HOST    phpMyAdmin's domain, like phpmyadmin.example.com
+  --tools=phpmyadmin,vscode   optional tools: phpmyadmin, vscode, glitchtip, or none
+                              (default: vscode)
+  --phpmyadmin-path=PATH      phpMyAdmin at this path of the panel's address (default /phpmyadmin)
+  --phpmyadmin-domain=HOST    or on a domain of its own instead
   -h, --help                  show this help
 
-The MySQL root password and the Cloudflare tunnel token are always asked on the server,
+The database password and the Cloudflare tunnel token are always asked on the server,
 so they never end up in a shell history or a copied command.
 USAGE
 }
@@ -51,8 +63,11 @@ for argument in "$@"; do
   case "$argument" in
     --php=*) LARAVELIFY_PHP_VERSIONS="${argument#*=}" ;;
     --node=*) LARAVELIFY_NODE_VERSIONS="${argument#*=}" ;;
+    --databases=*) LARAVELIFY_DATABASES="${argument#*=}" ;;
     --panel-domain=*) PANEL_DOMAIN="${argument#*=}" ;;
     --phpmyadmin-domain=*) PHPMYADMIN_DOMAIN="${argument#*=}" ;;
+    --phpmyadmin-path=*) PHPMYADMIN_PATH="${argument#*=}" ;;
+    --tools=*) LARAVELIFY_TOOLS="${argument#*=}" ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: ${argument}" >&2; usage >&2; exit 1 ;;
   esac
@@ -178,14 +193,14 @@ on_exit() {
 }
 trap on_exit EXIT
 
-# The versions to install. Websites may use 8.0 to 8.5. The panel's Composer
+# The versions to install. Websites may use 7.4 to 8.5. The panel's Composer
 # lock needs PHP 8.4.1 or newer (Symfony 8.1), so 8.4 is added unless 8.4 or
 # 8.5 was already chosen.
 PHP_VERSIONS="${LARAVELIFY_PHP_VERSIONS:-8.0 8.1 8.2 8.3 8.4 8.5}"
 PHP_VERSIONS="$(tr ',' ' ' <<<"$PHP_VERSIONS" | xargs -n1 | sort -uV | xargs)"
 for version in $PHP_VERSIONS; do
-  if [[ ! "$version" =~ ^8\.[0-5]$ ]]; then
-    echo "PHP ${version} is not one the installer offers (8.0 to 8.5)." >&2
+  if [[ ! "$version" =~ ^(7\.4|8\.[0-5])$ ]]; then
+    echo "PHP ${version} is not one the installer offers (7.4, 8.0 to 8.5)." >&2
     exit 1
   fi
 done
@@ -197,13 +212,52 @@ fi
 NODE_VERSIONS="${LARAVELIFY_NODE_VERSIONS:-20 22 24}"
 NODE_VERSIONS="$(tr ',' ' ' <<<"$NODE_VERSIONS" | xargs -n1 | sort -un | xargs)"
 for version in $NODE_VERSIONS; do
-  if [[ ! "$version" =~ ^(20|22|24)$ ]]; then
-    echo "Node.js ${version} is not one the installer offers (20, 22, 24)." >&2
+  if [[ ! "$version" =~ ^(18|20|22|24)$ ]]; then
+    echo "Node.js ${version} is not one the installer offers (18, 20, 22, 24)." >&2
     exit 1
   fi
 done
 # The system Node.js (for npm, PM2, and sites without a version of their own): the newest chosen.
 NODE_BASE="${NODE_VERSIONS##* }"
+
+# The database servers for the websites. MySQL and MariaDB are the same server (port 3306, the
+# same package names), so at most one of them. SQLite is a file, not a server: always there.
+# Without MySQL or MariaDB the panel keeps its own data in SQLite and phpMyAdmin is left out.
+DATABASES="${LARAVELIFY_DATABASES:-mysql}"
+DATABASES="$(tr ',' ' ' <<<"$DATABASES" | tr '[:upper:]' '[:lower:]' | xargs -n1 | sed -e 's/^postgres$/postgresql/' -e 's/^mongo$/mongodb/' | grep -vx 'sqlite' | sort -u | xargs || true)"
+if [[ " $DATABASES " == *" none "* ]]; then
+  DATABASES=""
+fi
+for database in $DATABASES; do
+  if [[ ! "$database" =~ ^(mysql|mariadb|postgresql|mongodb)$ ]]; then
+    echo "${database} is not a database the installer offers (mysql, mariadb, postgresql, mongodb, none)." >&2
+    exit 1
+  fi
+done
+if [[ " $DATABASES " == *" mysql "* && " $DATABASES " == *" mariadb "* ]]; then
+  echo "Pick MySQL or MariaDB, not both: they are the same kind of server on the same port." >&2
+  exit 1
+fi
+has_database() { [[ " $DATABASES " == *" $1 "* ]]; }
+# MySQL or MariaDB: the panel's own data, phpMyAdmin, and the websites' MySQL databases.
+MYSQL_FAMILY=""
+has_database mysql && MYSQL_FAMILY="mysql"
+has_database mariadb && MYSQL_FAMILY="mariadb"
+
+# Optional tools. LARAVELIFY_PACK sets their defaults: full (default) has VS Code, minimal has
+# none. phpMyAdmin is only installed when asked for. LARAVELIFY_TOOLS (like "phpmyadmin,vscode,glitchtip") picks them exactly.
+# GlitchTip needs the panel's admin, so the panel installs it right after the setup link is used.
+LARAVELIFY_PACK="${LARAVELIFY_PACK:-full}"
+if [[ -z "${LARAVELIFY_TOOLS+x}" ]]; then
+  LARAVELIFY_TOOLS="$([[ "$LARAVELIFY_PACK" == "minimal" ]] && echo "" || echo "vscode")"
+fi
+has_tool() { [[ ",${LARAVELIFY_TOOLS// /,}," == *",$1,"* ]]; }
+WITH_PHPMYADMIN=""
+if [[ -n "$MYSQL_FAMILY" ]] && has_tool phpmyadmin; then
+  WITH_PHPMYADMIN=1
+fi
+WITH_GLITCHTIP=""
+has_tool glitchtip && WITH_GLITCHTIP=1
 
 printf '\n%s┌%s  %sLaravelify%s %sinstaller · self-hosted deployment panel%s\n' "$C_DIM" "$C_RESET" "$C_BOLD$C_MAGENTA" "$C_RESET" "$C_DIM" "$C_RESET" >&3
 ui_bar
@@ -285,12 +339,13 @@ masked() {
   if [[ -n "$1" ]]; then echo "******** (saved)"; else echo "(not found, you will be asked)"; fi
 }
 
-if [[ -z "${MYSQL_ROOT_PASSWORD:-}" || -z "${PANEL_DOMAIN:-}" || -z "${PHPMYADMIN_DOMAIN:-}" || -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]] && previous_settings; then
+# Only what this install asks for: no password without a database server, no phpMyAdmin domain without MySQL or MariaDB.
+if [[ ( -n "$DATABASES" && -z "${MYSQL_ROOT_PASSWORD:-}" ) || -z "${PANEL_DOMAIN:-}" || ( -n "$WITH_PHPMYADMIN" && -z "${PHPMYADMIN_DOMAIN:-}" && -z "${PHPMYADMIN_PATH:-}" && -n "${PREV_PHPMYADMIN_DOMAIN:-}" ) || -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]] && previous_settings; then
   echo
   echo "Found the settings from a previous install:"
   echo "  Panel domain:            ${PREV_PANEL_DOMAIN}"
   echo "  phpMyAdmin domain:       ${PREV_PHPMYADMIN_DOMAIN:-(not found, you will be asked)}"
-  echo "  MySQL root password:     $(masked "${PREV_MYSQL_ROOT_PASSWORD:-}")"
+  echo "  Database password:       $(masked "${PREV_MYSQL_ROOT_PASSWORD:-}")"
   echo "  Cloudflare tunnel token: $(masked "${PREV_CLOUDFLARE_TUNNEL_TOKEN:-}")"
   REUSE_ANSWER=""
   # No terminal (automated install): reuse them.
@@ -304,28 +359,30 @@ if [[ -z "${MYSQL_ROOT_PASSWORD:-}" || -z "${PANEL_DOMAIN:-}" || -z "${PHPMYADMI
   fi
 fi
 
-if [[ -z "${MYSQL_ROOT_PASSWORD:-}" ]]; then
-  read_tty -s -p "MySQL root password: " MYSQL_ROOT_PASSWORD
-  echo
-  read_tty -s -p "MySQL root password again: " MYSQL_ROOT_PASSWORD_CONFIRM
-  echo
-  if [[ "$MYSQL_ROOT_PASSWORD" != "$MYSQL_ROOT_PASSWORD_CONFIRM" ]]; then
-    echo "The passwords do not match." >&2
+# One password for the database servers chosen: MySQL's or MariaDB's root, PostgreSQL's postgres
+# user, and MongoDB's admin. Not asked when there is no database server (SQLite only).
+if [[ -n "$DATABASES" ]]; then
+  if [[ -z "${MYSQL_ROOT_PASSWORD:-}" ]]; then
+    read_tty -s -p "Database password (for ${DATABASES// /, }): " MYSQL_ROOT_PASSWORD
+    echo
+    read_tty -s -p "Database password again: " MYSQL_ROOT_PASSWORD_CONFIRM
+    echo
+    if [[ "$MYSQL_ROOT_PASSWORD" != "$MYSQL_ROOT_PASSWORD_CONFIRM" ]]; then
+      echo "The passwords do not match." >&2
+      exit 1
+    fi
+  fi
+
+  if [[ -z "$MYSQL_ROOT_PASSWORD" || "$MYSQL_ROOT_PASSWORD" =~ [[:space:]\'\"\\] ]]; then
+    echo "The database password is required and cannot contain spaces, quotes, or backslashes." >&2
     exit 1
   fi
-fi
-
-if [[ -z "$MYSQL_ROOT_PASSWORD" || "$MYSQL_ROOT_PASSWORD" =~ [[:space:]] ]]; then
-  echo "The MySQL root password is required and cannot contain spaces." >&2
-  exit 1
+else
+  MYSQL_ROOT_PASSWORD=""
 fi
 
 if [[ -z "${PANEL_DOMAIN:-}" ]]; then
   read_tty -p "Laravelify panel domain (example: panel.example.com): " PANEL_DOMAIN
-fi
-
-if [[ -z "${PHPMYADMIN_DOMAIN:-}" ]]; then
-  read_tty -p "phpMyAdmin domain (example: phpmyadmin.example.com): " PHPMYADMIN_DOMAIN
 fi
 
 if [[ ! "$PANEL_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
@@ -333,14 +390,36 @@ if [[ ! "$PANEL_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
   exit 1
 fi
 
-if [[ ! "$PHPMYADMIN_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
-  echo "The phpMyAdmin domain is not a hostname." >&2
-  exit 1
-fi
+# phpMyAdmin comes with MySQL or MariaDB only. By default it is a path of the panel's address
+# (https://panel.example.com/phpmyadmin); --phpmyadmin-domain gives it a domain of its own instead.
+PHPMYADMIN_URL=""
+if [[ -n "$WITH_PHPMYADMIN" ]]; then
+  if [[ -n "${PHPMYADMIN_DOMAIN:-}" && -z "${PHPMYADMIN_PATH:-}" ]]; then
+    if [[ ! "$PHPMYADMIN_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
+      echo "The phpMyAdmin domain is not a hostname." >&2
+      exit 1
+    fi
 
-if [[ "$PANEL_DOMAIN" == "$PHPMYADMIN_DOMAIN" ]]; then
-  echo "The panel domain and the phpMyAdmin domain must be different." >&2
-  exit 1
+    if [[ "$PANEL_DOMAIN" == "$PHPMYADMIN_DOMAIN" ]]; then
+      echo "The panel domain and the phpMyAdmin domain must be different." >&2
+      exit 1
+    fi
+    PHPMYADMIN_PATH=""
+    PHPMYADMIN_URL="https://${PHPMYADMIN_DOMAIN}/"
+  else
+    PHPMYADMIN_DOMAIN=""
+    PHPMYADMIN_PATH="${PHPMYADMIN_PATH:-/phpmyadmin}"
+    PHPMYADMIN_PATH="/${PHPMYADMIN_PATH#/}"
+    PHPMYADMIN_PATH="${PHPMYADMIN_PATH%/}"
+    if [[ ! "$PHPMYADMIN_PATH" =~ ^/[a-z0-9][a-z0-9_-]{1,38}$ ]]; then
+      echo "The phpMyAdmin path must look like /phpmyadmin: a slash, then letters, numbers, dashes and underscores." >&2
+      exit 1
+    fi
+    PHPMYADMIN_URL="https://${PANEL_DOMAIN}${PHPMYADMIN_PATH}/"
+  fi
+else
+  PHPMYADMIN_DOMAIN=""
+  PHPMYADMIN_PATH=""
 fi
 
 if [[ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then
@@ -353,12 +432,21 @@ if [[ -z "$CLOUDFLARE_TUNNEL_TOKEN" || "$CLOUDFLARE_TUNNEL_TOKEN" =~ [[:space:]]
   exit 1
 fi
 
+# A re-run with a new database password: keep the old one, which MySQL still has, so the
+# setup below can sign in with it and change it.
+OLD_MYSQL_ROOT_PASSWORD="$( [[ -r "$STATE_FILE" ]] && . "$STATE_FILE" && printf '%s' "${PREV_MYSQL_ROOT_PASSWORD:-}" || true)"
+# Older installs: the panel signs in to MySQL as root, so its .env has the password MySQL uses now.
+OLD_PANEL_DB_PASSWORD=""
+if grep -qx 'DB_USERNAME=root' "${LARAVELIFY_ROOT:-/opt/laravelify}/.env" 2>/dev/null; then
+  OLD_PANEL_DB_PASSWORD="$(grep -m1 '^DB_PASSWORD=' "${LARAVELIFY_ROOT:-/opt/laravelify}/.env" | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')"
+fi
+
 # Save the answers (root-only) so a re-run can offer them again.
 install -d -m 700 /etc/laravelify
 (
   umask 077
-  printf 'PREV_MYSQL_ROOT_PASSWORD=%q\nPREV_PANEL_DOMAIN=%q\nPREV_PHPMYADMIN_DOMAIN=%q\nPREV_CLOUDFLARE_TUNNEL_TOKEN=%q\n' \
-    "$MYSQL_ROOT_PASSWORD" "$PANEL_DOMAIN" "$PHPMYADMIN_DOMAIN" "$CLOUDFLARE_TUNNEL_TOKEN" > "$STATE_FILE"
+  printf 'PREV_MYSQL_ROOT_PASSWORD=%q\nPREV_PANEL_DOMAIN=%q\nPREV_PHPMYADMIN_DOMAIN=%q\nPREV_CLOUDFLARE_TUNNEL_TOKEN=%q\nPREV_DATABASES=%q\n' \
+    "$MYSQL_ROOT_PASSWORD" "$PANEL_DOMAIN" "$PHPMYADMIN_DOMAIN" "$CLOUDFLARE_TUNNEL_TOKEN" "$DATABASES" > "$STATE_FILE"
 )
 chmod 600 "$STATE_FILE"
 
@@ -373,10 +461,14 @@ ui_bar
 printf '%s◇%s  %sSettings%s\n' "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" >&3
 printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Server" "${PRETTY_NAME:-Ubuntu}" >&3
 printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Panel" "https://${PANEL_DOMAIN}" >&3
-printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "phpMyAdmin" "https://${PHPMYADMIN_DOMAIN}" >&3
+if [[ -n "$WITH_PHPMYADMIN" ]]; then
+  printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "phpMyAdmin" "${PHPMYADMIN_URL}" >&3
+fi
 printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "PHP-FPM" "${PHP_VERSIONS}" >&3
 printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Node.js" "${NODE_VERSIONS} (system: ${NODE_BASE})" >&3
-printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Also" "MySQL 8.4, Redis, nginx, phpMyAdmin, PM2, Composer, cloudflared" >&3
+DATABASE_LABELS="$(sed 's/ /, /g' <<<"$DATABASES" | sed -e 's/mysql/MySQL 8.4/' -e 's/mariadb/MariaDB/' -e 's/postgresql/PostgreSQL/' -e 's/mongodb/MongoDB/')"
+printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Databases" "${DATABASE_LABELS:+${DATABASE_LABELS}, }SQLite" >&3
+printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Also" "Redis, nginx,${MYSQL_FAMILY:+ phpMyAdmin,} PM2, Composer, cloudflared" >&3
 printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Log" "${LOG_FILE}" >&3
 if [[ -n "${PHP_ADDED_NOTE:-}" ]]; then
   printf '%s│%s  %s%s%s\n' "$C_DIM" "$C_RESET" "$C_YELLOW" "$PHP_ADDED_NOTE" "$C_RESET" >&3
@@ -487,7 +579,9 @@ install_php() {
   local packages=()
   local extension
 
-  for extension in fpm cli mysql xml mbstring curl zip redis bcmath intl gd sqlite3; do
+  # pgsql and mongodb only with their servers. mysql always: the panel's tools use it.
+  for extension in fpm cli mysql xml mbstring curl zip redis bcmath intl gd sqlite3 \
+    $(has_database postgresql && echo pgsql) $(has_database mongodb && echo mongodb); do
     packages+=("php${version}-${extension}")
   done
 
@@ -508,7 +602,7 @@ install_php() {
 }
 
 for version in $PHP_VERSIONS; do
-  step "Installing PHP ${version} (FPM, CLI, MySQL, Redis, GD, intl, and more)"
+  step "Installing PHP ${version} (FPM, CLI, database drivers, Redis, GD, intl, and more)"
   install_php "${version}"
 done
 
@@ -545,10 +639,16 @@ if ! "$PHP_BIN" -m | grep -qx dom; then
   apt-get install -y "php${PANEL_PHP}-xml"
 fi
 
-step "Installing MySQL 8.4"
-if package_installed mysql-community-server || package_installed mysql-server; then
-  STEP_LABEL="MySQL is already installed"
-else
+install_mysql() {
+  if package_installed mariadb-server; then
+    echo "MariaDB is already installed on this server: MySQL cannot be installed next to it. Use --databases=mariadb." >&2
+    exit 1
+  fi
+  if package_installed mysql-community-server || package_installed mysql-server; then
+    STEP_LABEL="MySQL is already installed"
+    return 0
+  fi
+
   install -d -m 0755 /usr/share/keyrings
   if [[ ! -f /usr/share/keyrings/mysql-archive-keyring.gpg ]]; then
     curl -fsSL https://repo.mysql.com/RPM-GPG-KEY-mysql-2025 | gpg --dearmor -o /usr/share/keyrings/mysql-archive-keyring.gpg
@@ -566,6 +666,27 @@ EOF
   else
     apt-get install -y mysql-community-server mysql-community-client || apt-get install -y mysql-server
   fi
+}
+
+install_mariadb() {
+  if package_installed mysql-community-server || package_installed mysql-server; then
+    echo "MySQL is already installed on this server: MariaDB cannot be installed next to it. Use --databases=mysql." >&2
+    exit 1
+  fi
+  if package_installed mariadb-server; then
+    STEP_LABEL="MariaDB is already installed"
+    return 0
+  fi
+  apt-get install -y mariadb-server mariadb-client
+}
+
+# Without MySQL or MariaDB there is nothing to install here: the panel keeps its data in SQLite.
+if [[ "$MYSQL_FAMILY" == "mysql" ]]; then
+  step "Installing MySQL 8.4"
+  install_mysql
+elif [[ "$MYSQL_FAMILY" == "mariadb" ]]; then
+  step "Installing MariaDB"
+  install_mariadb
 fi
 
 # Ubuntu 26.04 rejects debconf answers for templates that are not loaded yet.
@@ -586,12 +707,14 @@ preseed_phpmyadmin() {
   fi
   rm -rf "$tmp"
 }
-step "Installing phpMyAdmin"
-if package_installed phpmyadmin; then
-  STEP_LABEL="phpMyAdmin is already installed"
-else
-  preseed_phpmyadmin
-  apt-get install -y phpmyadmin || note "phpMyAdmin was not installed; nginx still points at /usr/share/phpmyadmin."
+if [[ -n "$WITH_PHPMYADMIN" ]]; then
+  step "Installing phpMyAdmin"
+  if package_installed phpmyadmin; then
+    STEP_LABEL="phpMyAdmin is already installed"
+  else
+    preseed_phpmyadmin
+    apt-get install -y phpmyadmin || note "phpMyAdmin was not installed; nginx still points at /usr/share/phpmyadmin."
+  fi
 fi
 
 step "Installing Node.js ${NODE_BASE}, npm, and PM2"
@@ -621,45 +744,75 @@ done
 # `n` switches the system Node.js to each version it installs: end on the system one.
 n "$NODE_BASE" || true
 
-if ! command -v composer >/dev/null 2>&1; then
+# Our own Composer, not another one on the PATH (WSL also sees Windows programs).
+if [[ ! -x /usr/local/bin/composer ]]; then
   step "Installing Composer"
   curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php
   "$PHP_BIN" /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
   rm -f /tmp/composer-setup.php
 fi
 
-step "Setting up MySQL (root password, utf8mb4)"
 install -d -m 700 /tmp/laravelify-install
 printf '%s' "$MYSQL_ROOT_PASSWORD" > /tmp/laravelify-install/password
 chmod 600 /tmp/laravelify-install/password
-"$PHP_BIN" <<'PHP'
+
+if [[ -n "$MYSQL_FAMILY" ]]; then
+  if [[ "$MYSQL_FAMILY" == "mariadb" ]]; then
+    step "Setting up MariaDB (root password, utf8mb4)"
+  else
+    step "Setting up MySQL (root password, utf8mb4)"
+  fi
+  # MariaDB has no caching_sha2_password: its default password plugin is used.
+  MYSQL_FAMILY="$MYSQL_FAMILY" "$PHP_BIN" <<'PHP'
 <?php
 $password = file_get_contents('/tmp/laravelify-install/password');
 $quoted = str_replace(['\\', '"'], ['\\\\', '\\"'], $password);
 file_put_contents('/tmp/laravelify-install/client.cnf', "[client]\nuser=root\npassword=\"{$quoted}\"\n");
 $escaped = str_replace("'", "''", $password);
+$with = getenv('MYSQL_FAMILY') === 'mariadb' ? '' : 'WITH caching_sha2_password ';
 file_put_contents('/tmp/laravelify-install/setup.sql', <<<SQL
-ALTER USER 'root'@'localhost' IDENTIFIED WITH caching_sha2_password BY '{$escaped}';
-CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED WITH caching_sha2_password BY '{$escaped}';
-ALTER USER 'root'@'127.0.0.1' IDENTIFIED WITH caching_sha2_password BY '{$escaped}';
+ALTER USER 'root'@'localhost' IDENTIFIED {$with}BY '{$escaped}';
+CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED {$with}BY '{$escaped}';
+ALTER USER 'root'@'127.0.0.1' IDENTIFIED {$with}BY '{$escaped}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 CREATE DATABASE IF NOT EXISTS laravelify CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 SQL);
 PHP
 
-if mysql --protocol=socket -uroot -e "SELECT 1" >/dev/null 2>&1; then
-  mysql --protocol=socket -uroot < /tmp/laravelify-install/setup.sql
-else
-  mysql --defaults-extra-file=/tmp/laravelify-install/client.cnf --protocol=socket < /tmp/laravelify-install/setup.sql
-fi
+  if mysql --protocol=socket -uroot -e "SELECT 1" >/dev/null 2>&1; then
+    mysql --protocol=socket -uroot < /tmp/laravelify-install/setup.sql
+  elif mysql --defaults-extra-file=/tmp/laravelify-install/client.cnf --protocol=socket -e "SELECT 1" >/dev/null 2>&1; then
+    mysql --defaults-extra-file=/tmp/laravelify-install/client.cnf --protocol=socket < /tmp/laravelify-install/setup.sql
+  elif [[ -n "$OLD_MYSQL_ROOT_PASSWORD" ]] && MYSQL_PWD="$OLD_MYSQL_ROOT_PASSWORD" mysql --protocol=socket -uroot -e "SELECT 1" >/dev/null 2>&1; then
+    # Installed before with another password: sign in with the old one and set the new one.
+    MYSQL_PWD="$OLD_MYSQL_ROOT_PASSWORD" mysql --protocol=socket -uroot < /tmp/laravelify-install/setup.sql
+  elif [[ -n "$OLD_PANEL_DB_PASSWORD" ]] && MYSQL_PWD="$OLD_PANEL_DB_PASSWORD" mysql --protocol=socket -uroot -e "SELECT 1" >/dev/null 2>&1; then
+    MYSQL_PWD="$OLD_PANEL_DB_PASSWORD" mysql --protocol=socket -uroot < /tmp/laravelify-install/setup.sql
+  else
+    echo "MySQL already has a root password that is not the one given. Run the installer again with the old password as MYSQL_ROOT_PASSWORD." >&2
+    exit 1
+  fi
 
-if [[ -f /etc/phpmyadmin/config-db.php && -f /usr/share/phpmyadmin/sql/create_tables.sql ]]; then
-  "$PHP_BIN" "$APP_ROOT/scripts/configure-phpmyadmin.php" /tmp/laravelify-install/password
-fi
+  if [[ -f /etc/phpmyadmin/config-db.php && -f /usr/share/phpmyadmin/sql/create_tables.sql ]]; then
+    "$PHP_BIN" "$APP_ROOT/scripts/configure-phpmyadmin.php" /tmp/laravelify-install/password
+  fi
 
-install -d /etc/mysql/mysql.conf.d
-cat > /etc/mysql/mysql.conf.d/laravelify.cnf <<'EOF'
+  if [[ "$MYSQL_FAMILY" == "mariadb" ]]; then
+    install -d /etc/mysql/mariadb.conf.d
+    cat > /etc/mysql/mariadb.conf.d/99-laravelify.cnf <<'EOF'
+[mysqld]
+bind-address = 127.0.0.1
+port = 3306
+character-set-server = utf8mb4
+collation-server = utf8mb4_general_ci
+# Lets site users create triggers when binary logging is on (error 1419).
+log_bin_trust_function_creators = 1
+EOF
+    systemctl restart mariadb
+  else
+    install -d /etc/mysql/mysql.conf.d
+    cat > /etc/mysql/mysql.conf.d/laravelify.cnf <<'EOF'
 [mysqld]
 bind-address = 127.0.0.1
 mysqlx = 0
@@ -669,15 +822,68 @@ collation-server = utf8mb4_general_ci
 # Binary logging is on in MySQL 8: without this, site users cannot create triggers (error 1419).
 log_bin_trust_function_creators = 1
 EOF
-systemctl restart mysql
-mysql --defaults-extra-file=/tmp/laravelify-install/client.cnf --protocol=socket -e "SET PERSIST default_collation_for_utf8mb4 = 'utf8mb4_general_ci'; SET PERSIST log_bin_trust_function_creators = 1"
+    systemctl restart mysql
+    mysql --defaults-extra-file=/tmp/laravelify-install/client.cnf --protocol=socket -e "SET PERSIST default_collation_for_utf8mb4 = 'utf8mb4_general_ci'; SET PERSIST log_bin_trust_function_creators = 1"
+  fi
 
-install -d /etc/phpmyadmin/conf.d
-cat > /etc/phpmyadmin/conf.d/laravelify-collation.php <<'EOF'
+  install -d /etc/phpmyadmin/conf.d
+  cat > /etc/phpmyadmin/conf.d/laravelify-collation.php <<'EOF'
 <?php
 $cfg['DefaultCharset'] = 'utf8mb4';
 $cfg['DefaultConnectionCollation'] = 'utf8mb4_general_ci';
 EOF
+fi
+
+# PostgreSQL from Ubuntu's packages: the postgres user gets the database password, and the
+# server answers on 127.0.0.1 only (its default), with passwords (scram-sha-256).
+if has_database postgresql; then
+  step "Installing PostgreSQL"
+  apt_install postgresql postgresql-contrib
+  systemctl enable --now postgresql
+  (cd /tmp && sudo -u postgres psql -q -v ON_ERROR_STOP=1 -v password="$MYSQL_ROOT_PASSWORD" <<'SQL'
+ALTER USER postgres WITH PASSWORD :'password';
+SQL
+  )
+fi
+
+# MongoDB from its own repository (Ubuntu has no package), with sign-in turned on: an admin
+# user with the database password, and the server on 127.0.0.1 only.
+if has_database mongodb; then
+  step "Installing MongoDB"
+  if ! command -v mongod >/dev/null 2>&1; then
+    install -d -m 0755 /usr/share/keyrings
+    curl -fsSL https://pgp.mongodb.com/server-8.0.asc | gpg --dearmor --yes -o /usr/share/keyrings/mongodb-server-8.0.gpg
+    MONGO_CODENAME="$CODENAME"
+    # MongoDB publishes packages for LTS releases some time after they come out: use the
+    # newest one it has.
+    if ! curl -fsI "https://repo.mongodb.org/apt/ubuntu/dists/${MONGO_CODENAME}/mongodb-org/8.0/Release" >/dev/null; then
+      MONGO_CODENAME="noble"
+      note "MongoDB has no packages for ${CODENAME} yet: using the ones for Ubuntu 24.04 (noble)."
+    fi
+    echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] https://repo.mongodb.org/apt/ubuntu ${MONGO_CODENAME}/mongodb-org/8.0 multiverse" \
+      > /etc/apt/sources.list.d/mongodb-org-8.0.list
+    apt-get update
+    apt-get install -y mongodb-org
+  fi
+  systemctl enable --now mongod
+  for _ in $(seq 1 30); do
+    mongosh --quiet --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1 && break
+    sleep 1
+  done
+  # The admin user is made while sign-in is still off (the first run); later runs sign in.
+  MONGO_PASSWORD="$MYSQL_ROOT_PASSWORD" mongosh --quiet admin --eval '
+    const password = process.env.MONGO_PASSWORD;
+    if (db.getUser("admin")) { db.changeUserPassword("admin", password); }
+    else { db.createUser({ user: "admin", pwd: password, roles: ["root"] }); }
+  ' >/dev/null 2>&1 \
+    || MONGO_PASSWORD="$MYSQL_ROOT_PASSWORD" mongosh --quiet -u admin -p "$MYSQL_ROOT_PASSWORD" --authenticationDatabase admin admin \
+      --eval 'db.changeUserPassword("admin", process.env.MONGO_PASSWORD)' >/dev/null
+  if ! grep -q '^security:' /etc/mongod.conf; then
+    printf '\nsecurity:\n  authorization: enabled\n' >> /etc/mongod.conf
+  fi
+  sed -i 's/^\(\s*bindIp:\).*/\1 127.0.0.1/' /etc/mongod.conf
+  systemctl restart mongod
+fi
 
 step "Configuring Redis"
 install -d /etc/redis
@@ -692,7 +898,42 @@ if [[ -f /etc/redis/redis.conf ]] && ! grep -q '/etc/redis/laravelify.conf' /etc
 fi
 systemctl restart redis-server
 
+if [[ -n "$WITH_PHPMYADMIN" && -n "$PHPMYADMIN_PATH" ]]; then
+step "Configuring phpMyAdmin at ${PHPMYADMIN_PATH}"
+# A path of the panel's address: the panel's nginx site includes /etc/nginx/laravelify-panel.d/*.conf.
+rm -f /etc/nginx/sites-enabled/laravelify-phpmyadmin.conf /etc/nginx/sites-available/laravelify-phpmyadmin.conf
+install -d -m 0755 /etc/nginx/laravelify-panel.d
+cat > /etc/nginx/laravelify-panel.d/phpmyadmin.conf <<EOF
+# phpMyAdmin at ${PHPMYADMIN_PATH} (changed from the panel: Server → phpMyAdmin).
+location = ${PHPMYADMIN_PATH} {
+    return 301 ${PHPMYADMIN_PATH}/;
+}
+
+location ^~ ${PHPMYADMIN_PATH}/ {
+    alias /usr/share/phpmyadmin/;
+    index index.php;
+    client_max_body_size 256M;
+
+    location ~ \.php\$ {
+        if (!-f \$request_filename) { return 404; }
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$request_filename;
+        fastcgi_pass unix:/run/php/php${PANEL_PHP}-fpm.sock;
+        fastcgi_read_timeout 600;
+        fastcgi_param PHP_VALUE "upload_max_filesize=256M
+post_max_size=256M
+memory_limit=512M
+max_execution_time=600";
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
+EOF
+elif [[ -n "$WITH_PHPMYADMIN" ]]; then
 step "Configuring phpMyAdmin"
+rm -f /etc/nginx/laravelify-panel.d/phpmyadmin.conf
 cat > /etc/nginx/sites-available/laravelify-phpmyadmin.conf <<EOF
 server {
     listen 80;
@@ -724,6 +965,7 @@ max_execution_time=600";
 }
 EOF
 ln -sfn /etc/nginx/sites-available/laravelify-phpmyadmin.conf /etc/nginx/sites-enabled/laravelify-phpmyadmin.conf
+fi
 
 
 step "Installing the panel (Composer packages, database)"
@@ -738,21 +980,36 @@ if [[ ! -s /tmp/laravelify-install/setup-token ]]; then
 fi
 SETUP_TOKEN="$(cat /tmp/laravelify-install/setup-token)"
 
-PANEL_DOMAIN="$PANEL_DOMAIN" "$PHP_BIN" <<'PHP'
+PANEL_DOMAIN="$PANEL_DOMAIN" MYSQL_FAMILY="$MYSQL_FAMILY" DATABASES="$DATABASES" WITH_GLITCHTIP="$WITH_GLITCHTIP" "$PHP_BIN" <<'PHP'
 <?php
 $path = "/opt/laravelify/.env";
+// The panel's own data: in MySQL or MariaDB when there is one, otherwise in SQLite (a file in
+// storage, which the panel's user owns and every update keeps).
+$mysql = getenv("MYSQL_FAMILY") !== "";
+$sqlite = "/opt/laravelify/storage/app/laravelify.sqlite";
+if (! $mysql && ! file_exists($sqlite)) {
+  touch($sqlite);
+}
+$databases = trim(getenv("DATABASES")." sqlite");
 $password = file_get_contents("/tmp/laravelify-install/password");
 $setupToken = trim((string) @file_get_contents("/tmp/laravelify-install/setup-token"));
 $values = [
   "APP_ENV" => "production",
   "APP_DEBUG" => "false",
   "APP_URL" => "https://".getenv("PANEL_DOMAIN"),
-  "DB_CONNECTION" => "mysql",
+  "DB_CONNECTION" => $mysql ? "mysql" : "sqlite",
   "DB_HOST" => "127.0.0.1",
   "DB_PORT" => "3306",
-  "DB_DATABASE" => "laravelify",
+  "DB_DATABASE" => $mysql ? "laravelify" : $sqlite,
   "DB_USERNAME" => "root",
   "DB_PASSWORD" => $password,
+  // Which database engines websites can use, and the logins the panel makes their databases
+  // with (MySQL and MariaDB use the DB_ login above).
+  "LARAVELIFY_DATABASES" => '"'.$databases.'"',
+  // GlitchTip was picked at install: the panel installs it once its admin exists.
+  "LARAVELIFY_INSTALL_GLITCHTIP" => getenv("WITH_GLITCHTIP") ? "true" : "false",
+  "LARAVELIFY_POSTGRES_PASSWORD" => str_contains($databases, "postgresql") ? $password : "",
+  "LARAVELIFY_MONGODB_PASSWORD" => str_contains($databases, "mongodb") ? $password : "",
   "SESSION_DRIVER" => "database",
   "QUEUE_CONNECTION" => "database",
   "CACHE_STORE" => "database",
@@ -766,7 +1023,7 @@ $values = [
 ];
 $contents = file_get_contents($path);
 foreach ($values as $key => $value) {
-  if ($key === "DB_PASSWORD") {
+  if (in_array($key, ["DB_PASSWORD", "LARAVELIFY_POSTGRES_PASSWORD", "LARAVELIFY_MONGODB_PASSWORD"], true)) {
     $value = '"'.str_replace(['\\', '"'], ['\\\\', '\\"'], $value).'"';
   }
   $line = $key."=".$value;
@@ -781,14 +1038,14 @@ PHP
 
 cd "$APP_ROOT"
 export COMPOSER_ALLOW_SUPERUSER=1
-"$PHP_BIN" "$(command -v composer)" install --no-dev --optimize-autoloader --no-interaction --no-ansi
+"$PHP_BIN" /usr/local/bin/composer install --no-dev --optimize-autoloader --no-interaction --no-ansi
 if ! grep -q '^APP_KEY=base64:' .env; then
   "$PHP_BIN" artisan key:generate --force --no-ansi
 fi
 "$PHP_BIN" artisan migrate --force --no-ansi
 
 step "Saving the server settings and the tunnel"
-PHPMYADMIN_DOMAIN="$PHPMYADMIN_DOMAIN" PANEL_DOMAIN="$PANEL_DOMAIN" PANEL_PHP="$PANEL_PHP" "$PHP_BIN" <<'PHP'
+PHPMYADMIN_DOMAIN="$PHPMYADMIN_DOMAIN" PHPMYADMIN_PATH="$PHPMYADMIN_PATH" PANEL_DOMAIN="$PANEL_DOMAIN" PANEL_PHP="$PANEL_PHP" MYSQL_FAMILY="$MYSQL_FAMILY" "$PHP_BIN" <<'PHP'
 <?php
 require "vendor/autoload.php";
 $app = require "bootstrap/app.php";
@@ -796,12 +1053,22 @@ $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 $domain = getenv("PHPMYADMIN_DOMAIN");
 $password = file_get_contents("/tmp/laravelify-install/password");
 $php = getenv("PANEL_PHP");
-foreach (["mysql", "redis", "phpmyadmin"] as $key) {
+foreach (getenv("MYSQL_FAMILY") !== "" ? ["mysql", "redis", "phpmyadmin"] : ["redis"] as $key) {
   $service = App\Models\ServerService::query()->where("key", $key)->first();
   if (! $service) {
     continue;
   }
   if ($key === "phpmyadmin") {
+    // At a path of the panel's address, or on a domain of its own.
+    $path = (string) getenv("PHPMYADMIN_PATH");
+    if ($path !== "") {
+      $service->domain = getenv("PANEL_DOMAIN").$path;
+      $service->settings = ["php_version" => $php, "path" => $path];
+      $service->config = App\Services\ServerCatalog::phpMyAdminPathNginx($path, "unix:/run/php/php{$php}-fpm.sock");
+      $service->save();
+      file_put_contents("/etc/nginx/laravelify-panel.d/phpmyadmin.conf", $service->config);
+      continue;
+    }
     $service->domain = $domain;
     $service->config = preg_replace("/server_name\s+[^;]+;/", "server_name {$domain};", $service->config, 1);
     $service->config = preg_replace("#unix:/run/php/php[0-9.]+-fpm\\.sock#", "unix:/run/php/php{$php}-fpm.sock", $service->config, 1);
@@ -822,14 +1089,12 @@ $phpmyadmin = getenv("PHPMYADMIN_DOMAIN");
 $slug = strtolower(str_replace(".", "-", $panel));
 $token = trim(file_get_contents("/tmp/laravelify-install/tunnel-token"));
 $token = str_replace(["\r", "\n", "\""], "", $token);
-$ingress = implode("\n", [
-  "ingress:",
-  "  - hostname: {$panel}",
-  "    service: http://127.0.0.1:80",
-  "  - hostname: {$phpmyadmin}",
-  "    service: http://127.0.0.1:80",
-  "  - service: http_status:404",
-])."\n";
+$ingress = implode("\n", array_merge(
+  ["ingress:", "  - hostname: {$panel}", "    service: http://127.0.0.1:80"],
+  // phpMyAdmin's domain only with MySQL or MariaDB.
+  $phpmyadmin !== "" ? ["  - hostname: {$phpmyadmin}", "    service: http://127.0.0.1:80"] : [],
+  ["  - service: http_status:404"],
+))."\n";
 App\Models\CloudflareTunnel::query()->updateOrCreate(
   ["slug" => $slug],
   ["name" => $panel, "token" => $token, "ingress" => $ingress],
@@ -908,11 +1173,13 @@ chmod 755 "$APP_ROOT"/scripts/*.sh
 LARAVELIFY_ROOT="$APP_ROOT" LARAVELIFY_PHP="php${PANEL_PHP}" bash "$APP_ROOT/scripts/privileges.sh"
 bash "$APP_ROOT/scripts/host-apply.sh" phpmyadmin-hide all || true
 
+if has_tool vscode; then
 step "Installing VS Code for the websites (code-server)"
 # Downloaded once here, so the code editor opens at once the first time. graphify (the AI
 # agents' project map) comes with it.
 bash "$APP_ROOT/scripts/host-apply.sh" code-server-install >/dev/null \
   || echo "VS Code could not be installed now; it installs the first time someone opens the editor." >&2
+fi
 
 step "Starting the Cloudflare tunnel"
 if ! command -v cloudflared >/dev/null 2>&1; then
@@ -951,9 +1218,16 @@ printf '  %sNext steps%s\n\n' "$C_BOLD" "$C_RESET"
 printf '  %s1.%s Create the superadmin (only this link opens the setup page):\n' "$C_CYAN" "$C_RESET"
 printf '     %s%shttps://%s/setup?token=%s%s\n\n' "$C_BOLD" "$C_GREEN" "$PANEL_DOMAIN" "$SETUP_TOKEN" "$C_RESET"
 printf '  %s2.%s In Cloudflare (Zero Trust → Networks → Tunnels → Public hostnames), send\n' "$C_CYAN" "$C_RESET"
-printf '     %s and %s to %shttp://localhost:80%s.\n\n' "$PANEL_DOMAIN" "$PHPMYADMIN_DOMAIN" "$C_BOLD" "$C_RESET"
+if [[ -n "$PHPMYADMIN_DOMAIN" ]]; then
+  printf '     %s and %s to %shttp://localhost:80%s.\n\n' "$PANEL_DOMAIN" "$PHPMYADMIN_DOMAIN" "$C_BOLD" "$C_RESET"
+else
+  printf '     %s to %shttp://localhost:80%s.\n\n' "$PANEL_DOMAIN" "$C_BOLD" "$C_RESET"
+fi
 printf '  %s3.%s Add a group and a website, and deploy it from GitHub.\n\n' "$C_CYAN" "$C_RESET"
-printf '  %sphpMyAdmin%s  https://%s/  (user root, the MySQL root password you set)\n' "$C_DIM" "$C_RESET" "$PHPMYADMIN_DOMAIN"
+if [[ -n "$WITH_PHPMYADMIN" ]]; then
+  printf '  %sphpMyAdmin%s  %s  (user root, the database password you set)\n' "$C_DIM" "$C_RESET" "$PHPMYADMIN_URL"
+fi
+printf '  %sDatabases%s   %s\n' "$C_DIM" "$C_RESET" "${DATABASE_LABELS:+${DATABASE_LABELS}, }SQLite: each website picks one when you add it"
 printf '  %sRedis%s       no password yet: set one in the panel under Server → Redis\n' "$C_DIM" "$C_RESET"
 printf '  %sFirewall%s    open: SSH (22), HTTP (80), HTTPS (443)\n' "$C_DIM" "$C_RESET"
 printf '  %sUpdates%s     sudo bash /opt/laravelify/scripts/update.sh\n' "$C_DIM" "$C_RESET"

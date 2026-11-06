@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CloudflareTunnel;
 use App\Models\ServerService;
 use App\Models\Website;
+use App\Support\PhpOptions;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 
@@ -14,7 +15,34 @@ class HostWriter
     {
         $this->renderSite($website);
 
-        return $this->apply(['site', $website->slug, $website->type, (string) ($website->php_version ?: '8.4')]);
+        $arguments = ['site', $website->slug, $website->type, (string) ($website->php_version ?: '8.4')];
+        $options = PhpOptions::encode($website->php_options);
+
+        return $this->apply($options === '' ? $arguments : [...$arguments, $options]);
+    }
+
+    /** Install a PHP version (7.4 to 8.5) with the common extensions. */
+    public function phpInstall(string $version): string
+    {
+        return $this->apply(['php-install', $version]);
+    }
+
+    /** Download a Node.js version (19, 19.4 or 19.0.0) for websites that ask for it. */
+    public function nodeInstall(string $version): string
+    {
+        return $this->apply(['node-install', $version]);
+    }
+
+    /** Install a Python, Go, Bun or Hugo version under /opt/laravelify-tools. */
+    public function toolchainInstall(string $toolchain, string $version): string
+    {
+        return $this->apply(['toolchain-install', $toolchain, $version]);
+    }
+
+    /** Turn a PHP extension on or off for one PHP version (every website on it). */
+    public function phpExtension(string $version, string $module, bool $on, string $package): string
+    {
+        return $this->apply(['php-extension', $version, $module, $on ? 'on' : 'off', $package]);
     }
 
     /**
@@ -341,6 +369,24 @@ UNIT;
         }
 
         return ['token' => $values['token'] ?? throw new RuntimeException('GlitchTip gave no API token.'), 'email' => $values['email'] ?? null, 'password' => $values['password'] ?? null];
+    }
+
+    /**
+     * Install PostgreSQL or MongoDB after setup (see host-apply.sh database-install) and return the
+     * panel's new login for it.
+     *
+     * @return array{user: string, password: string}
+     */
+    public function databaseInstall(string $engine): array
+    {
+        $output = $this->apply(['database-install', $engine]);
+        preg_match('/^USER=(\S+)$/m', $output, $user);
+        preg_match('/^PASSWORD=(\S+)$/m', $output, $password);
+
+        return [
+            'user' => $user[1] ?? throw new RuntimeException('The database server was installed, but gave no login.'),
+            'password' => $password[1] ?? throw new RuntimeException('The database server was installed, but gave no password.'),
+        ];
     }
 
     /** Remove GlitchTip with its database (see host-apply.sh glitchtip-remove). */

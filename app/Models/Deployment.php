@@ -15,6 +15,8 @@ class Deployment extends Model
         'branch',
         'commit_message',
         'commit_author',
+        'target_sha',
+        'snapshot_path',
         'log',
         'started_at',
         'finished_at',

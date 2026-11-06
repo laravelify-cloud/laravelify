@@ -161,7 +161,65 @@ NGINX;
 
     public static function hasSignonLocation(string $config): bool
     {
-        return str_contains($config, 'location = /laravelify-signon.php');
+        return preg_match('#location = (/[a-z0-9_-]+)?/laravelify-signon\.php#', $config) === 1;
+    }
+
+    /**
+     * phpMyAdmin at a path of the panel's address (https://panel.example.com/phpmyadmin): nginx
+     * locations the panel's site includes from /etc/nginx/laravelify-panel.d/phpmyadmin.conf,
+     * one-click sign-in included.
+     */
+    public static function phpMyAdminPathNginx(string $path, ?string $socket = null): string
+    {
+        $path = '/'.trim($path, '/');
+        $socket ??= self::panelSocket();
+        $script = base_path('scripts/phpmyadmin-signon.php');
+
+        return <<<NGINX
+# phpMyAdmin at {$path} of the panel's address, edited from the Laravelify server page.
+
+location = {$path} {
+    return 301 {$path}/;
+}
+
+# Laravelify one-click sign-in (panel sidebar → phpMyAdmin)
+location = {$path}/laravelify-signon.php {
+    include fastcgi_params;
+    fastcgi_param SCRIPT_FILENAME {$script};
+    fastcgi_param SCRIPT_NAME {$path}/laravelify-signon.php;
+    fastcgi_pass {$socket};
+}
+
+location ^~ {$path}/ {
+    alias /usr/share/phpmyadmin/;
+    index index.php;
+    # Big imports (database dumps): nginx and PHP accept up to 256 MB and run up to 10 minutes.
+    client_max_body_size 256M;
+
+    location ~ \.php\$ {
+        if (!-f \$request_filename) { return 404; }
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$request_filename;
+        fastcgi_pass {$socket};
+        fastcgi_read_timeout 600;
+        fastcgi_param PHP_VALUE "upload_max_filesize=256M
+post_max_size=256M
+memory_limit=512M
+max_execution_time=600";
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
+
+NGINX;
+    }
+
+    /** True when phpMyAdmin is a path of the panel (no server block of its own). */
+    public static function isPathConfig(string $config): bool
+    {
+        return preg_match('/^\s*server\s*\{/m', $config) !== 1;
     }
 
     /**
@@ -169,7 +227,7 @@ NGINX;
      */
     public static function withSignonLocation(string $config): string
     {
-        if (self::hasSignonLocation($config)) {
+        if (self::hasSignonLocation($config) || self::isPathConfig($config)) {
             return $config;
         }
 

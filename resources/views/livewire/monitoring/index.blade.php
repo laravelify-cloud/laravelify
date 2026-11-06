@@ -8,12 +8,22 @@
     };
 @endphp
 
-<div class="flex flex-col gap-6" wire:poll.60s.visible>
+<div class="flex flex-col gap-6" @if ($tab === 'overview') wire:poll.60s.visible @endif>
     <x-page-header title="Monitoring" summary="Uptime, traffic, errors, speed, and attacks for every website over the last 24 hours. Open a site for charts, requests, issues, and IP blocking.">
         <x-slot:actions>
             <span class="mon-live" title="Refreshes every minute">Live</span>
         </x-slot:actions>
     </x-page-header>
+
+    <nav class="segmented self-start" role="tablist" aria-label="Monitoring sections">
+        @foreach (['overview' => 'Overview', 'issues' => 'Issues', 'performance' => 'Performance', 'logs' => 'Logs'] as $key => $label)
+            <button type="button" role="tab" aria-pressed="{{ $tab === $key ? 'true' : 'false' }}" wire:click="$set('tab', '{{ $key }}')">{{ $label }}</button>
+        @endforeach
+    </nav>
+
+    @if ($tab !== 'overview')
+        <livewire:monitoring.glitchtip :section="$tab" :key="'glitchtip-'.$tab" />
+    @else
 
     <div class="mon-grid-4">
         <div class="mon-card">
@@ -90,5 +100,6 @@
                 </a>
             @endforeach
         </div>
+    @endif
     @endif
 </div>

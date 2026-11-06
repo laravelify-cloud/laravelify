@@ -35,6 +35,66 @@ class SentrySetupTest extends TestCase
      * @param  array<string, mixed>  $attributes
      * @return list<string>
      */
+    public function test_spring_gets_the_sentry_starter_in_pom_xml(): void
+    {
+        $this->assertSame(['pom.xml'], $this->apply('spring'));
+
+        $pom = $this->file('pom.xml');
+        $this->assertStringContainsString('<artifactId>sentry-spring-boot-starter-jakarta</artifactId>', $pom);
+        $this->assertStringContainsString('<version>'.SentrySetup::JAVA_VERSION.'</version>', $pom);
+        $this->assertSame(1, substr_count($pom, '<dependencies>'), 'The dependency goes inside the existing block.');
+        $this->assertNull(SentrySetup::package('spring'), 'Maven fetches it on the next deploy.');
+    }
+
+    public function test_aspnet_gets_the_package_and_use_sentry(): void
+    {
+        $this->assertSame(['Example.csproj', 'Program.cs'], $this->apply('aspnet'));
+
+        $this->assertStringContainsString('<PackageReference Include="Sentry.AspNetCore" Version="'.SentrySetup::DOTNET_VERSION.'" />', $this->file('Example.csproj'));
+        $program = $this->file('Program.cs');
+        $this->assertStringContainsString("var builder = WebApplication.CreateBuilder(args);\nbuilder.WebHost.UseSentry();", $program);
+        $this->assertStringContainsString('var app = builder.Build();', $program);
+    }
+
+    public function test_python_frameworks_get_sentry_sdk_and_init(): void
+    {
+        $this->assertSame(['requirements.txt', 'mysite/settings.py'], $this->apply('django'));
+        $this->assertStringContainsString('sentry-sdk[django]', $this->file('requirements.txt'));
+        $this->assertStringEndsWith("sentry_sdk.init(traces_sample_rate=0.2)\n", $this->file('mysite/settings.py'));
+
+        File::deleteDirectory($this->root);
+        $this->assertSame(['requirements.txt', 'app.py'], $this->apply('flask'));
+        $this->assertStringStartsWith('import sentry_sdk', $this->file('app.py'));
+        $this->assertStringContainsString('sentry-sdk[flask]', $this->file('requirements.txt'));
+
+        File::deleteDirectory($this->root);
+        $this->assertSame(['requirements.txt', 'main.py'], $this->apply('fastapi'));
+        $this->assertStringContainsString('sentry-sdk[fastapi]', $this->file('requirements.txt'));
+    }
+
+    public function test_bun_gets_sentry_bun(): void
+    {
+        $this->assertSame(['package.json', 'index.ts'], $this->apply('bun'));
+
+        $this->assertSame(SentrySetup::BUN_VERSION, json_decode($this->file('package.json'), true)['dependencies']['@sentry/bun']);
+        $this->assertStringStartsWith("import * as Sentry from '@sentry/bun';", $this->file('index.ts'));
+    }
+
+    public function test_go_and_static_builders_say_what_to_do_by_hand(): void
+    {
+        foreach (['go' => 'go get github.com/getsentry/sentry-go', 'hugo' => 'base layout'] as $type => $hint) {
+            File::deleteDirectory($this->root);
+
+            try {
+                $this->apply($type);
+                $this->fail($type.' should ask for a hand setup.');
+            } catch (RuntimeException $exception) {
+                $this->assertStringContainsString($hint, $exception->getMessage());
+                $this->assertStringNotContainsString('package.json', $exception->getMessage(), 'Not the Node.js message.');
+            }
+        }
+    }
+
     private function apply(string $type, array $attributes = []): array
     {
         if (! is_dir($this->root)) {

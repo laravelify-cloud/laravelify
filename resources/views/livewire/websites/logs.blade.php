@@ -9,7 +9,10 @@
     };
 @endphp
 
-<div class="flex flex-col gap-4" @if ($live) wire:poll.3s="load" @endif>
+<div class="flex flex-col gap-4">
+    @if ($live)
+        <span hidden wire:poll.3s="load"></span>
+    @endif
     @unless ($nginxReady)
         <div class="callout">
             <x-menu-icon name="danger" class="size-4 shrink-0 text-warning" />

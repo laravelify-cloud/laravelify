@@ -35,7 +35,7 @@ class Monitoring extends PanelComponent
     #[Url(as: 'range', except: '24h')]
     public string $range = '24h';
 
-    #[Url(as: 'view', except: 'overview')]
+    #[Url(as: 'view', except: 'overview', history: true)]
     public string $view = 'overview';
 
     #[Url(as: 'filter', except: 'all')]

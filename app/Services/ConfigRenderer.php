@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CloudflareTunnel;
 use App\Models\Website;
+use App\Support\DatabaseEngines;
 use App\Support\EnvFile;
 use App\Support\Redirects;
 
@@ -33,12 +34,19 @@ class ConfigRenderer
 
     public function env(Website $website): string
     {
-        return match (true) {
+        $content = match (true) {
             $website->isLaravel() => $this->laravelEnv($website),
             $website->isPhp() => $this->phpEnv($website),
             $website->isNode() => $this->nodeEnv($website),
             default => $this->staticEnv($website),
         };
+
+        // The PHP templates are written for MySQL: another engine's database replaces their DB_ lines.
+        if ($website->isPhp() && $website->provision_database && $website->db_name && ($website->db_engine ?: DatabaseEngines::MYSQL) !== DatabaseEngines::MYSQL) {
+            $content = EnvFile::set($content, app(DatabaseProvisioner::class)->envValues($website));
+        }
+
+        return $content;
     }
 
     /**
@@ -616,6 +624,9 @@ JS;
         $node = $website->node_version ?: '22';
         $command = $website->startCommand() ?: 'npm start';
         $withNode = base_path('scripts/with-node.sh');
+        $args = $website->hasToolchain()
+            ? '['.implode(', ', array_map(fn (string $part) => $this->jsString($part), [base_path('scripts/with-toolchain.sh'), $website->toolchain(), (string) $website->runtimeVersion(), 'bash', '-c', 'exec '.$command])).']'
+            : '['.$this->jsString($withNode).', "'.$node.'", "bash", "-c", '.$this->jsString('exec '.$command).']';
         $origin = $website->publicUrl();
         $extra = '';
 
@@ -633,7 +644,7 @@ module.exports = {
       name: "{$slug}",
       cwd: "{$path}",
       script: "/bin/bash",
-      args: [{$this->jsString($withNode)}, "{$node}", "bash", "-c", {$this->jsString('exec '.$command)}],
+      args: {$args},
       interpreter: "none",
       env: {
         LARAVELIFY_ENV_FILE: "{$path}/.env",

@@ -64,7 +64,7 @@
     };
 
     window.websitePage = function () {
-        var allowed = ['general', 'environment', 'runtime', 'nginx', 'security', 'redirects', 'processes', 'deployments', 'monitoring', 'logs', 'glitchtip', 'health', 'terminal', 'files', 'danger'];
+        var allowed = ['general', 'environment', 'runtime', 'php', 'nginx', 'security', 'redirects', 'processes', 'deployments', 'monitoring', 'logs', 'glitchtip', 'health', 'terminal', 'files', 'danger'];
         var params = new URLSearchParams(window.location.search);
         // ?tab=errors is the GlitchTip tab's old name.
         var requested = params.get('tab') === 'errors' ? 'glitchtip' : params.get('tab');
@@ -75,11 +75,18 @@
             linksOpen: false,
             groups: { settings: true, observe: true, operations: true },
             dirty: window.__laravelifyUnsaved === true,
-            setTab: function (next) {
-                this.tab = next;
+            // Each tab is its own step in the browser's history, so Back returns to the tab before.
+            setTab: function (next, replace) {
                 var url = new URL(window.location.href);
+                var changed = url.searchParams.get('tab') !== next;
+                this.tab = next;
                 url.searchParams.set('tab', next);
-                history.replaceState(history.state, '', url);
+
+                if (replace || !changed) {
+                    history.replaceState(history.state, '', url);
+                } else {
+                    history.pushState(history.state, '', url);
+                }
             },
             markDirty: function (event) {
                 var field = event.target;
@@ -94,7 +101,22 @@
                 window.__laravelifyUnsaved = false;
             },
             init: function () {
-                this.setTab(this.tab);
+                var self = this;
+                this.setTab(this.tab, true);
+
+                // Back and Forward between tabs of this page.
+                this._onPop = function () {
+                    var asked = new URLSearchParams(window.location.search).get('tab');
+                    asked = asked === 'errors' ? 'glitchtip' : asked;
+
+                    if (allowed.indexOf(asked) !== -1 && asked !== self.tab) {
+                        self.tab = asked;
+                    }
+                };
+                window.addEventListener('popstate', this._onPop);
+                document.addEventListener('livewire:navigating', function () {
+                    window.removeEventListener('popstate', self._onPop);
+                }, { once: true });
 
                 if (window.__laravelifyUnsavedBound) {
                     return;

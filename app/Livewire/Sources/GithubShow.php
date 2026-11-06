@@ -56,11 +56,19 @@ class GithubShow extends PanelComponent
         $this->app_id = (string) $githubApp->app_id;
         $this->installation_id = (string) $githubApp->installation_id;
         $this->client_id = (string) $githubApp->client_id;
-        $this->client_secret = (string) $githubApp->client_secret;
-        $this->webhook_secret = (string) $githubApp->webhook_secret;
+        // Secrets stay on the server: the eye shows them after the authenticator code.
         $this->private_key_id = (string) $githubApp->private_key_id;
         $this->manual = request()->boolean('manual');
         $this->webhook_endpoint = rtrim(request()->getSchemeAndHttpHost(), '/');
+    }
+
+    protected function revealableSecret(string $key): ?string
+    {
+        return match ($key) {
+            'client_secret' => $this->githubApp->client_secret,
+            'webhook_secret' => $this->githubApp->webhook_secret,
+            default => null,
+        };
     }
 
     public function createGithubAppManually(): void
@@ -111,8 +119,8 @@ class GithubShow extends PanelComponent
 
         $this->githubApp->save();
         $this->githubApp->refresh();
-        $this->client_secret = (string) $this->githubApp->client_secret;
-        $this->webhook_secret = (string) $this->githubApp->webhook_secret;
+        $this->client_secret = '';
+        $this->webhook_secret = '';
         $this->notice = 'GitHub App saved.';
         $this->noticeOk = true;
         $this->toast('GitHub App saved.');

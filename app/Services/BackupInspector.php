@@ -99,8 +99,8 @@ class BackupInspector
         $slug = Str::slug($run->target, '_') ?: 'backup';
 
         try {
-            if (! empty($payload['original']) || ! $run->isDatabase()) {
-                $extension = $run->isDatabase() ? 'sql.gz' : 'tar.gz';
+            if (! empty($payload['original']) || ! $run->isDatabase() || $run->otherEngine() !== null) {
+                $extension = $run->fileExtension();
                 $name = 'task-'.$task->id.'-'.Str::random(10).'.'.$extension;
                 rename($file, PanelTask::directory().DIRECTORY_SEPARATOR.$name);
 

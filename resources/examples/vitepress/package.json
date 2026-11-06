@@ -1,0 +1,6 @@
+{
+  "name": "laravelify-vitepress",
+  "private": true,
+  "scripts": { "docs:build": "vitepress build docs" },
+  "devDependencies": { "vitepress": "^1" }
+}

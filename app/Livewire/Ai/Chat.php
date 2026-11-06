@@ -11,6 +11,7 @@ use App\Models\GithubApp;
 use App\Models\Website;
 use App\Services\AiAssistant;
 use App\Services\GithubAppClient;
+use App\Services\GlitchtipInsights;
 use App\Services\SiteLogs;
 use App\Services\TerminalSessions;
 use App\Support\AgentStream;
@@ -51,7 +52,7 @@ class Chat extends PanelComponent
     /** @var list<array<string, mixed>> Images, GitHub repositories, and logs for the next message. */
     public array $attached = [];
 
-    /** The attach picker that is open: 'repo', 'log', or null. */
+    /** The attach picker that is open: 'repo', 'log', 'issue', 'fix', or null. */
     public ?string $picker = null;
 
     public string $pickerSearch = '';
@@ -71,9 +72,10 @@ class Chat extends PanelComponent
 
     public function openPicker(string $kind): void
     {
-        $this->picker = in_array($kind, ['repo', 'log'], true) ? $kind : null;
+        $this->picker = in_array($kind, ['repo', 'log', 'issue', 'fix'], true) ? $kind : null;
         $this->pickerSearch = '';
         $this->logWebsite = null;
+        $this->issueWebsite = null;
     }
 
     public function closePicker(): void
@@ -113,6 +115,129 @@ class Chat extends PanelComponent
 
         $this->attached[] = ['kind' => 'log', 'label' => $website->name.' · '.$label, 'text' => $text !== '' ? $text : '(empty)'];
         $this->picker = null;
+    }
+
+    /**
+     * The open issues of the website picked in the issue picker.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function issueRows(): array
+    {
+        if ($this->picker !== 'issue' || $this->issueWebsite === null) {
+            return [];
+        }
+
+        $website = Website::query()->find($this->issueWebsite);
+
+        try {
+            return app(GlitchtipInsights::class)->issues(['project' => (int) $website?->glitchtip_project_id, 'period' => '30d', 'status' => 'unresolved', 'query' => $this->pickerSearch], null, 25)['rows'];
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    /** The website whose GlitchTip issues the issue picker lists. */
+    public ?int $issueWebsite = null;
+
+    /**
+     * Attach one GlitchTip issue: what it is, how often, and its latest stack trace with code.
+     */
+    public function addIssue(string $id, GlitchtipInsights $insights): void
+    {
+        $website = Website::query()->find($this->issueWebsite);
+
+        try {
+            $issue = collect($insights->issues(['project' => (int) $website?->glitchtip_project_id, 'period' => '30d', 'status' => 'unresolved'], null, 25)['rows'])->firstWhere('id', $id);
+            $event = $insights->latestEvent($id);
+        } catch (Throwable $exception) {
+            $this->toast('Could not read that issue from GlitchTip: '.$exception->getMessage(), 'error');
+
+            return;
+        }
+
+        $this->attached[] = [
+            'kind' => 'issue',
+            'label' => ($website?->name ?? 'Issue').' · '.Str::limit($issue['title'] ?? $event['type'], 48),
+            'text' => self::issueText($website?->name, $issue, $event),
+        ];
+        $this->picker = null;
+    }
+
+    /**
+     * Fix a website's errors: its open issues (newest 10, with stack traces) are attached and the
+     * message says what to do, ready to send.
+     */
+    public function fixWebsite(int $id, GlitchtipInsights $insights): void
+    {
+        $website = Website::query()->findOrFail($id);
+
+        try {
+            $issues = $insights->issues(['project' => (int) $website->glitchtip_project_id, 'period' => '30d', 'status' => 'unresolved'], null, 10)['rows'];
+        } catch (Throwable $exception) {
+            $this->toast('Could not read the issues from GlitchTip: '.$exception->getMessage(), 'error');
+
+            return;
+        }
+
+        if ($issues === []) {
+            $this->toast($website->name.' has no open issues in GlitchTip. Nothing to fix.', 'info');
+            $this->picker = null;
+
+            return;
+        }
+
+        $text = collect($issues)->map(function (array $issue) use ($insights, $website) {
+            try {
+                $event = $insights->latestEvent($issue['id']);
+            } catch (Throwable) {
+                $event = null;
+            }
+
+            return self::issueText($website->name, $issue, $event);
+        })->implode("\n\n---\n\n");
+
+        $this->attached[] = ['kind' => 'issue', 'label' => $website->name.' · '.count($issues).' open '.Str::plural('issue', count($issues)), 'text' => $text];
+        $this->message = 'Check all open issues of '.$website->name.' and fix them. For each one: find the cause in the code (list-issues, read-file), '
+            .'fix it in the repository with commit-files (one commit, clear message), then follow the deploy (get-deployment) and check the site (check-website). '
+            .'Skip anything that needs a decision from me and ask. At the end, tell me what you changed and why.';
+        $this->picker = null;
+    }
+
+    /**
+     * An issue as text for the agent.
+     *
+     * @param  array<string, mixed>|null  $issue
+     * @param  array<string, mixed>|null  $event
+     */
+    private static function issueText(?string $website, ?array $issue, ?array $event): string
+    {
+        $lines = ['GlitchTip issue'.($website ? ' of '.$website : '').($issue ? ' '.$issue['short_id'] : '')];
+
+        if ($issue) {
+            $lines[] = $issue['title'];
+            $lines[] = 'Where: '.$issue['culprit'].' · '.$issue['count'].' events, '.$issue['users'].' users · level '.$issue['level'];
+        }
+
+        if ($event) {
+            $lines[] = 'Message: '.$event['message'];
+
+            if ($event['request']) {
+                $lines[] = 'Request: '.$event['request']['method'].' '.$event['request']['url'];
+            }
+
+            foreach (array_slice($event['frames'], 0, 10) as $frame) {
+                $lines[] = '  at '.$frame['file'].($frame['line'] ? ':'.$frame['line'] : '').($frame['function'] ? ' in '.$frame['function'] : '').($frame['in_app'] ? ' (app code)' : '');
+
+                if ($frame['in_app']) {
+                    foreach ($frame['context'] as $code) {
+                        $lines[] = '      '.$code['number'].($code['number'] === $frame['line'] ? ' > ' : '   ').$code['code'];
+                    }
+                }
+            }
+        }
+
+        return implode("\n", $lines);
     }
 
     public function removeAttachment(int $index): void
@@ -379,6 +504,9 @@ class Chat extends PanelComponent
             'skills' => $assistant->skills(),
             'repositories' => $this->picker === 'repo' ? $this->repositoryOptions() : [],
             'logWebsites' => $this->picker === 'log' ? Website::query()->orderBy('name')->get(['id', 'name']) : collect(),
+            // Websites connected to GlitchTip, for the issue and fix pickers.
+            'issueWebsites' => in_array($this->picker, ['issue', 'fix'], true) ? Website::query()->whereNotNull('glitchtip_project_id')->orderBy('name')->get(['id', 'name', 'glitchtip_project_id']) : collect(),
+            'issueRows' => $this->issueRows(),
             'loginState' => $this->login ? AgentStream::login($this->loginOutput) : null,
             'logSources' => $this->picker === 'log' && $this->logWebsite ? app(SiteLogs::class)->sources(Website::query()->findOrFail($this->logWebsite)) : [],
         ])->layout('layouts.app', ['mobile' => true])->title('AI chat');

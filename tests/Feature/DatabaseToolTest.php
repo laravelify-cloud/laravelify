@@ -294,7 +294,7 @@ class DatabaseToolTest extends TestCase
         $this->assertSame($before, DatabaseChange::query()->count());
 
         $this->browser->connection()->unprepared('CREATE TABLE `'.self::DB.'`.`many` (n INT)');
-        $this->browser->connection()->unprepared('INSERT INTO `'.self::DB.'`.`many` (n) VALUES '.implode(',', array_fill(0, 205, '(1)')));
+        $this->browser->connection()->unprepared('INSERT INTO `'.self::DB.'`.`many` (n) VALUES '.implode(',', array_fill(0, DatabaseSql::MAX_ROWS + 5, '(1)')));
         $capped = $sql->run(self::DB, 'SELECT n FROM many');
         $this->assertTrue($capped['results'][0]['truncated']);
         $this->assertCount(DatabaseSql::MAX_ROWS, $capped['results'][0]['rows']);

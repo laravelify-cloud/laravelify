@@ -63,6 +63,8 @@ class Telegram extends PanelComponent
 
         if ($this->token !== '') {
             Setting::putValue('telegram_bot_token', trim($this->token));
+            // A bot of your own talks to Telegram itself, not through the Laravelify Cloud relay.
+            Setting::putValue('telegram_api_url', null);
             $this->token = '';
             $this->hasToken = true;
         }
@@ -130,7 +132,7 @@ class Telegram extends PanelComponent
             return;
         }
 
-        Setting::query()->where('key', 'telegram_bot_token')->delete();
+        Setting::query()->whereIn('key', ['telegram_bot_token', 'telegram_api_url'])->delete();
         Setting::putValue('telegram_enabled', '0');
         $this->hasToken = false;
         $this->enabled = false;

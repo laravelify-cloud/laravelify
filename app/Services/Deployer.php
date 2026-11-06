@@ -78,7 +78,11 @@ class Deployer
                 return;
             }
 
-            $this->checkout($website, $log);
+            if ($installed = app(Runtimes::class)->ensure($website)) {
+                $log->line($installed);
+            }
+
+            $this->checkout($website, $log, $deployment);
 
             // The database comes before the install, which runs the migrations against it.
             if (($website->isPhp() || $website->isNode()) && $website->provision_database) {
@@ -128,8 +132,9 @@ class Deployer
         }
     }
 
-    private function checkout(Website $website, DeploymentLogger $log): void
+    private function checkout(Website $website, DeploymentLogger $log, ?Deployment $deployment = null): void
     {
+        $target = $deployment?->target_sha;
         $path = $website->deploy_path;
 
         $log->line($this->hostWriter->prepareSiteDirectory($website));
@@ -155,6 +160,12 @@ class Deployer
                 'git', '-C', $path, 'fetch', '--', $repository,
                 '+refs/heads/'.$website->branch.':refs/remotes/origin/'.$website->branch,
             ]), $log);
+            if ($target) {
+                $this->rollBackTo($website, $deployment, $target, $repository, $log);
+
+                return;
+            }
+
             // -f: files a build or install left untracked (a package-lock.json) do not block a
             // commit that adds them; the reset below throws away local changes anyway.
             $this->must($this->runner->runAsSite(['git', '-C', $path, 'checkout', '-f', '-B', $website->branch, 'origin/'.$website->branch]), $log);
@@ -182,6 +193,42 @@ class Deployer
         // Every copied file and folder gets the site folder's group (the panel and nginx read
         // through it) and folders the setgid bit, which only root can set for a site's own user.
         $log->line($this->hostWriter->prepareSiteDirectory($website));
+    }
+
+    /**
+     * A rollback: save the code live now as a .tar.gz in the site's own folder (next to its
+     * trash, never served), then put the older commit live. Fetches it when the branch no longer
+     * has it (a force push).
+     */
+    private function rollBackTo(Website $website, Deployment $deployment, string $target, string $repository, DeploymentLogger $log): void
+    {
+        $path = $website->deploy_path;
+
+        if (preg_match('/^[0-9a-f]{7,64}$/', $target) !== 1) {
+            throw new RuntimeException('That is not a commit to roll back to.');
+        }
+
+        $live = trim($this->runner->runAsSite(['git', '-C', $path, 'rev-parse', 'HEAD'])->output);
+
+        if (preg_match('/^[0-9a-f]{40}$/', $live) === 1) {
+            $folder = dirname($this->site->trashRoot()).'/snapshots';
+            $file = $folder.'/'.now()->format('Y-m-d_His').'-'.substr($live, 0, 7).'.tar.gz';
+            $this->files->makeDirectory($folder, 0750, true);
+            $this->must($this->runner->runAsSite(['git', '-C', $path, 'archive', '--format=tar.gz', '--prefix='.$website->slug.'-'.substr($live, 0, 7).'/', '-o', $file, $live]), $log);
+            $deployment->update(['snapshot_path' => $file]);
+            $log->line('Saved the code that was live ('.substr($live, 0, 7).') as '.basename($file).'. Download it from this deployment, or roll back to that deploy to put it back.');
+        }
+
+        $has = $this->runner->runAsSite(['git', '-C', $path, 'cat-file', '-e', $target.'^{commit}']);
+
+        if (! $has->ok) {
+            $log->line('The branch no longer has '.substr($target, 0, 7).'; fetching it.');
+            $this->must($this->runner->runAsSite(['git', '-C', $path, 'fetch', '--', $repository, $target]), $log);
+        }
+
+        $this->must($this->runner->runAsSite(['git', '-C', $path, 'checkout', '-f', '-B', $website->branch, $target]), $log);
+        $this->must($this->runner->runAsSite(['git', '-C', $path, 'reset', '--hard', $target]), $log);
+        $log->line('Rolled back to '.substr($target, 0, 7).'. The next push to '.$website->branch.' deploys the newest commit again.');
     }
 
     /**
@@ -324,6 +371,14 @@ class Deployer
      */
     private function installDependencies(Website $website, DeploymentLogger $log): void
     {
+        if ($website->hasToolchain()) {
+            $command = (string) $website->installCommand();
+            $log->line($website->runtimeLabel().': '.$command);
+            $this->must($this->runner->runAsSite($website->toolCommand('bash', '-c', $command), $website->deploy_path), $log);
+
+            return;
+        }
+
         $path = $website->deploy_path;
 
         if (! is_file($path.'/package.json')) {
@@ -353,6 +408,12 @@ class Deployer
 
         if ($command === null) {
             $log->line('This type has no build step.');
+
+            return;
+        }
+
+        if ($website->hasToolchain()) {
+            $this->must($this->runner->runAsSite($website->toolCommand('bash', '-c', $command), $website->deploy_path), $log);
 
             return;
         }

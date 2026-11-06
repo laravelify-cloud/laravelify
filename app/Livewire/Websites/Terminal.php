@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Websites;
 
+use App\Livewire\Concerns\LazyPlaceholder;
 use App\Livewire\PanelComponent;
 use App\Models\Website;
 use App\Services\ProcessCommands;
@@ -18,6 +19,8 @@ use Throwable;
 
 class Terminal extends PanelComponent
 {
+    use LazyPlaceholder;
+
     /** The site the command runs in, or null for the global terminal. */
     public ?Website $website = null;
 

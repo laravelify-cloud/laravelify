@@ -43,6 +43,9 @@ class GlitchtipTest extends TestCase
             '127.0.0.1:8095/glitchtip/api/0/organizations/laravelify/teams/' => Http::sequence()->push([])->push(['slug' => 'websites']),
             '127.0.0.1:8095/glitchtip/api/0/teams/laravelify/websites/projects/' => Http::response(['slug' => 'shop', 'id' => 7]),
             '127.0.0.1:8095/glitchtip/api/0/projects/laravelify/shop/keys/' => Http::response([['dsn' => ['public' => self::DSN]]]),
+            '127.0.0.1:8095/glitchtip/api/0/organizations/laravelify/issues/*' => Http::response([
+                ['id' => '3', 'title' => 'RuntimeException: Cart is empty', 'culprit' => 'App\Http\Controllers\CartController@show', 'count' => '12', 'userCount' => 4, 'level' => 'error', 'lastSeen' => now()->toIso8601String(), 'firstSeen' => now()->toIso8601String(), 'project' => ['id' => '7']],
+            ]),
             '127.0.0.1:8095/glitchtip/api/0/projects/laravelify/shop/issues/*' => Http::response([
                 ['id' => '3', 'title' => 'RuntimeException: Cart is empty', 'culprit' => 'App\\Http\\Controllers\\CartController@show', 'count' => '12', 'userCount' => 4, 'level' => 'error', 'lastSeen' => now()->toIso8601String()],
             ]),
@@ -227,10 +230,12 @@ class GlitchtipTest extends TestCase
     public function test_the_sidebar_links_to_glitchtip_once_it_is_installed(): void
     {
         $this->signIn();
-        $this->get(route('dashboard'))->assertDontSee(route('tools.glitchtip'));
+        $issues = route('monitoring.index', ['tab' => 'issues']);
+        $this->get(route('dashboard'))->assertDontSee($issues);
 
+        // It opens the panel's own Issues, Performance and Logs, not GlitchTip's UI in a new tab.
         Setting::putValue('glitchtip.token', 'tok');
-        $this->get(route('dashboard'))->assertSee(route('tools.glitchtip'))->assertSee('GlitchTip');
+        $this->get(route('dashboard'))->assertSee($issues)->assertSee('GlitchTip');
     }
 
     public function test_each_kind_of_site_gets_the_key_its_sdk_reads(): void
@@ -303,10 +308,11 @@ class GlitchtipTest extends TestCase
         $this->fakeGlitchtip();
         $website = Website::factory()->create(['name' => 'Shop', 'type' => 'laravel']);
 
-        Livewire::test(Show::class, ['website' => $website])
+        Livewire::withoutLazyLoading()->test(Show::class, ['website' => $website])
             ->assertSee('Connect Shop')
             ->call('connectErrorTracking')
-            ->assertSee('RuntimeException: Cart is empty')
+            // The issues load after the page opens (covered by MonitoringGlitchtipTest).
+            ->assertSeeLivewire(\App\Livewire\Monitoring\Glitchtip::class)
             ->assertSee('composer require sentry/sentry-laravel')
             ->assertSee(self::DSN)
             ->assertSee('admin@example.com');

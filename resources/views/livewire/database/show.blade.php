@@ -18,6 +18,7 @@
     <div class="segmented self-start" role="tablist">
         <button type="button" wire:click="$set('tab', 'tables')" aria-pressed="{{ $tab === 'tables' ? 'true' : 'false' }}">Tables</button>
         <button type="button" wire:click="$set('tab', 'sql')" aria-pressed="{{ $tab === 'sql' ? 'true' : 'false' }}">SQL</button>
+        <button type="button" wire:click="$set('tab', 'history')" aria-pressed="{{ $tab === 'history' ? 'true' : 'false' }}">History</button>
         <button type="button" wire:click="$set('tab', 'objects')" aria-pressed="{{ $tab === 'objects' ? 'true' : 'false' }}">Triggers, events, routines</button>
         <button type="button" wire:click="$set('tab', 'search')" aria-pressed="{{ $tab === 'search' ? 'true' : 'false' }}">Search</button>
         <button type="button" wire:click="$set('tab', 'changes')" aria-pressed="{{ $tab === 'changes' ? 'true' : 'false' }}">Changes</button>
@@ -29,40 +30,28 @@
 
     @if ($tab === 'tables')
         <x-layer-card title="Tables" helper="Rows and sizes are MySQL's own figures and can be a little behind." flush>
-            <x-slot:actions>
-                <input class="input h-8 w-48" type="search" wire:model.live.debounce.250ms="filter" placeholder="Filter tables" aria-label="Filter tables">
-            </x-slot:actions>
-            <div class="overflow-x-auto">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            @foreach (['name' => 'Table', 'rows' => 'Rows', 'size' => 'Size', 'engine' => 'Engine', 'updated' => 'Last change'] as $key => $label)
-                                <th>@include('livewire.database.partials.sort-header', ['key' => $key, 'label' => $label])</th>
-                            @endforeach
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse ($tables as $table)
-                            <tr wire:key="table-{{ $table['name'] }}">
-                                <td>
-                                    <a class="flex items-center gap-2 font-mono text-[13px] font-medium hover:text-accent" href="{{ route('database.table', [$database, $table['name']]) }}" wire:navigate>
-                                        <x-menu-icon name="table" class="size-4 text-muted" /> {{ $table['name'] }}
-                                    </a>
-                                    @if ($table['comment'] !== '')
-                                        <span class="block text-[12px] text-muted">{{ $table['comment'] }}</span>
-                                    @endif
-                                </td>
-                                <td class="tabular-nums text-muted">{{ number_format($table['rows']) }}</td>
-                                <td class="tabular-nums text-muted">{{ \Illuminate\Support\Number::fileSize($table['size'], precision: 1) }}</td>
-                                <td class="text-muted">{{ $table['engine'] }}</td>
-                                <td class="text-muted">{{ $table['updated'] ?? '—' }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="5" class="table-empty">No tables{{ $filter !== '' ? ' match' : '' }}.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
+            @include('livewire.database.partials.local-grid', ['spec' => [
+                'key' => 'tables-mysql',
+                'search' => 'Search tables',
+                'empty' => 'No tables.',
+                'columns' => [
+                    ['name' => 'Table', 'link' => true, 'width' => 300],
+                    ['name' => 'Rows', 'numeric' => true, 'width' => 120],
+                    ['name' => 'Size', 'numeric' => true, 'format' => 'bytes', 'width' => 120],
+                    ['name' => 'Engine', 'width' => 120],
+                    ['name' => 'Last change', 'width' => 180],
+                    ['name' => 'Comment', 'width' => 260],
+                ],
+                'rows' => collect($tables)->map(fn (array $table): array => [
+                    'Table' => $table['name'],
+                    'Rows' => $table['rows'],
+                    'Size' => $table['size'],
+                    'Engine' => $table['engine'],
+                    'Last change' => $table['updated'],
+                    'Comment' => $table['comment'] !== '' ? $table['comment'] : null,
+                    '__href' => route('database.table', [$database, $table['name']]),
+                ])->values()->all(),
+            ]])
         </x-layer-card>
     @elseif ($tab === 'objects')
         @foreach (['trigger' => 'Triggers', 'event' => 'Events', 'procedure' => 'Procedures', 'function' => 'Functions'] as $type => $label)
@@ -103,6 +92,8 @@
         @endforeach
     @elseif ($tab === 'sql')
         @include('livewire.database.partials.sql', ['sqlTarget' => $database])
+    @elseif ($tab === 'history')
+        @include('livewire.database.partials.sql-history')
     @elseif ($tab === 'search')
         @include('livewire.database.partials.search', ['scopeChoices' => [$database], 'fixedScope' => true])
     @else

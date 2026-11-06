@@ -508,3 +508,88 @@
         .mon-live-svg path { transition: none; }
     }
 }
+
+/* GlitchTip inside Monitoring: issues, performance and logs. */
+@layer components {
+    .gt-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 14px 16px; border-radius: 12px; background: var(--color-surface, transparent); box-shadow: 0 0 0 1px var(--color-line); }
+    .gt-field { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--color-muted); }
+    .gt-field .input { min-width: 170px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+    .gt-grow { flex: 1 1 220px; }
+    .gt-grow .input { width: 100%; }
+    .gt-empty { display: flex; align-items: flex-start; gap: 14px; color: var(--color-muted); }
+    .gt-empty > div { color: var(--color-ink); }
+    .gt-list { border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px var(--color-line); transition: opacity .15s; }
+    .gt-head { padding: 9px 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--color-muted); background: color-mix(in srgb, var(--color-line) 35%, transparent); }
+    .gt-item + .gt-item, .gt-log + .gt-log { border-top: 1px solid var(--color-line); }
+    .gt-item.is-open { background: color-mix(in srgb, var(--color-accent) 5%, transparent); }
+    .gt-issue-row, .gt-perf-row { display: grid; align-items: center; gap: 16px; width: 100%; padding: 12px 16px; text-align: left; font-size: 13.5px; }
+    .gt-issue-row { grid-template-columns: minmax(0, 1fr) 80px 70px 110px; }
+    .gt-perf-row { grid-template-columns: minmax(0, 1fr) 90px 80px 80px 80px 70px; }
+    button.gt-issue-row { cursor: pointer; }
+    button.gt-issue-row:hover { background: color-mix(in srgb, var(--color-line) 30%, transparent); }
+    .gt-level { flex-shrink: 0; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--level); background: color-mix(in srgb, var(--level) 14%, transparent); }
+    .gt-tag { display: inline-flex; gap: 5px; padding: 2px 8px; border-radius: 6px; font-size: 11.5px; color: var(--color-muted); box-shadow: 0 0 0 1px var(--color-line); }
+    .gt-tag b { color: var(--color-ink); font-weight: 600; }
+    .gt-detail { display: flex; flex-direction: column; gap: 14px; padding: 4px 16px 16px; }
+    .gt-message { padding: 12px 14px; border-radius: 10px; border-left: 3px solid var(--mon-5xx); background: color-mix(in srgb, var(--mon-5xx) 7%, transparent); }
+    .gt-frames { display: flex; flex-direction: column; gap: 6px; }
+    .gt-frame { border-radius: 8px; box-shadow: 0 0 0 1px var(--color-line); overflow: hidden; }
+    .gt-frame summary { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px 12px; font-size: 12.5px; cursor: pointer; list-style: none; }
+    .gt-frame summary::-webkit-details-marker, .gt-log summary::-webkit-details-marker { display: none; }
+    .gt-frame:not(.is-app) summary { opacity: .65; }
+    .gt-code { margin: 0; padding: 10px 0; overflow-x: auto; font: 12px/1.6 var(--font-mono, ui-monospace, monospace); background: color-mix(in srgb, var(--color-line) 25%, transparent); }
+    .gt-code span { display: block; padding: 0 12px; white-space: pre; }
+    .gt-code span.is-line { background: color-mix(in srgb, var(--mon-5xx) 16%, transparent); }
+    .gt-code i { display: inline-block; width: 42px; margin-right: 10px; font-style: normal; text-align: right; color: var(--color-muted); user-select: none; }
+    .gt-detail > .gt-code { padding: 10px 12px; border-radius: 8px; }
+    .gt-log summary { display: grid; grid-template-columns: 120px 64px minmax(0, 1fr) 140px; align-items: center; gap: 12px; padding: 9px 16px; cursor: pointer; list-style: none; }
+    .gt-log summary:hover { background: color-mix(in srgb, var(--color-line) 30%, transparent); }
+    .gt-log[open] { background: color-mix(in srgb, var(--color-accent) 4%, transparent); }
+    @media (max-width: 760px) {
+        .gt-issue-row { grid-template-columns: minmax(0, 1fr) 60px; }
+        .gt-issue-row > :nth-child(3), .gt-issue-row > :nth-child(4) { display: none; }
+        .gt-perf-row { grid-template-columns: minmax(0, 1fr) 70px 70px; }
+        .gt-perf-row > :nth-child(n+4):not(:nth-child(5)) { display: none; }
+        .gt-log summary { grid-template-columns: 64px minmax(0, 1fr); }
+        .gt-log summary > :first-child, .gt-log summary > :last-child { display: none; }
+    }
+
+    /* Readable logs and tabs (v2). */
+    .gt-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-line); }
+    .gt-tabs button { display: inline-flex; align-items: center; gap: 7px; margin-bottom: -1px; padding: 9px 14px; font-size: 13.5px; font-weight: 500; color: var(--color-muted); border-bottom: 2px solid transparent; cursor: pointer; transition: color .15s, border-color .15s; }
+    .gt-tabs button:hover { color: var(--color-ink); }
+    .gt-tabs button[aria-selected="true"] { color: var(--color-ink); border-bottom-color: var(--color-accent); }
+    .gt-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .gt-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; font-size: 13px; color: var(--color-muted); box-shadow: 0 0 0 1px var(--color-line); cursor: pointer; transition: background-color .15s, color .15s, box-shadow .15s; }
+    .gt-chip:hover { color: var(--color-ink); }
+    .gt-chip i { width: 8px; height: 8px; border-radius: 99px; background: var(--level, var(--color-muted)); }
+    .gt-chip b { font-weight: 600; color: var(--color-ink); font-variant-numeric: tabular-nums; }
+    .gt-chip.is-on { color: var(--color-ink); box-shadow: 0 0 0 1px var(--level, var(--color-accent)); background: color-mix(in srgb, var(--level, var(--color-accent)) 12%, transparent); }
+    .gt-day { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 10px; padding: 8px 16px; font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--color-ink); background: color-mix(in srgb, var(--color-line) 45%, var(--color-surface, #111)); }
+    .gt-day span { font-weight: 400; color: var(--color-muted); }
+    .gt-log { border-left: 3px solid var(--level, transparent); }
+    .gt-log + .gt-log, .gt-day + .gt-log { border-top: 1px solid var(--color-line); }
+    .gt-log summary { grid-template-columns: 74px 84px minmax(0, 1fr) auto 18px; padding: 11px 16px 11px 13px; }
+    .gt-log-time { font: 12.5px/1 var(--font-mono, ui-monospace, monospace); color: var(--color-muted); font-variant-numeric: tabular-nums; }
+    .gt-log-level { justify-self: start; padding: 3px 9px; border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--level); background: color-mix(in srgb, var(--level) 13%, transparent); }
+    .gt-log-body { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 1.45; color: var(--color-ink); }
+    .gt-log-site { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--color-muted); }
+    .gt-log-caret { color: var(--color-muted); transition: transform .15s; }
+    .gt-log[open] .gt-log-caret { transform: rotate(180deg); }
+    .gt-log[open] .gt-log-body { white-space: normal; }
+    .gt-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 20px; margin: 0; }
+    .gt-facts div { min-width: 0; }
+    .gt-facts dt { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--color-muted); }
+    .gt-facts dd { margin: 2px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+    @media (max-width: 760px) {
+        .gt-log summary { grid-template-columns: 64px minmax(0, 1fr) 18px; }
+        .gt-log summary .gt-log-level, .gt-log summary .gt-log-site { display: none; }
+    }
+
+    /* Paging and the placeholder while GlitchTip answers. */
+    .gt-pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 13px; color: var(--color-muted); }
+    .gt-pager span { margin-right: auto; font-variant-numeric: tabular-nums; }
+    .gt-skeleton { border-radius: 12px; background: linear-gradient(90deg, color-mix(in srgb, var(--color-line) 40%, transparent) 0%, color-mix(in srgb, var(--color-line) 80%, transparent) 50%, color-mix(in srgb, var(--color-line) 40%, transparent) 100%); background-size: 200% 100%; animation: gt-shimmer 1.2s ease-in-out infinite; }
+    @keyframes gt-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+    @media (prefers-reduced-motion: reduce) { .gt-skeleton { animation: none; } }
+}

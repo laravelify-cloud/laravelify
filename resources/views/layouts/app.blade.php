@@ -38,7 +38,7 @@
                         <x-menu-icon name="groups" />
                         <span>Groups</span>
                     </a>
-                    <a class="menu-item {{ request()->routeIs('monitoring.index') ? 'menu-item-active' : '' }}" href="{{ route('monitoring.index') }}" wire:navigate>
+                    <a class="menu-item {{ request()->routeIs('monitoring.index', 'monitoring.errors') ? 'menu-item-active' : '' }}" href="{{ route('monitoring.index') }}" wire:navigate>
                         <x-menu-icon name="chart" />
                         <span>Monitoring</span>
                     </a>
@@ -82,10 +82,9 @@
                     @endif
                     @php($hasGlitchtip = app(\App\Services\Glitchtip::class)->installed())
                     @if ($hasGlitchtip)
-                        <a class="menu-item" href="{{ route('tools.glitchtip') }}" target="_blank" rel="noopener" title="Error tracking: opens signed in">
+                        <a class="menu-item" href="{{ route('monitoring.index', ['tab' => 'issues']) }}" wire:navigate title="Errors, performance and logs from GlitchTip, in the panel">
                             <x-menu-icon name="bug" />
                             <span>GlitchTip</span>
-                            <x-menu-icon name="external" class="ml-auto size-3.5 opacity-50" />
                         </a>
                     @endif
                     @foreach ($sidebarLinks as $link)

@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Websites;
 
+use App\Livewire\Concerns\LazyPlaceholder;
 use App\Livewire\PanelComponent;
 use App\Models\Website;
 use App\Services\ConfigRenderer;
@@ -14,6 +15,8 @@ use Throwable;
 
 class Logs extends PanelComponent
 {
+    use LazyPlaceholder;
+
     public Website $website;
 
     /** The selected log, kept in the URL as ?log=. */

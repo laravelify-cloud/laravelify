@@ -1,6 +1,9 @@
 <form class="card flex flex-col gap-4 p-4" wire:submit="save">
     <p class="text-muted">
-        @if ($service->kind === 'phpmyadmin')
+        @if ($service->kind === 'phpmyadmin' && $this->usesPath())
+            phpMyAdmin opens at a path of the panel's address. Change the path below; saving writes the nginx locations again and applies them.
+            phpMyAdmin has no password of its own. On its login form use MySQL user <code>root</code> and the root password from the MySQL page.
+        @elseif ($service->kind === 'phpmyadmin')
             Set the domain below. Saving rewrites <code>server_name</code> in the nginx file and applies it. TLS stays at Cloudflare, and this vhost listens on port 80.
             phpMyAdmin has no password of its own. On its login form use MySQL user <code>root</code> and the root password from the MySQL page. The Redis password is on the Redis page. Both fields have an eye icon.
         @elseif ($service->kind === 'php-fpm')
@@ -14,6 +17,14 @@
 
     @if (in_array($service->kind, ['mysql', 'redis', 'phpmyadmin']))
         <div class="grid gap-4 md:grid-cols-2">
+            @if ($this->usesPath())
+            <label class="field">
+                <span>Path</span>
+                <input class="input font-mono" wire:model="path" placeholder="/phpmyadmin">
+                <small class="text-muted">Opens at <code>https://{{ preg_replace('#/.*$#', '', (string) $service->domain) }}{{ $path }}</code>.</small>
+                @error('path') <small class="error">{{ $message }}</small> @enderror
+            </label>
+            @else
             <label class="field">
                 <span>Domain</span>
                 <input class="input" wire:model="domain" placeholder="{{ $service->kind === 'phpmyadmin' ? 'db.example.com' : '127.0.0.1' }}">
@@ -24,6 +35,7 @@
                 @endif
                 @error('domain') <small class="error">{{ $message }}</small> @enderror
             </label>
+            @endif
 
             @if (in_array($service->kind, ['mysql', 'redis']))
                 <label class="field">
@@ -43,13 +55,13 @@
                     <span>Root user</span>
                     <input class="input" value="root" readonly>
                 </label>
-                <x-secret-input label="Root password" model="password" />
-                <small class="text-muted">phpMyAdmin username is <code>root</code>. This is the password. Click the eye to reveal it.</small>
+                <x-secret-input label="Root password" model="password" secret="service_password" :saved="true" />
+                <small class="text-muted">phpMyAdmin username is <code>root</code>. The eye shows the password after your authenticator code. Type to change it.</small>
             @endif
 
             @if ($service->kind === 'redis')
-                <x-secret-input label="Redis password" model="password" />
-                <small class="text-muted">Click the eye to reveal it. Leave it empty to allow local connections without a password. Websites use host <code>127.0.0.1</code> and this password.</small>
+                <x-secret-input label="Redis password" model="password" secret="service_password" :saved="true" placeholder="•••••••• Click the eye to show it (after your code), or type to change it." />
+                <small class="text-muted">The eye shows the password after your authenticator code. To remove it, show it, clear the field and save. Websites use host <code>127.0.0.1</code> and this password.</small>
             @endif
 
             @if ($service->kind === 'phpmyadmin')

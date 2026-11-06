@@ -2,9 +2,31 @@
 
 return [
 
-    'php_versions' => ['8.0', '8.1', '8.2', '8.3', '8.4', '8.5'],
+    // Websites can use any of these; a missing one is installed when a website needs it.
+    'php_versions' => ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'],
 
-    'node_versions' => ['20', '22', '24'],
+    // The Node.js majors offered first; any release from 14 on (like 19.0.0) works too.
+    'node_versions' => ['18', '20', '22', '24'],
+
+    // GlitchTip was picked when the server was installed: set up once the admin exists.
+    'install_glitchtip' => (bool) env('LARAVELIFY_INSTALL_GLITCHTIP', false),
+
+    // The database engines websites can use, as the installer set up this server: mysql (MySQL or
+    // MariaDB), postgresql, mongodb, and sqlite (a file, no server). Servers installed before
+    // this setting existed have MySQL.
+    'databases' => array_values(array_filter(preg_split('/[\s,]+/', (string) env('LARAVELIFY_DATABASES', 'mysql sqlite')) ?: [])),
+
+    // The logins the panel makes websites' databases with. MySQL and MariaDB use the panel's own
+    // database login (DB_USERNAME / DB_PASSWORD).
+    // The installer signs in as postgres and MongoDB's admin; a server added later from the panel
+    // gets its own login, laravelify.
+    'postgres_user' => env('LARAVELIFY_POSTGRES_USER', 'postgres'),
+
+    'postgres_password' => env('LARAVELIFY_POSTGRES_PASSWORD'),
+
+    'mongodb_user' => env('LARAVELIFY_MONGODB_USER', 'admin'),
+
+    'mongodb_password' => env('LARAVELIFY_MONGODB_PASSWORD'),
 
     'sites_root' => env('LARAVELIFY_SITES_ROOT', '/var/www'),
 

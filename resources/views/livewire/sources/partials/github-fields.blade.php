@@ -35,17 +35,8 @@
     @error('installation_id') <small class="error">{{ $message }}</small> @enderror
 </label>
 <x-secret-input label="Client ID" model="client_id" />
-<x-secret-input label="Client secret" model="client_secret" />
-<label class="field">
-    <span>Webhook secret</span>
-    <span class="relative block" x-data="{ show: false }">
-        <input class="input pr-10" x-bind:type="show ? 'text' : 'password'" wire:model="webhook_secret" autocomplete="new-password">
-        <button class="absolute inset-y-0 right-2 text-muted" type="button" @click="show = !show" tabindex="-1" aria-label="Show webhook secret">
-            <x-menu-icon name="eye" class="size-4" />
-        </button>
-    </span>
-    @error('webhook_secret') <small class="error">{{ $message }}</small> @enderror
-</label>
+<x-secret-input label="Client secret" model="client_secret" secret="client_secret" :saved="isset($githubApp) && filled($githubApp->client_secret)" />
+<x-secret-input label="Webhook secret" model="webhook_secret" secret="webhook_secret" :saved="isset($githubApp) && filled($githubApp->webhook_secret)" />
 <label class="field">
     <span>Private key</span>
     <select class="select" wire:model="private_key_id" required>

@@ -3,6 +3,7 @@
 namespace App\Livewire\Setup;
 
 use App\Models\User;
+use App\Services\PanelTaskRunner;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 
@@ -65,6 +66,10 @@ class CreateAdmin extends Component
 
         Auth::login($user);
         session()->regenerate();
+
+        if (config('laravelify.install_glitchtip')) {
+            app(PanelTaskRunner::class)->start('glitchtip.install', 'glitchtip', 'Turning on error tracking (GlitchTip)', ['user_id' => $user->id]);
+        }
 
         $this->redirect(route('setup.two-factor'));
     }

@@ -261,9 +261,17 @@ class PanelTest extends TestCase
             $mock->shouldReceive('testConnection')->once()->andReturn('Connected to GitHub as FFKRISTAL-AZ.');
         });
 
+        // Secrets are not in the page; the eye fetches them after the authenticator code.
+        $page = Livewire::test(GithubShow::class, ['githubApp' => $app])
+            ->assertSet('client_secret', '')
+            ->assertSet('webhook_secret', '')
+            ->assertDontSee('secret-value')
+            ->assertDontSee('hook-value');
+        $this->assertSame(['ok' => false, 'locked' => true], $page->instance()->revealSecret('webhook_secret'));
+        session(['secrets_unlocked_until' => now()->addMinute()->getTimestamp()]);
+        $this->assertSame(['ok' => true, 'value' => 'hook-value'], $page->instance()->revealSecret('webhook_secret'));
+
         Livewire::test(GithubShow::class, ['githubApp' => $app])
-            ->assertSet('client_secret', 'secret-value')
-            ->assertSet('webhook_secret', 'hook-value')
             ->assertSet('private_key_id', (string) $key->id)
             ->assertSee('github-app-scary-wolf')
             ->call('testConnection')

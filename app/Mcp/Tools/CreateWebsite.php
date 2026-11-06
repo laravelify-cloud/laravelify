@@ -9,6 +9,7 @@ use App\Services\CloudflareRoutes;
 use App\Services\GithubAppClient;
 use App\Services\HostWriter;
 use App\Services\WebsiteCreator;
+use App\Support\DatabaseEngines;
 use App\Support\EnvFile;
 use App\Support\Slugs;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -33,7 +34,7 @@ class CreateWebsite extends Tool
 
         // A database made by the panel keeps its own login; DB_* from an old server would lock it out.
         if ($request->get('create_database', false)) {
-            $ignoredDatabaseKeys = array_values(array_intersect(array_keys($env), ['DATABASE_URL', 'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD']));
+            $ignoredDatabaseKeys = array_values(array_intersect(array_keys($env), ['DATABASE_URL', 'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD', 'MONGODB_URI', 'MONGODB_DATABASE']));
             $env = array_diff_key($env, array_flip($ignoredDatabaseKeys));
         }
         $group = $this->group((string) $request->get('group', ''));
@@ -62,6 +63,7 @@ class CreateWebsite extends Tool
             'public_dir' => $request->get('output_dir'),
             'enable_reverb' => $request->get('enable_reverb', false),
             'provision_database' => $request->get('create_database', false),
+            'db_engine' => $request->get('database_engine'),
             'cloudflare_tunnel_id' => $request->get('cloudflare_tunnel_id'),
             'github_app_id' => $appId,
         ]);
@@ -224,7 +226,8 @@ class CreateWebsite extends Tool
             'build_command' => $schema->string()->description('Override the build command (one line).'),
             'start_command' => $schema->string()->description('Node servers: override the start command (one line).'),
             'output_dir' => $schema->string()->description('Built front-ends and static sites: the folder to serve, like dist or out. Plain PHP: the web root (default public).'),
-            'create_database' => $schema->boolean()->description('PHP and Node servers: create a MySQL database and user. PHP gets DB_* in .env; Node also gets DATABASE_URL.'),
+            'create_database' => $schema->boolean()->description('PHP and Node servers: create a database and user. PHP gets DB_* in .env (MONGODB_* for MongoDB); Node also gets DATABASE_URL.'),
+            'database_engine' => $schema->string()->enum(DatabaseEngines::available())->description('With create_database: mysql (MySQL or MariaDB), postgresql, mongodb, or sqlite (a file, no server). Only the engines this server has are offered. Pick what the app uses: the Prisma provider or Laravel DB_CONNECTION. Default: the first one.'),
             'enable_reverb' => $schema->boolean()->description('Laravel: run Reverb (websockets).'),
             'env' => $schema->array()->items($schema->string())->description('Extra environment variables as "KEY=value" strings, written before the first deploy.'),
             'deploy' => $schema->boolean()->description('Deploy right after creating it (default true).'),

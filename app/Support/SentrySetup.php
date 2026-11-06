@@ -19,6 +19,13 @@ class SentrySetup
     /** The Sentry browser bundle a plain HTML site loads, the version the guide shows too. */
     public const CDN = 'https://browser.sentry-cdn.com/11.9.0/bundle.min.js';
 
+    /** SDK versions written into dependency files, for runtimes whose package manager is not run here. */
+    public const JAVA_VERSION = '8.16.0';
+
+    public const DOTNET_VERSION = '6.12.1';
+
+    public const BUN_VERSION = '^11.11.0';
+
     /** A key of a GlitchTip on a panel, as it is written in code (https://<key>@<panel>/glitchtip/<project>). */
     public const DSN_PATTERN = '#https?://[0-9a-f]{16,}@[A-Za-z0-9.:-]+/glitchtip/\d+#';
 
@@ -65,7 +72,10 @@ class SentrySetup
             'vue' => ['manager' => 'npm', 'package' => '@sentry/vue'],
             'angular' => ['manager' => 'npm', 'package' => '@sentry/angular'],
             'react', 'svelte', 'sveltekit', 'astro' => ['manager' => 'npm', 'package' => '@sentry/browser'],
-            'static' => null,
+            // Written into pom.xml, the .csproj, requirements.txt or package.json by apply(): their
+            // package managers run on the next deploy.
+            'static', 'spring', 'aspnet', 'django', 'flask', 'fastapi', 'bun', 'go',
+            'hugo', 'gatsby', 'docusaurus', 'vitepress', 'eleventy' => null,
             default => ['manager' => 'npm', 'package' => '@sentry/node'],
         };
     }
@@ -99,6 +109,12 @@ class SentrySetup
             'astro' => self::astro($changes, $list),
             'angular' => self::angular($changes, $dsn),
             'static' => self::static($changes, $website, $dsn),
+            'spring' => self::spring($changes),
+            'aspnet' => self::aspnet($changes, $list),
+            'django', 'flask', 'fastapi' => self::python($changes, $website, $list),
+            'bun' => self::bun($changes, $website),
+            'go' => throw new RuntimeException('Go needs go.sum updated with the code: run go get github.com/getsentry/sentry-go, add sentry.Init(sentry.ClientOptions{Dsn: os.Getenv("SENTRY_DSN")}) at the start of main(), and push. The GlitchTip tab shows the steps.'),
+            'hugo', 'gatsby', 'docusaurus', 'vitepress', 'eleventy' => throw new RuntimeException('Static site builders put the Sentry script in their own layout or theme: add the two script tags from the GlitchTip tab to your base layout’s <head>.'),
             default => self::node($changes, $website),
         };
 
@@ -343,6 +359,123 @@ class SentrySetup
         }
 
         throw new RuntimeException('Could not find the file the server starts from (package.json "main" or the start script). Add the Sentry lines from the GlitchTip tab to it by hand.');
+    }
+
+    /**
+     * Spring Boot: the Sentry starter in pom.xml or build.gradle. It reads SENTRY_DSN from the
+     * environment (the site's .env) and reports unhandled errors by itself.
+     */
+    private static function spring(SentryChanges $changes): void
+    {
+        $artifact = fn (?string $build) => preg_match('/spring-boot[^\n]{0,80}?[\'"<>:]\s*2\.\d/', (string) $build) === 1 ? 'sentry-spring-boot-starter' : 'sentry-spring-boot-starter-jakarta';
+
+        if ($changes->exists('pom.xml')) {
+            $changes->edit('pom.xml', function (string $xml) use ($artifact): string {
+                if (preg_match('#<dependencies>\s*\n#', $xml) !== 1) {
+                    throw new RuntimeException('pom.xml has no <dependencies>. Add io.sentry:'.$artifact($xml).' '.self::JAVA_VERSION.' to it by hand.');
+                }
+
+                $dependency = "<dependency>\n            <!-- ".self::NOTE." -->\n            <groupId>io.sentry</groupId>\n            <artifactId>".$artifact($xml)."</artifactId>\n            <version>".self::JAVA_VERSION."</version>\n        </dependency>\n        ";
+
+                return (string) preg_replace('#(<dependencies>\s*\n\s*)#', '$1'.$dependency, $xml, 1);
+            }, unless: 'io.sentry');
+
+            return;
+        }
+
+        $gradle = $changes->exists('build.gradle.kts') ? 'build.gradle.kts' : 'build.gradle';
+        $changes->edit($gradle, function (string $code) use ($artifact, $gradle): string {
+            if (preg_match('/^dependencies\s*\{[ \t]*$/m', $code) !== 1) {
+                throw new RuntimeException($gradle.' has no dependencies { } block. Add io.sentry:'.$artifact($code).':'.self::JAVA_VERSION.' to it by hand.');
+            }
+
+            $line = str_ends_with($gradle, '.kts')
+                ? 'implementation("io.sentry:'.$artifact($code).':'.self::JAVA_VERSION.'")'
+                : "implementation 'io.sentry:".$artifact($code).':'.self::JAVA_VERSION."'";
+
+            return (string) preg_replace('/^(dependencies\s*\{[ \t]*\n)/m', '$1    // '.self::NOTE."\n    ".$line."\n", $code, 1);
+        }, unless: 'io.sentry');
+    }
+
+    /**
+     * ASP.NET Core: the Sentry.AspNetCore package in the .csproj and UseSentry() on the web host.
+     * It reads SENTRY_DSN from the environment.
+     *
+     * @param  callable(string): list<string>  $list
+     */
+    private static function aspnet(SentryChanges $changes, callable $list): void
+    {
+        $project = collect($list('.'))->map(fn (string $file) => (string) preg_replace('#^\./#', '', $file))->first(fn (string $file) => ! str_contains($file, '/') && str_ends_with($file, '.csproj'))
+            ?? throw new RuntimeException('No .csproj was found at the top of the repository. Add the Sentry.AspNetCore package by hand.');
+
+        $changes->edit($project, function (string $xml) use ($project): string {
+            if (! str_contains($xml, '</Project>')) {
+                throw new RuntimeException($project.' has no </Project>. Add the Sentry.AspNetCore package by hand.');
+            }
+
+            return str_replace('</Project>', "  <ItemGroup>\n    <!-- ".self::NOTE." -->\n    <PackageReference Include=\"Sentry.AspNetCore\" Version=\"".self::DOTNET_VERSION."\" />\n  </ItemGroup>\n</Project>", $xml);
+        });
+
+        $changes->edit('Program.cs', function (string $code): string {
+            $comment = '// '.self::NOTE;
+
+            if (preg_match('/^([ \t]*)var\s+(\w+)\s*=\s*WebApplication\.CreateBuilder\(([^)]*)\);[ \t]*$/m', $code, $match) === 1) {
+                return str_replace($match[0], $match[0]."\n".$match[1].$match[2].'.WebHost.UseSentry(); '.$comment, $code);
+            }
+
+            if (preg_match('/^([ \t]*)var\s+(\w+)\s*=\s*WebApplication\.CreateBuilder\(([^)]*)\)\.Build\(\);[ \t]*$/m', $code, $match) === 1) {
+                return str_replace($match[0], $match[1].'var builder = WebApplication.CreateBuilder('.$match[3].");\n".$match[1].'builder.WebHost.UseSentry(); '.$comment."\n".$match[1].'var '.$match[2].' = builder.Build();', $code);
+            }
+
+            throw new RuntimeException('Program.cs does not make the app with WebApplication.CreateBuilder(...). Add builder.WebHost.UseSentry(); after it by hand.');
+        });
+    }
+
+    /**
+     * Django, Flask and FastAPI: sentry-sdk with the framework's extra in requirements.txt, and
+     * sentry_sdk.init() where the app starts. The SDK reads SENTRY_DSN and finds the framework.
+     *
+     * @param  callable(string): list<string>  $list
+     */
+    private static function python(SentryChanges $changes, Website $website, callable $list): void
+    {
+        $changes->edit('requirements.txt', fn (string $text) => rtrim($text)."\nsentry-sdk[".$website->type."]\n", unless: 'sentry-sdk');
+
+        $file = match ($website->type) {
+            'django' => collect($list('.'))->map(fn (string $file) => (string) preg_replace('#^\./#', '', $file))->first(fn (string $file) => str_ends_with($file, '/settings.py') && substr_count($file, '/') === 1)
+                ?? throw new RuntimeException('No settings.py was found next to manage.py. Add the sentry_sdk.init() lines from the GlitchTip tab to your settings by hand.'),
+            'flask' => self::firstOf($changes, ['app.py', 'wsgi.py', 'main.py', 'app/__init__.py']),
+            default => self::firstOf($changes, ['main.py', 'app/main.py', 'app.py']),
+        };
+
+        $init = 'import sentry_sdk  # '.self::NOTE."\n\nsentry_sdk.init(traces_sample_rate=0.2)\n";
+
+        $changes->edit($file, fn (string $code) => $website->type === 'django'
+            ? rtrim($code)."\n\n".$init
+            : $init."\n".ltrim($code), unless: 'sentry_sdk');
+    }
+
+    /** Bun: @sentry/bun in package.json, set up at the top of the file it starts from. */
+    private static function bun(SentryChanges $changes, Website $website): void
+    {
+        $package = json_decode((string) $changes->read('package.json'), true);
+
+        if (! is_array($package)) {
+            throw new RuntimeException('package.json is missing or not valid JSON. Add @sentry/bun by hand.');
+        }
+
+        $start = (string) ($website->start_command ?: ($package['scripts']['start'] ?? ''));
+        $entry = preg_match('/\bbun\s+(?:run\s+)?([^\s]+\.(?:ts|js|mjs|tsx))\b/', $start, $match) === 1
+            ? ltrim($match[1], './')
+            : self::firstOf($changes, array_filter([is_string($package['module'] ?? null) ? $package['module'] : null, is_string($package['main'] ?? null) ? $package['main'] : null, 'index.ts', 'src/index.ts', 'index.js']));
+
+        $changes->edit('package.json', function (string $json) use ($package): string {
+            $package['dependencies'] = ['@sentry/bun' => self::BUN_VERSION] + ($package['dependencies'] ?? []);
+
+            return json_encode($package, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }, unless: '@sentry/bun');
+
+        $changes->edit($entry, fn (string $code) => self::afterImports($code, "import * as Sentry from '@sentry/bun';", '// '.self::NOTE."\nSentry.init({ dsn: process.env.SENTRY_DSN, tracesSampleRate: 0.2 });"));
     }
 
     /** @param  list<string>  $files */

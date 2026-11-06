@@ -431,6 +431,38 @@ site_pool_file() {
   echo "/etc/php/$2/fpm/pool.d/laravelify-site-$1.conf"
 }
 
+# sqlsrv and pdo_sqlsrv (Microsoft SQL Server) for one PHP version: they are not Ubuntu packages.
+# Microsoft's ODBC Driver 18 comes from Microsoft's package repository (its license is accepted by
+# ticking the extension in the panel), then PECL builds both extensions for that PHP version.
+install_sqlsrv() {
+  local version="$1" os_version
+  export DEBIAN_FRONTEND=noninteractive HOME=/root
+  if ! dpkg -s msodbcsql18 >/dev/null 2>&1; then
+    echo "Installing Microsoft ODBC Driver 18..." >&2
+    os_version="$(. /etc/os-release && echo "${VERSION_ID}")"
+    install -d -m 0755 /usr/share/keyrings
+    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor --yes -o /usr/share/keyrings/microsoft-prod.gpg \
+      || die "Microsoft's signing key could not be downloaded"
+    echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/${os_version}/prod $(. /etc/os-release && echo "${VERSION_CODENAME}") main" \
+      > /etc/apt/sources.list.d/microsoft-prod.list
+    apt-get update -q >/dev/null 2>&1 || true
+    ACCEPT_EULA=Y apt-get install -y -q msodbcsql18 unixodbc-dev >/dev/null 2>&1 || die "Microsoft ODBC Driver 18 could not be installed (Ubuntu ${os_version})"
+  fi
+  echo "Building sqlsrv and pdo_sqlsrv for PHP ${version}..." >&2
+  apt-get install -y -q "php${version}-dev" php-pear build-essential >/dev/null 2>&1 || die "php${version}-dev could not be installed"
+  local ext
+  for ext in sqlsrv pdo_sqlsrv; do
+    if [[ ! -f "$("php-config${version}" --extension-dir)/${ext}.so" ]]; then
+      printf '\n' | pecl -d php_suffix="${version}" install -f "${ext}" >/tmp/laravelify-pecl-${ext}.log 2>&1 \
+        || die "PECL could not build ${ext} for PHP ${version}: $(tail -n 3 /tmp/laravelify-pecl-${ext}.log | tr '\n' ' ')"
+      # PECL keeps one registry for every PHP version: forget it, keep the built file.
+      pecl uninstall -r "${ext}" >/dev/null 2>&1 || true
+    fi
+  done
+  printf '; priority=20\nextension=sqlsrv.so\n' > "/etc/php/${version}/mods-available/sqlsrv.ini"
+  printf '; priority=30\nextension=pdo_sqlsrv.so\n' > "/etc/php/${version}/mods-available/pdo_sqlsrv.ini"
+}
+
 reload_fpm() {
   # The panel itself may run on this PHP-FPM, inside the very request that called us. The reload
   # runs 2 seconds later, after that request has answered (waiting for it here would wait for our
@@ -446,8 +478,42 @@ reload_fpm() {
     || systemctl --no-block restart "php$1-fpm"
 }
 
+# A site's PHP options as pool lines. Input: key=value pairs split by ";". Unknown keys and
+# values outside each key's pattern stop the save.
+site_php_options() {
+  local pairs="$1" pair key value
+  [[ -z "${pairs}" ]] && return 0
+  local allowed='^[A-Za-z0-9_.=/+;:,-]+$'
+  [[ "${pairs}" =~ ${allowed} && ${#pairs} -le 8000 ]] || die "invalid PHP options"
+  IFS=';' read -r -a list <<< "${pairs}"
+  for pair in "${list[@]}"; do
+    [[ -z "${pair}" ]] && continue
+    key="${pair%%=*}"
+    value="${pair#*=}"
+    case "${key}" in
+      memory_limit) [[ "${value}" =~ ^([1-9][0-9]{1,4}M|[1-9][0-9]?G|-1)$ ]] || die "invalid memory_limit" ;;
+      upload_max_filesize|post_max_size) [[ "${value}" =~ ^([1-9][0-9]{0,4}M|[1-9][0-9]?G)$ ]] || die "invalid ${key}" ;;
+      max_execution_time|max_input_time) [[ "${value}" =~ ^(0|[1-9][0-9]{0,4})$ ]] || die "invalid ${key}" ;;
+      max_input_vars) [[ "${value}" =~ ^[1-9][0-9]{2,5}$ ]] || die "invalid max_input_vars" ;;
+      date.timezone) [[ "${value}" =~ ^[A-Za-z]+(/[A-Za-z_+-]+){0,2}$|^UTC$ ]] || die "invalid date.timezone" ;;
+      max_file_uploads) [[ "${value}" =~ ^[1-9][0-9]{0,3}$ ]] || die "invalid max_file_uploads" ;;
+      error_reporting) [[ "${value}" =~ ^(22527|32767|24575|341)$ ]] || die "invalid error_reporting" ;;
+      disable_functions) [[ "${value}" =~ ^[a-z_][a-z0-9_]*(,[a-z_][a-z0-9_]*){0,199}$ ]] || die "invalid disable_functions" ;;
+      include_path) [[ "${value}" =~ ^[A-Za-z0-9_./-]+(:[A-Za-z0-9_./-]+){0,19}$ ]] || die "invalid include_path" ;;
+      allow_url_fopen|display_errors|expose_php|file_uploads|log_errors|session.cookie_secure|session.use_strict_mode|session.cookie_httponly|short_open_tag|zlib.output_compression|opcache.enable)
+        [[ "${value}" =~ ^(on|off)$ ]] || die "invalid ${key}"
+        echo "php_admin_flag[${key}] = ${value}"
+        continue
+        ;;
+      *) die "unknown PHP option ${key}" ;;
+    esac
+    echo "php_admin_value[${key}] = ${value}"
+  done
+}
+
 write_site_pool() {
-  local slug="$1" version="$2" file tmp base other old_version
+  local slug="$1" version="$2" options="${3:-}" file tmp base other old_version options_lines
+  options_lines="$(site_php_options "${options}")" || exit 1
   version_ok "${version}" || die "invalid php version"
   [[ -x "/usr/sbin/php-fpm${version}" ]] || die "PHP ${version}-FPM is not installed"
   file="$(site_pool_file "${slug}" "${version}")"
@@ -471,6 +537,7 @@ php_admin_value[upload_tmp_dir] = ${base}/tmp
 php_admin_value[sys_temp_dir] = ${base}/tmp
 php_value[session.save_path] = ${base}/tmp
 env[TMPDIR] = ${base}/tmp
+${options_lines}
 POOL
   if ! cmp -s "${tmp}" "${file}"; then
     ensure_dirs "/etc/php/${version}/fpm/pool.d"
@@ -969,8 +1036,8 @@ ROTATE
 site_runtime() {
   case "$1" in
     laravel|php) echo php ;;
-    nextjs|nuxt|sveltekit|express|nestjs|node) echo node ;;
-    react|vue|angular|svelte|astro|static) echo static ;;
+    nextjs|nuxt|sveltekit|express|nestjs|node|django|flask|fastapi|go|bun|spring|aspnet) echo node ;;
+    react|vue|angular|svelte|astro|static|hugo|gatsby|docusaurus|vitepress|eleventy) echo static ;;
     *) die "invalid site kind" ;;
   esac
 }
@@ -1086,6 +1153,7 @@ case "${ACTION}" in
     RUNTIME="$(site_runtime "${KIND}")"
     PHP_VERSION="${4:-8.4}"
     version_ok "${PHP_VERSION}" || die "invalid php version"
+    PHP_OPTIONS="${5:-}"
     SRC="${RENDERED}/sites/${TARGET}"
     SITE_DIR="/var/www/${TARGET}"
     [[ -f "${SRC}/nginx.conf" ]] || die "missing rendered nginx config"
@@ -1103,7 +1171,7 @@ case "${ACTION}" in
     own_site_folder "${SITE_DIR}"
     # PHP runs in the site's own PHP-FPM pool once it has its own user.
     if [[ "${RUNTIME}" == php ]] && site_has_own_user; then
-      write_site_pool "${TARGET}" "${PHP_VERSION}"
+      write_site_pool "${TARGET}" "${PHP_VERSION}" "${PHP_OPTIONS}"
     fi
     if [[ "${KIND}" == "laravel" ]]; then
       as_site mkdir -p -- \
@@ -1427,6 +1495,101 @@ EOF
         "${FILE}"
     write_code_editor_conf "/etc/nginx/laravelify-panel.d/code-ws-${TARGET}.conf" "${TOKEN}" "${PORT}" "${UNIT}"
     echo "started ${UNIT}"
+    ;;
+  database-install)
+    # database-install <postgresql|mongodb>: a database server for websites, added after setup
+    # (the installer's --databases does the same at install time). The panel gets its own login,
+    # "laravelify", with a new password each run, so a server already used by something else
+    # (GlitchTip's PostgreSQL) keeps its own logins. The PHP extension is added to every PHP
+    # version. Prints "USER=laravelify" and "PASSWORD=<password>".
+    [[ "${TARGET}" == postgresql || "${TARGET}" == mongodb ]] || die "invalid database engine"
+    export DEBIAN_FRONTEND=noninteractive HOME=/root
+    exec 8>/run/laravelify-apt.lock
+    flock -w 900 8 || die "another package install is running; try again"
+    db_pass="$(openssl rand -hex 24)"
+    if [[ "${TARGET}" == postgresql ]]; then
+      if ! command -v psql >/dev/null 2>&1 || [[ ! -d /etc/postgresql ]]; then
+        echo "Installing PostgreSQL..." >&2
+        apt-get update -q >/dev/null 2>&1 || true
+        apt-get install -y -q postgresql postgresql-contrib >/dev/null 2>&1 || die "PostgreSQL could not be installed"
+      fi
+      systemctl enable --now postgresql >/dev/null 2>&1 || die "PostgreSQL did not start"
+      for _ in $(seq 1 30); do
+        (cd /tmp && sudo -u postgres psql -qtAc 'SELECT 1' >/dev/null 2>&1) && break
+        sleep 1
+      done
+      (cd /tmp && sudo -u postgres psql -q -v ON_ERROR_STOP=1 -v password="${db_pass}" >/dev/null <<'SQL'
+SELECT 'CREATE ROLE laravelify' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'laravelify') \gexec
+ALTER ROLE laravelify WITH LOGIN SUPERUSER PASSWORD :'password';
+SQL
+      ) || die "the panel's PostgreSQL login could not be made"
+      php_extension=pgsql
+    else
+      if ! command -v mongod >/dev/null 2>&1; then
+        echo "Installing MongoDB..." >&2
+        codename="$(. /etc/os-release && echo "${VERSION_CODENAME}")"
+        install -d -m 0755 /usr/share/keyrings
+        curl -fsSL https://pgp.mongodb.com/server-8.0.asc | gpg --dearmor --yes -o /usr/share/keyrings/mongodb-server-8.0.gpg \
+          || die "MongoDB's signing key could not be downloaded"
+        # MongoDB publishes packages for a new Ubuntu some time after it comes out.
+        curl -fsI "https://repo.mongodb.org/apt/ubuntu/dists/${codename}/mongodb-org/8.0/Release" >/dev/null 2>&1 || codename=noble
+        echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] https://repo.mongodb.org/apt/ubuntu ${codename}/mongodb-org/8.0 multiverse" \
+          > /etc/apt/sources.list.d/mongodb-org-8.0.list
+        apt-get update -q >/dev/null 2>&1 || true
+        apt-get install -y -q mongodb-org >/dev/null 2>&1 || die "MongoDB could not be installed"
+      fi
+      systemctl enable --now mongod >/dev/null 2>&1 || die "MongoDB did not start"
+      for _ in $(seq 1 30); do
+        mongosh --quiet --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1 && break
+        sleep 1
+      done
+      # Before sign-in is turned on, the server lets this first user be made from 127.0.0.1.
+      if grep -q '^security:' /etc/mongod.conf; then
+        die "MongoDB is already installed here with sign-in turned on, and the panel has no login for it."
+      fi
+      MONGO_PASSWORD="${db_pass}" mongosh --quiet admin --eval '
+        const password = process.env.MONGO_PASSWORD;
+        if (db.getUser("laravelify")) { db.changeUserPassword("laravelify", password); }
+        else { db.createUser({ user: "laravelify", pwd: password, roles: ["root"] }); }
+      ' >/dev/null 2>&1 || die "the panel's MongoDB login could not be made"
+      printf '\nsecurity:\n  authorization: enabled\n' >> /etc/mongod.conf
+      sed -i 's/^\(\s*bindIp:\).*/\1 127.0.0.1/' /etc/mongod.conf
+      systemctl restart mongod || die "MongoDB did not restart with sign-in turned on"
+      php_extension=mongodb
+    fi
+    # The extension for websites (and pdo_pgsql for the panel): best effort per version.
+    for fpm in /usr/sbin/php-fpm[0-9]*; do
+      [[ -x "${fpm}" ]] || continue
+      version="${fpm#/usr/sbin/php-fpm}"
+      if [[ ! -f "/etc/php/${version}/mods-available/${php_extension}.ini" ]]; then
+        apt-get install -y -q "php${version}-${php_extension}" >/dev/null 2>&1 \
+          || { echo "php${version}-${php_extension} could not be installed." >&2; continue; }
+      fi
+      phpenmod -v "${version}" -s ALL "${php_extension}" >/dev/null 2>&1 || true
+      reload_fpm "${version}"
+    done
+    # The panel's settings: the engine joins LARAVELIFY_DATABASES, with the panel's login.
+    panel_env="${ROOT}/.env"
+    if [[ -f "${panel_env}" ]]; then
+      set_panel_env() {
+        if grep -q "^$1=" "${panel_env}"; then
+          sed -i "s|^$1=.*|$1=$2|" "${panel_env}"
+        else
+          printf '%s=%s
+' "$1" "$2" >> "${panel_env}"
+        fi
+      }
+      engines="$(grep -m1 '^LARAVELIFY_DATABASES=' "${panel_env}" | cut -d= -f2- | tr -d "\"'")"
+      engines="${engines:-mysql sqlite}"
+      [[ " ${engines} " == *" ${TARGET} "* ]] || engines="${engines} ${TARGET}"
+      prefix=POSTGRES
+      [[ "${TARGET}" == mongodb ]] && prefix=MONGODB
+      set_panel_env LARAVELIFY_DATABASES "\"${engines}\""
+      set_panel_env "LARAVELIFY_${prefix}_USER" laravelify
+      set_panel_env "LARAVELIFY_${prefix}_PASSWORD" "${db_pass}"
+    fi
+    echo "USER=laravelify"
+    echo "PASSWORD=${db_pass}"
     ;;
   glitchtip-install)
     # GlitchTip (MIT), error tracking for the websites: Sentry SDKs in Laravel, PHP, Node and
@@ -1771,7 +1934,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --config /etc/cloudflared/laravelify-${TARGET}.yml run --token "${TOKEN}"
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --grace-period 2s --config /etc/cloudflared/laravelify-${TARGET}.yml run --token "${TOKEN}"
 Restart=on-failure
 RestartSec=5
 
@@ -1828,9 +1991,26 @@ UNIT
   phpmyadmin)
     trusted_source "${RENDERED}/services/phpmyadmin.conf"
     validate_nginx "${RENDERED}/services/phpmyadmin.conf" panel
-    ensure_dirs /etc/nginx/sites-available /etc/nginx/sites-enabled
-    write_file 644 "${RENDERED}/services/phpmyadmin.conf" /etc/nginx/sites-available/laravelify-phpmyadmin.conf
-    ln -sfn /etc/nginx/sites-available/laravelify-phpmyadmin.conf /etc/nginx/sites-enabled/laravelify-phpmyadmin.conf
+    if grep -qE '^[[:space:]]*server[[:space:]]*\{' "${RENDERED}/services/phpmyadmin.conf"; then
+      # phpMyAdmin on a domain of its own.
+      ensure_dirs /etc/nginx/sites-available /etc/nginx/sites-enabled
+      write_file 644 "${RENDERED}/services/phpmyadmin.conf" /etc/nginx/sites-available/laravelify-phpmyadmin.conf
+      ln -sfn /etc/nginx/sites-available/laravelify-phpmyadmin.conf /etc/nginx/sites-enabled/laravelify-phpmyadmin.conf
+      rm -f /etc/nginx/laravelify-panel.d/phpmyadmin.conf
+    else
+      # phpMyAdmin at a path of the panel's address: the panel's site includes this folder.
+      ensure_dirs /etc/nginx/laravelify-panel.d
+      previous="$(mktemp)"
+      cp -a /etc/nginx/laravelify-panel.d/phpmyadmin.conf "${previous}" 2>/dev/null || : > "${previous}"
+      write_file 644 "${RENDERED}/services/phpmyadmin.conf" /etc/nginx/laravelify-panel.d/phpmyadmin.conf
+      if ! nginx -t; then
+        if [[ -s "${previous}" ]]; then cp -a "${previous}" /etc/nginx/laravelify-panel.d/phpmyadmin.conf; else rm -f /etc/nginx/laravelify-panel.d/phpmyadmin.conf; fi
+        rm -f "${previous}"
+        echo "nginx did not accept the phpMyAdmin config; the old one is back." >&2
+        exit 1
+      fi
+      rm -f "${previous}" /etc/nginx/sites-enabled/laravelify-phpmyadmin.conf /etc/nginx/sites-available/laravelify-phpmyadmin.conf
+    fi
     nginx -t
     systemctl reload nginx
     ;;
@@ -1910,6 +2090,191 @@ foreach (array_keys(\$cfg['Servers'] ?? []) as \$laravelifyServer) {
 PHP
     chmod 644 /etc/phpmyadmin/conf.d/zz-laravelify-hide.php
     echo "phpMyAdmin hides ${panel_db}."
+    ;;
+  toolchain-install)
+    # toolchain-install <python|go|bun|hugo|java|dotnet> <version>: a website's toolchain from its official
+    # releases into /opt/laravelify-tools (read-only for site users). A short version (1.24,
+    # 0.145) gets its newest patch release. scripts/with-toolchain.sh puts it on PATH.
+    TOOL="${TARGET}"
+    VERSION="${3:-}"
+    TOOLS=/opt/laravelify-tools
+    case "${TOOL}" in
+      python) [[ "${VERSION}" =~ ^3\.(8|9|1[0-4])(\.[0-9]{1,2})?$ ]] || die "invalid python version" ;;
+      go) [[ "${VERSION}" =~ ^1\.(1[8-9]|2[0-9])(\.[0-9]{1,2})?$ ]] || die "invalid go version" ;;
+      bun) [[ "${VERSION}" =~ ^1\.[0-9]{1,2}(\.[0-9]{1,2})?$ ]] || die "invalid bun version" ;;
+      hugo) [[ "${VERSION}" =~ ^0\.[0-9]{2,3}(\.[0-9]{1,2})?$ ]] || die "invalid hugo version" ;;
+      java) [[ "${VERSION}" =~ ^(11|17|21|2[2-9])$ ]] || die "invalid java version" ;;
+      dotnet) [[ "${VERSION}" =~ ^(6|7|8|9|10)\.0$ ]] || die "invalid dotnet version" ;;
+      *) die "unknown toolchain" ;;
+    esac
+    case "$(uname -m)" in
+      x86_64) ARCH=amd64; UV_ARCH=x86_64; BUN_ARCH=x64; JDK_ARCH=x64; DOTNET_ARCH=x64 ;;
+      aarch64|arm64) ARCH=arm64; UV_ARCH=aarch64; BUN_ARCH=aarch64; JDK_ARCH=aarch64; DOTNET_ARCH=arm64 ;;
+      *) die "unsupported CPU $(uname -m)" ;;
+    esac
+    exec 8>/run/laravelify-toolchain.lock
+    flock -w 900 8 || die "another toolchain install is running; try again"
+    install -d -m 0755 "${TOOLS}"
+    WORK="$(mktemp -d)"
+    trap 'rm -rf -- "${WORK}"' EXIT
+    # The newest release of a series from a list of versions on stdin (one per line).
+    newest_of() { grep -E "^${1//./\\.}(\.|$)" | sort -V | tail -n 1; }
+    # GitHub release tags of a repository, without the given prefix.
+    github_versions() {
+      curl -fsSL "https://api.github.com/repos/$1/releases?per_page=100" \
+        | grep -oE "\"tag_name\": *\"$2[0-9][0-9.]*\"" | sed -E "s/.*\"$2([0-9.]+)\"/\1/"
+    }
+    case "${TOOL}" in
+      python)
+        if [[ ! -x "${TOOLS}/uv/uv" ]]; then
+          curl -fsSL "https://github.com/astral-sh/uv/releases/latest/download/uv-${UV_ARCH}-unknown-linux-gnu.tar.gz" -o "${WORK}/uv.tgz" \
+            || die "uv could not be downloaded"
+          install -d -m 0755 "${TOOLS}/uv"
+          tar -xzf "${WORK}/uv.tgz" -C "${WORK}"
+          install -m 0755 "${WORK}"/uv-*/uv "${WORK}"/uv-*/uvx "${TOOLS}/uv/"
+        fi
+        install -d -m 0755 "${TOOLS}/python"
+        UV_PYTHON_INSTALL_DIR="${TOOLS}/python" "${TOOLS}/uv/uv" python install "${VERSION}" >/dev/null 2>&1 \
+          || die "Python ${VERSION} could not be installed"
+        chmod -R a+rX "${TOOLS}/python"
+        echo "Python ${VERSION} is installed."
+        ;;
+      go)
+        FULL="$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' | grep -oE '"version": *"go[0-9.]+"' | sed -E 's/.*"go([0-9.]+)"/\1/' | newest_of "${VERSION}")"
+        [[ -n "${FULL}" ]] || die "no Go release matches ${VERSION}"
+        if [[ ! -x "${TOOLS}/go/${FULL}/bin/go" ]]; then
+          curl -fsSL "https://go.dev/dl/go${FULL}.linux-${ARCH}.tar.gz" -o "${WORK}/go.tgz" || die "Go ${FULL} could not be downloaded"
+          install -d -m 0755 "${TOOLS}/go"
+          tar -xzf "${WORK}/go.tgz" -C "${WORK}"
+          rm -rf -- "${TOOLS}/go/${FULL}"
+          mv "${WORK}/go" "${TOOLS}/go/${FULL}"
+          chmod -R a+rX "${TOOLS}/go/${FULL}"
+        fi
+        echo "Go ${FULL} is installed."
+        ;;
+      bun)
+        FULL="$(github_versions oven-sh/bun 'bun-v' | newest_of "${VERSION}")"
+        [[ -n "${FULL}" ]] || die "no Bun release matches ${VERSION}"
+        if [[ ! -x "${TOOLS}/bun/${FULL}/bin/bun" ]]; then
+          command -v unzip >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get install -y -q unzip >/dev/null 2>&1
+          curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${FULL}/bun-linux-${BUN_ARCH}.zip" -o "${WORK}/bun.zip" \
+            || die "Bun ${FULL} could not be downloaded"
+          unzip -q "${WORK}/bun.zip" -d "${WORK}"
+          install -d -m 0755 "${TOOLS}/bun/${FULL}/bin"
+          install -m 0755 "${WORK}"/bun-linux-*/bun "${TOOLS}/bun/${FULL}/bin/bun"
+          ln -sf bun "${TOOLS}/bun/${FULL}/bin/bunx"
+        fi
+        echo "Bun ${FULL} is installed."
+        ;;
+      java)
+        if [[ ! -x "${TOOLS}/java/${VERSION}/bin/java" ]]; then
+          curl -fsSL "https://api.adoptium.net/v3/binary/latest/${VERSION}/ga/linux/${JDK_ARCH}/jdk/hotspot/normal/eclipse" -o "${WORK}/jdk.tgz" \
+            || die "Java ${VERSION} (Temurin) could not be downloaded"
+          install -d -m 0755 "${TOOLS}/java"
+          tar -xzf "${WORK}/jdk.tgz" -C "${WORK}"
+          rm -rf -- "${TOOLS}/java/${VERSION}"
+          mv "${WORK}"/jdk-* "${TOOLS}/java/${VERSION}"
+          chmod -R a+rX "${TOOLS}/java/${VERSION}"
+        fi
+        # Maven, for projects without ./mvnw or ./gradlew.
+        if [[ ! -x "${TOOLS}/maven/bin/mvn" ]]; then
+          MAVEN="$(curl -fsSL https://dlcdn.apache.org/maven/maven-3/ | grep -oE 'href="3\.[0-9]+\.[0-9]+/"' | sed -E 's/href="([^/]+)\/"/\1/' | sort -V | tail -n 1)"
+          if [[ -n "${MAVEN}" ]] && curl -fsSL "https://dlcdn.apache.org/maven/maven-3/${MAVEN}/binaries/apache-maven-${MAVEN}-bin.tar.gz" -o "${WORK}/maven.tgz"; then
+            tar -xzf "${WORK}/maven.tgz" -C "${WORK}"
+            rm -rf -- "${TOOLS}/maven"
+            mv "${WORK}/apache-maven-${MAVEN}" "${TOOLS}/maven"
+            chmod -R a+rX "${TOOLS}/maven"
+          fi
+        fi
+        echo "Java ${VERSION} is installed."
+        ;;
+      dotnet)
+        if [[ ! -x "${TOOLS}/dotnet/${VERSION}/dotnet" ]]; then
+          curl -fsSL https://dot.net/v1/dotnet-install.sh -o "${WORK}/dotnet-install.sh" || die "the .NET installer could not be downloaded"
+          install -d -m 0755 "${TOOLS}/dotnet"
+          bash "${WORK}/dotnet-install.sh" --channel "${VERSION}" --install-dir "${TOOLS}/dotnet/${VERSION}" --architecture "${DOTNET_ARCH}" --no-path >/dev/null 2>&1 \
+            || die ".NET ${VERSION} could not be installed"
+          # .NET needs ICU for globalization.
+          ldconfig -p | grep -q libicu || DEBIAN_FRONTEND=noninteractive apt-get install -y -q libicu-dev >/dev/null 2>&1 || true
+          chmod -R a+rX "${TOOLS}/dotnet/${VERSION}"
+        fi
+        echo ".NET ${VERSION} is installed."
+        ;;
+      hugo)
+        FULL="$(github_versions gohugoio/hugo 'v' | newest_of "${VERSION}")"
+        [[ -n "${FULL}" ]] || die "no Hugo release matches ${VERSION}"
+        if [[ ! -x "${TOOLS}/hugo/${FULL}/hugo" ]]; then
+          curl -fsSL "https://github.com/gohugoio/hugo/releases/download/v${FULL}/hugo_extended_${FULL}_linux-${ARCH}.tar.gz" -o "${WORK}/hugo.tgz" \
+            || die "Hugo ${FULL} could not be downloaded"
+          install -d -m 0755 "${TOOLS}/hugo/${FULL}"
+          tar -xzf "${WORK}/hugo.tgz" -C "${TOOLS}/hugo/${FULL}" hugo
+          chmod 0755 "${TOOLS}/hugo/${FULL}/hugo"
+        fi
+        echo "Hugo ${FULL} is installed."
+        ;;
+    esac
+    ;;
+  php-install)
+    # php-install <version>: PHP-FPM and the extensions websites use most, from the PHP package
+    # repository (7.4 to 8.5), so a website can pick a version the installer did not set up.
+    [[ "${TARGET}" =~ ^(7\.4|8\.[0-5])$ ]] || die "invalid php version"
+    if [[ ! -x "/usr/sbin/php-fpm${TARGET}" ]]; then
+      exec 8>/run/laravelify-apt.lock
+      flock -w 900 8 || die "another package install is running; try again"
+      if ! compgen -G "/etc/apt/sources.list.d/*ondrej*" >/dev/null; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q software-properties-common >/dev/null 2>&1
+        add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 || die "the PHP package repository could not be added"
+      fi
+      apt-get update -q >/dev/null 2>&1 || true
+      packages=()
+      for extension in fpm cli common mysql pgsql sqlite3 redis gd intl mbstring xml zip curl bcmath opcache readline; do
+        packages+=("php${TARGET}-${extension}")
+      done
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${packages[@]}" >/dev/null 2>&1 \
+        || DEBIAN_FRONTEND=noninteractive apt-get install -y -q "php${TARGET}-fpm" "php${TARGET}-cli" "php${TARGET}-mysql" "php${TARGET}-xml" "php${TARGET}-mbstring" "php${TARGET}-curl" >/dev/null 2>&1 \
+        || die "PHP ${TARGET} could not be installed"
+      systemctl enable --now "php${TARGET}-fpm" >/dev/null 2>&1 || true
+    fi
+    echo "PHP ${TARGET} is installed."
+    ;;
+  node-install)
+    # node-install <version>: a Node.js version through n, as a major (19) or exact (19.0.0).
+    [[ "${TARGET}" =~ ^(1[4-9]|2[0-9])(\.[0-9]{1,2}){0,2}$ ]] || die "invalid node version"
+    command -v n >/dev/null 2>&1 || die "n (the Node.js version manager) is not installed"
+    if ! compgen -G "/usr/local/n/versions/node/${TARGET}" >/dev/null && ! compgen -G "/usr/local/n/versions/node/${TARGET}.*" >/dev/null; then
+      exec 8>/run/laravelify-node.lock
+      flock -w 600 8 || die "another Node.js install is running; try again"
+      # n download only fetches the version; the system node (PM2, npm) stays as it is.
+      n download "${TARGET}" >/dev/null 2>&1 || die "Node.js ${TARGET} could not be downloaded"
+    fi
+    echo "Node.js ${TARGET} is installed."
+    ;;
+  php-extension)
+    # php-extension <version> <module> <on|off> [package]: for every website on that version.
+    version_ok "${TARGET}" || die "invalid php version"
+    MODULE="${3:-}"
+    STATE="${4:-}"
+    PACKAGE="${5:-}"
+    [[ "${MODULE}" =~ ^[a-z][a-z0-9_]{1,30}$ ]] || die "invalid extension"
+    [[ "${STATE}" == on || "${STATE}" == off ]] || die "invalid state"
+    [[ -z "${PACKAGE}" || "${PACKAGE}" =~ ^[a-z0-9][a-z0-9.+-]{1,40}$ ]] || die "invalid package"
+    [[ -x "/usr/sbin/php-fpm${TARGET}" ]] || die "PHP ${TARGET}-FPM is not installed"
+    if [[ "${STATE}" == on && ! -f "/etc/php/${TARGET}/mods-available/${MODULE}.ini" ]]; then
+      exec 8>/run/laravelify-apt.lock
+      flock -w 900 8 || die "another package install is running; try again"
+      if [[ "${PACKAGE}" == sqlsrv-pecl ]]; then
+        install_sqlsrv "${TARGET}"
+      else
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q "php${TARGET}-${PACKAGE:-${MODULE}}" >/dev/null 2>&1 \
+          || die "php${TARGET}-${PACKAGE:-${MODULE}} could not be installed"
+      fi
+    fi
+    if [[ "${STATE}" == on ]]; then
+      phpenmod -v "${TARGET}" -s ALL "${MODULE}" || die "could not turn on ${MODULE}"
+    else
+      phpdismod -v "${TARGET}" -s fpm "${MODULE}" || die "could not turn off ${MODULE}"
+    fi
+    reload_fpm "${TARGET}"
     ;;
   php-fpm)
     version_ok "${TARGET}" || die "invalid php version"

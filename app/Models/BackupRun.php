@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\EngineDatabases;
 use Database\Factories\BackupRunFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -87,7 +88,26 @@ class BackupRun extends Model
      */
     public function restorable(): bool
     {
-        return $this->isBackup() && $this->status === self::SUCCESS && filled($this->object_key) && $this->storage !== null;
+        // Backups of PostgreSQL, SQLite and MongoDB are downloaded and restored by hand.
+        return $this->isBackup() && $this->status === self::SUCCESS && filled($this->object_key) && $this->storage !== null && $this->otherEngine() === null;
+    }
+
+    /**
+     * The engine and database of a backup of a PostgreSQL, SQLite or MongoDB database; null for MySQL and files.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    public function otherEngine(): ?array
+    {
+        return $this->isDatabase() ? EngineDatabases::parseBackupTarget((string) $this->target) : null;
+    }
+
+    /** What the stored file is: sql.gz for MySQL and PostgreSQL, sqlite.gz, archive.gz (mongodump), or tar.gz for files. */
+    public function fileExtension(): string
+    {
+        $engine = $this->otherEngine();
+
+        return $engine ? EngineDatabases::DUMP_EXTENSIONS[$engine[0]] : ($this->isDatabase() ? 'sql.gz' : 'tar.gz');
     }
 
     public function isActive(): bool

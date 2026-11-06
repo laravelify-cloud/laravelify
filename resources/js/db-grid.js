@@ -652,3 +652,236 @@ export function mountGrid(element, wire, first) {
         }
     };
 }
+
+
+/**
+ * A list whose rows are already in the page (the databases, a database's tables, an SQL result)
+ * in the same grid as a table's rows: the same header with its funnel (the column's values with
+ * counts, or a condition) and ⋮ menu (sort, pin, size, hide), a search, and pages. Everything
+ * happens in the browser.
+ *
+ * spec: { key, columns: [{ name, numeric?, format?: 'bytes', link?: true }], rows: [{ name: value, __href?, __badge?, __actions? }],
+ *         operators, empty?, actions?: true, actionsWidth?, pageSize? }
+ * A row's __actions are buttons: { label, call: [method, ...args], confirm?, href? }.
+ */
+export function mountLocalGrid(element, spec, wire, search) {
+    const columns = spec.columns.map((column) => ({ type: column.format === 'bytes' ? 'size' : '', key: false, out: null, in: [], encrypted: null, ...column }));
+    const filters = {};
+    const grid = {
+        payload: { columns, columnFilters: filters, filtered: [], operators: spec.operators || {}, methods: [], canChange: false, database: 'list-v2', table: spec.key },
+        api: null,
+    };
+
+    const bytes = (value) => {
+        if (value === null || value === undefined || value === '' || Number(value) <= 0) return '—';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let size = Number(value);
+        let unit = 0;
+        while (size >= 1024 && unit < units.length - 1) {
+            size /= 1024;
+            unit++;
+        }
+        return size.toFixed(1) + ' ' + units[unit];
+    };
+    const shown = (column, value) => (column.format === 'bytes' ? bytes(value) : value);
+    const text = (value) => (value === null || value === undefined ? null : String(value));
+
+    const passes = (value, filter) => {
+        const raw = text(value);
+
+        if (filter.operator === 'in') {
+            return raw === null ? !!filter.blanks : filter.values.includes(raw);
+        }
+
+        const wanted = String(filter.value ?? '');
+        const lower = (raw ?? '').toLowerCase();
+        const numbers = raw !== null && !isNaN(Number(raw)) && wanted !== '' && !isNaN(Number(wanted));
+
+        switch (filter.operator) {
+            case 'null': return raw === null || raw === '';
+            case 'not_null': return raw !== null && raw !== '';
+            case 'equals': return raw === wanted;
+            case 'not_equals': return raw !== wanted;
+            case 'starts': return lower.startsWith(wanted.toLowerCase());
+            case 'ends': return lower.endsWith(wanted.toLowerCase());
+            case 'gt': return raw !== null && (numbers ? Number(raw) > Number(wanted) : raw > wanted);
+            case 'lt': return raw !== null && (numbers ? Number(raw) < Number(wanted) : raw < wanted);
+            case 'regex':
+                try {
+                    return raw !== null && new RegExp(wanted, 'i').test(raw);
+                } catch (e) {
+                    return false;
+                }
+            default: return lower.includes(wanted.toLowerCase());
+        }
+    };
+
+    grid.wire = {
+        async columnValues(name, find) {
+            const column = columns.find((item) => item.name === name);
+            const counts = new Map();
+            const needle = (find || '').toLowerCase();
+
+            spec.rows.forEach((row) => {
+                const raw = text(row[name]);
+                if (needle && !String(shown(column, raw) ?? '').toLowerCase().includes(needle)) return;
+                counts.set(raw, (counts.get(raw) || 0) + 1);
+            });
+
+            const values = [...counts.entries()]
+                .map(([value, count]) => ({ value, count, label: value === null ? null : String(shown(column, value)) }))
+                .sort((a, b) => (column.numeric ? Number(a.value) - Number(b.value) : String(a.value).localeCompare(String(b.value), undefined, { numeric: true })));
+
+            return { values: values.slice(0, 500), more: values.length > 500 };
+        },
+
+        setColumnFilter(name, filter) {
+            if (filter.mode === 'none') delete filters[name];
+            else if (filter.mode === 'values') filters[name] = { operator: 'in', values: filter.values.map(String), blanks: !!filter.blanks };
+            else filters[name] = { operator: filter.operator, value: filter.value };
+
+            grid.payload.filtered = Object.keys(filters);
+            grid.api.onFilterChanged();
+            grid.api.refreshHeader();
+        },
+    };
+
+    grid.resetColumns = () => {
+        try {
+            localStorage.removeItem(storageKey(grid.payload));
+        } catch (e) {}
+        grid.api.resetColumnState();
+    };
+
+    const Header = headerComponent(grid);
+    const defs = [{
+        colId: '__row',
+        headerName: '#',
+        pinned: 'left',
+        width: 64,
+        resizable: false,
+        sortable: false,
+        suppressMovable: true,
+        cellClass: 'db-ag-num',
+        valueGetter: (params) => (params.node.rowIndex ?? 0) + 1,
+    }];
+
+    columns.forEach((column) => {
+        defs.push({
+            colId: column.name,
+            headerName: column.name,
+            headerComponent: Header,
+            context: { column },
+            valueGetter: (params) => {
+                const value = params.data[column.name];
+                return column.numeric && value !== null && value !== '' && value !== undefined ? Number(value) : value;
+            },
+            cellClass: column.numeric ? 'db-ag-number' : null,
+            // Columns share the width (a link column twice as much), never narrower than their own width.
+            minWidth: column.width || (column.link ? 220 : (column.numeric ? 110 : 140)),
+            flex: column.link ? 2 : 1,
+            cellRenderer: (params) => {
+                const value = params.value;
+
+                if (value === null || value === undefined) {
+                    return el('span', 'db-grid-null', column.format === 'bytes' || (column.numeric && spec.key !== 'sql-result') ? '—' : 'NULL');
+                }
+
+                if (column.link && params.data.__href) {
+                    const link = el('a', 'db-grid-link font-medium', String(value));
+                    link.href = params.data.__href;
+                    link.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        go(link.href);
+                    });
+
+                    return link;
+                }
+
+                if (column.badge) {
+                    const badge = el('span', 'db-engine', String(value));
+                    badge.dataset.engine = params.data.__engine || '';
+
+                    return badge;
+                }
+
+                return el('span', null, String(shown(column, value)));
+            },
+            tooltipValueGetter: (params) => (params.value === null || params.value === undefined ? null : String(shown(column, params.value))),
+        });
+    });
+
+    if (spec.actions) {
+        defs.push({
+            colId: '__actions',
+            headerName: '',
+            sortable: false,
+            resizable: false,
+            suppressMovable: true,
+            pinned: 'right',
+            width: spec.actionsWidth || 300,
+            cellClass: 'db-ag-actions',
+            cellRenderer: (params) => {
+                const box = el('div', 'row-actions w-full');
+
+                (params.data.__actions || []).forEach((action) => {
+                    const button = el(action.href ? 'a' : 'button', 'btn btn-sm', action.label);
+
+                    if (action.href) {
+                        button.href = action.href;
+                        button.addEventListener('click', (event) => {
+                            event.preventDefault();
+                            go(action.href);
+                        });
+                    } else {
+                        button.type = 'button';
+                        button.addEventListener('click', () => {
+                            if (action.confirm && !window.confirm(action.confirm)) return;
+                            wire.call(...action.call);
+                        });
+                    }
+
+                    box.appendChild(button);
+                });
+
+                return box;
+            },
+        });
+    }
+
+    const pageSize = spec.pageSize || 50;
+
+    grid.api = createGrid(element, {
+        theme,
+        rowData: spec.rows,
+        columnDefs: defs,
+        defaultColDef: { resizable: true, sortable: true, suppressHeaderMenuButton: true },
+        pagination: spec.rows.length > pageSize,
+        paginationPageSize: pageSize,
+        paginationPageSizeSelector: [25, 50, 100, 200, 500],
+        suppressCellFocus: true,
+        enableCellTextSelection: true,
+        tooltipShowDelay: 500,
+        tooltipShowMode: 'whenTruncated',
+        // Empty: a fixed height so the "nothing here" message has room (autoHeight would squeeze it).
+        domLayout: spec.rows.length > 0 && spec.rows.length <= 15 ? 'autoHeight' : 'normal',
+        overlayNoRowsTemplate: '<span class="text-muted">' + (spec.empty || 'Nothing here.') + '</span>',
+        isExternalFilterPresent: () => Object.keys(filters).length > 0,
+        doesExternalFilterPass: (node) => Object.entries(filters).every(([name, filter]) => passes(node.data[name], filter)),
+        onGridReady: (params) => restoreState(params.api, grid.payload),
+        onColumnMoved: (params) => params.finished && saveState(params.api, grid.payload),
+        onColumnResized: (params) => params.finished && saveState(params.api, grid.payload),
+        onColumnPinned: (params) => saveState(params.api, grid.payload),
+        onColumnVisible: (params) => saveState(params.api, grid.payload),
+        // The # column counts the rows as shown.
+        onFilterChanged: (params) => params.api.refreshCells({ columns: ['__row'], force: true }),
+        onSortChanged: (params) => params.api.refreshCells({ columns: ['__row'], force: true }),
+        onPaginationChanged: (params) => params.api.refreshCells({ columns: ['__row'], force: true }),
+    });
+
+    if (search) {
+        search.addEventListener('input', () => grid.api.setGridOption('quickFilterText', search.value));
+    }
+
+    return grid.api;
+}

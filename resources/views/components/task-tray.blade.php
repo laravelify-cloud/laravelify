@@ -7,7 +7,10 @@
 ])
 
 @if ($tasks->isNotEmpty())
-    <div {{ $attributes->class(['task-tray']) }} @if ($active) wire:poll.1500ms="{{ $poll }}" @endif aria-live="polite">
+    <div {{ $attributes->class(['task-tray']) }} aria-live="polite">
+        @if ($active)
+            <span hidden wire:poll.1500ms="{{ $poll }}"></span>
+        @endif
         @foreach ($tasks as $task)
             @php
                 $state = match ($task->status) {

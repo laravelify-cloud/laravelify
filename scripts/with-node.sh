@@ -4,11 +4,16 @@
 # read it, and built servers (Nuxt, Next.js standalone, SvelteKit) do not either.
 set -euo pipefail
 
-version="${1:?node major version}"
+version="${1:?node version}"
 shift
 
 if [[ -d /usr/local/n/versions/node ]]; then
-  match="$(find /usr/local/n/versions/node -mindepth 1 -maxdepth 1 -type d -name "${version}.*" | sort -V | tail -n 1 || true)"
+  # An exact version (19.0.0) or the newest of a major or minor (19, 19.4).
+  if [[ -d "/usr/local/n/versions/node/${version}" ]]; then
+    match="/usr/local/n/versions/node/${version}"
+  else
+    match="$(find /usr/local/n/versions/node -mindepth 1 -maxdepth 1 -type d -name "${version}.*" | sort -V | tail -n 1 || true)"
+  fi
   if [[ -n "${match}" && -d "${match}/bin" ]]; then
     export PATH="${match}/bin:${PATH}"
   fi

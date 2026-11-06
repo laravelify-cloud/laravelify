@@ -148,19 +148,22 @@ rm -f /usr/share/keyrings/mysql-archive-keyring.gpg /usr/share/keyrings/debsuryo
 apt-get update || true
 
 echo "Removing packages."
-apt-get purge -y \
-  nginx nginx-common \
-  supervisor \
-  redis-server redis-tools \
-  phpmyadmin \
-  mysql-community-server mysql-community-client mysql-community-server-core mysql-community-client-core \
-  mysql-community-client-plugins mysql-server mysql-client mysql-common \
-  nodejs \
-  cloudflared \
-  debsuryorg-archive-keyring \
-  ufw \
-  'php8.0-*' 'php8.1-*' 'php8.2-*' 'php8.3-*' 'php8.4-*' 'php8.5-*' 'php-*' \
-  || true
+# Only packages that are installed: apt refuses the whole command when one name is unknown,
+# which used to leave everything in place.
+mapfile -t PACKAGES < <(dpkg-query -W -f='${binary:Package} ${db:Status-Status}\n' 2>/dev/null \
+  | awk '$2 == "installed" { print $1 }' \
+  | grep -E '^(nginx|nginx-common|supervisor|redis-server|redis-tools|phpmyadmin|dbconfig-mysql|mysql-|mariadb-|galera-|postgresql|mongodb-|mongosh|nodejs|cloudflared|debsuryorg-archive-keyring|ufw|php[0-9]+\.[0-9]+-|php-)' || true)
+if (( ${#PACKAGES[@]} > 0 )); then
+  DEBIAN_FRONTEND=noninteractive apt-get purge -y "${PACKAGES[@]}" \
+    || echo "Some packages could not be removed: ${PACKAGES[*]}" >&2
+fi
+
+echo "Removing the database data and the tools Laravelify downloaded."
+systemctl stop mysql mariadb postgresql mongod 2>/dev/null || true
+rm -rf /var/lib/mysql /var/lib/mysql-files /var/lib/mysql-keyring /etc/mysql \
+  /var/lib/postgresql /etc/postgresql \
+  /var/lib/mongodb /var/log/mongodb /etc/mongod.conf \
+  /usr/local/n /opt/code-server /opt/graphify /opt/laravelify-tools /etc/laravelify
 
 apt-get autoremove -y --purge || true
 

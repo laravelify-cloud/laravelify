@@ -46,7 +46,7 @@
         <div class="fm-nav">
             <button class="btn btn-sm" type="button" wire:click="closeTrash"><x-menu-icon name="up" class="-rotate-90" /> Back to files</button>
             <span class="flex items-center gap-2 font-medium"><x-menu-icon name="trash" class="size-4 text-muted" /> Trash</span>
-            <span class="text-[12.5px] text-muted">{{ $trashGroups->count() }} {{ \Illuminate\Support\Str::plural('item', $trashGroups->count()) }} · {{ \Illuminate\Support\Number::fileSize((int) $totalBytes, precision: 1) }}</span>
+            <span class="text-[12.5px] text-muted">{{ $trashGroups->count() }} {{ \Illuminate\Support\Str::plural('item', $trashGroups->count()) }}@if ($trashCount > \App\Livewire\Websites\Files::TRASH_SHOWN) · showing the newest {{ \App\Livewire\Websites\Files::TRASH_SHOWN }} of {{ number_format($trashCount) }}@endif · {{ \Illuminate\Support\Number::fileSize((int) $totalBytes, precision: 1) }}</span>
         </div>
         <div class="fm-tools">
             <button class="btn btn-sm btn-danger" type="button" @click="ask('empty')" @disabled($trashGroups->isEmpty())><x-menu-icon name="trash" /> Empty trash</button>

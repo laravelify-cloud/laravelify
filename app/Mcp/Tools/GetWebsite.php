@@ -30,6 +30,7 @@ class GetWebsite extends Tool
             'start_command' => $website->start_command,
             'output_dir' => $website->public_dir,
             'database' => $website->provision_database ? $website->db_name : null,
+            'database_engine' => $website->provision_database ? ($website->db_engine ?: 'mysql') : null,
             'env_keys' => EnvFile::keys((string) $website->env_content),
             'recent_deployments' => $website->deployments()->latest('id')->limit(5)->get()
                 ->map(fn (Deployment $deployment) => $this->deploymentSummary($deployment))->all(),

@@ -12,7 +12,10 @@
     $codeClass = fn (int $status): string => 'is-'.max(1, min(5, intdiv($status, 100))).'xx';
 @endphp
 
-<div class="flex flex-col gap-5" @if (! $issueId) wire:poll.60s.visible @endif>
+<div class="flex flex-col gap-5">
+    @if (! $issueId)
+        <span hidden wire:poll.60s></span>
+    @endif
     {{-- Toolbar: views on the left, time range on the right --}}
     <div class="mon-toolbar">
         <div class="segmented" role="tablist" aria-label="Monitoring views">
@@ -296,8 +299,10 @@
             </x-layer-card>
         @endif
 
-        {{-- Issues --}}
-        @if ($view === 'issues')
+        {{-- Issues: from GlitchTip for sites that are not Laravel (their errors do not reach a Laravel log) --}}
+        @if ($view === 'issues' && ! $website->isLaravel() && $website->glitchtip_project_id)
+            <livewire:monitoring.glitchtip :locked-project="(int) $website->glitchtip_project_id" section="issues" wire:key="site-glitchtip-{{ $website->id }}" />
+        @elseif ($view === 'issues')
             @if ($issue)
                 <x-layer-card :title="$issue->title()" :helper="$issue->exception ?? $issue->level">
                     <x-slot:actions>
@@ -334,7 +339,7 @@
                     </div>
                 </x-layer-card>
             @else
-                <x-layer-card title="Issues" helper="{{ $website->isLaravel() ? 'ERROR and worse from the Laravel log, grouped by exception and the line that threw it.' : 'Issues are read from the Laravel log, so they are only tracked for Laravel sites.' }}" flush>
+                <x-layer-card title="Issues" helper="{{ $website->isLaravel() ? 'ERROR and worse from the Laravel log, grouped by exception and the line that threw it.' : 'This site sends no Laravel log. Turn on error tracking in its GlitchTip tab and its errors show here.' }}" flush>
                     <x-slot:actions>
                         <div class="segmented" role="group" aria-label="Issue status">
                             @foreach (['open' => 'Open', 'resolved' => 'Resolved', 'ignored' => 'Ignored'] as $key => $label)

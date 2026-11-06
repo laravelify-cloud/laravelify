@@ -80,10 +80,12 @@ class SiteTypesTest extends TestCase
     public function test_the_catalog_groups_backend_frontend_and_full_stack(): void
     {
         $this->assertSame(['backend', 'frontend', 'fullstack'], array_keys(SiteTypes::GROUPS));
-        $this->assertSame(['PHP', 'TypeScript / JavaScript'], array_keys(SiteTypes::inGroup('backend')));
+        $this->assertSame(['PHP', 'TypeScript / JavaScript', 'Python', 'Go', 'Java', 'C# / .NET'], array_keys(SiteTypes::inGroup('backend')));
         $this->assertSame(['laravel', 'php'], array_keys(SiteTypes::inGroup('backend')['PHP']));
-        $this->assertSame(['express', 'nestjs', 'node'], array_keys(SiteTypes::inGroup('backend')['TypeScript / JavaScript']));
+        $this->assertSame(['express', 'nestjs', 'node', 'bun'], array_keys(SiteTypes::inGroup('backend')['TypeScript / JavaScript']));
+        $this->assertSame(['django', 'flask', 'fastapi'], array_keys(SiteTypes::inGroup('backend')['Python']));
         $this->assertSame(['react', 'vue', 'angular', 'svelte', 'astro', 'static'], array_keys(SiteTypes::inGroup('frontend')['']));
+        $this->assertSame(['hugo', 'gatsby', 'docusaurus', 'vitepress', 'eleventy'], array_keys(SiteTypes::inGroup('frontend')['Static sites']));
         $this->assertSame(['nextjs', 'nuxt', 'sveltekit'], array_keys(SiteTypes::inGroup('fullstack')['']));
         $this->assertSame(['livewire', 'inertia'], array_keys(SiteTypes::stacks()));
 
@@ -537,8 +539,9 @@ class SiteTypesTest extends TestCase
         $this->app->instance(CommandRunner::class, $runner);
 
         Livewire::test(WebsiteShow::class, ['website' => $node])
-            ->assertSee('A MySQL database and user for this site.')
-            ->call('provisionDatabase')
+            ->assertSee('A database for this site. PostgreSQL and MongoDB are installed on this server the first time a site needs them.')
+            ->assertSee('Create MySQL')
+            ->call('provisionDatabase', 'mysql')
             ->assertHasNoErrors();
 
         $node->refresh();

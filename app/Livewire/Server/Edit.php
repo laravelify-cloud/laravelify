@@ -25,7 +25,13 @@ class Edit extends PanelComponent
 
     public string $password = '';
 
+    /** The password field was shown or typed in; until then an empty field keeps the saved password. */
+    public bool $passwordTouched = false;
+
     public string $php_version = '8.4';
+
+    /** phpMyAdmin at this path of the panel's address ('' when it has a domain of its own). */
+    public string $path = '';
 
     public function mount(ServerService $service): void
     {
@@ -38,24 +44,60 @@ class Edit extends PanelComponent
         $this->domain = (string) ($service->domain ?? $defaults['domain'] ?? '');
         $this->bind = (string) ($settings['bind'] ?? '127.0.0.1');
         $this->port = (string) ($settings['port'] ?? '');
-        $this->password = (string) ($settings['password'] ?? '');
-        if ($this->password === '' && $service->kind === 'mysql') {
-            $this->password = (string) config('database.connections.mysql.password');
-        }
-        if ($this->password === '' && $service->kind === 'redis') {
-            $configured = config('database.redis.default.password');
-            $this->password = is_string($configured) && $configured !== 'null' ? $configured : '';
-        }
+        // Passwords stay on the server: the eye shows them after the authenticator code.
+        $this->password = '';
         $this->php_version = (string) ($settings['php_version'] ?? '8.4');
+        $this->path = $service->kind === 'phpmyadmin' ? (string) ($settings['path'] ?? '') : '';
+    }
+
+    /** phpMyAdmin is a path of the panel (https://panel.example.com/phpmyadmin), not a domain of its own. */
+    public function usesPath(): bool
+    {
+        return $this->service->kind === 'phpmyadmin' && filled($this->service->settings['path'] ?? null);
+    }
+
+    public function updatedPassword(): void
+    {
+        $this->passwordTouched = true;
+    }
+
+    /** The saved MySQL root or Redis password. */
+    private function savedPassword(): string
+    {
+        $password = (string) ($this->service->settings['password'] ?? '');
+
+        if ($password === '' && $this->service->kind === 'mysql') {
+            return (string) config('database.connections.mysql.password');
+        }
+
+        if ($password === '' && $this->service->kind === 'redis') {
+            $configured = config('database.redis.default.password');
+
+            return is_string($configured) && $configured !== 'null' ? $configured : '';
+        }
+
+        return $password;
+    }
+
+    protected function revealableSecret(string $key): ?string
+    {
+        return $key === 'service_password' && in_array($this->service->kind, ['mysql', 'redis'], true) ? $this->savedPassword() : null;
     }
 
     public function save(HostWriter $hostWriter, ServicePassword $passwords): void
     {
+        if (in_array($this->service->kind, ['mysql', 'redis'], true) && ! $this->passwordTouched) {
+            $this->password = $this->savedPassword();
+        }
+
         $rules = [
             'config' => ['required', 'string'],
         ];
 
-        if ($this->hasConnectionSettings()) {
+        if ($this->usesPath()) {
+            $this->path = '/'.strtolower(trim($this->path, ' /'));
+            $rules['path'] = ['required', 'string', 'max:40', 'regex:/^\/[a-z0-9][a-z0-9_-]{1,38}$/'];
+        } elseif ($this->hasConnectionSettings()) {
             $rules['domain'] = ['required', 'string', 'max:190', 'regex:/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/'];
         }
 
@@ -69,8 +111,13 @@ class Edit extends PanelComponent
             $rules['php_version'] = ['required', Rule::in(config('laravelify.php_versions'))];
         }
 
-        $this->validate($rules);
+        $this->validate($rules, ['path.regex' => 'A path like /phpmyadmin: a slash, then letters, numbers, dashes and underscores.']);
         $this->syncConfig();
+
+        if ($this->usesPath()) {
+            // The panel's address, then the path: what the sidebar link and sign-in open.
+            $this->domain = (string) preg_replace('#/.*$#', '', (string) $this->service->domain).$this->path;
+        }
 
         $this->service->update([
             'config' => $this->config,
@@ -84,6 +131,8 @@ class Edit extends PanelComponent
                 $passwords->apply($this->service->kind, $this->password);
             }
             $this->toast('Config saved and applied.');
+            $this->password = '';
+            $this->passwordTouched = false;
         } catch (Throwable $exception) {
             $this->addError('config', $exception->getMessage());
             $this->toast($exception->getMessage(), 'error');
@@ -112,13 +161,26 @@ class Edit extends PanelComponent
         return match ($this->service->kind) {
             'mysql' => ['bind' => $this->bind, 'port' => (string) $this->port, 'username' => 'root', 'password' => $this->password],
             'redis' => ['bind' => $this->bind, 'port' => (string) $this->port, 'password' => $this->password],
-            'phpmyadmin' => ['php_version' => $this->php_version],
+            'phpmyadmin' => array_filter(['php_version' => $this->php_version, 'path' => $this->path]),
             default => $this->service->settings,
         };
     }
 
     private function syncConfig(): void
     {
+        if ($this->usesPath()) {
+            // A new path: the locations are written again for it (sign-in included).
+            $old = (string) ($this->service->settings['path'] ?? '');
+
+            if ($old !== $this->path || ! ServerCatalog::isPathConfig($this->config)) {
+                $this->config = ServerCatalog::phpMyAdminPathNginx($this->path, ServerCatalog::panelSocket($this->php_version));
+            } else {
+                $this->config = (string) preg_replace(ServerCatalog::SOCKET_PATTERN, ServerCatalog::panelSocket($this->php_version), $this->config);
+            }
+
+            return;
+        }
+
         if ($this->service->kind === 'phpmyadmin') {
             $this->config = (string) preg_replace(
                 '/server_name\s+[^;]+;/',

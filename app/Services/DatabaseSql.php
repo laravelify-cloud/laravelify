@@ -11,7 +11,7 @@ use Illuminate\Database\QueryException;
  */
 class DatabaseSql
 {
-    public const MAX_ROWS = 200;
+    public const MAX_ROWS = 1000;
 
     public const MAX_STATEMENTS = 20;
 
@@ -163,7 +163,7 @@ class DatabaseSql
             }
 
             try {
-                $results[] = $this->execute($connection, $statement);
+                $results[] = $this->execute($connection, $statement, $database);
             } catch (QueryException $exception) {
                 $previous = $exception->getPrevious();
 
@@ -200,17 +200,29 @@ class DatabaseSql
     /**
      * @return array<string, mixed>
      */
-    private function execute(Connection $connection, string $statement): array
+    private function execute(Connection $connection, string $statement, string $database): array
     {
         $kind = $this->kind($statement);
 
         if ($kind === 'write') {
-            $affected = $connection->affectingStatement($statement);
+            // For the SQL history: the rows an UPDATE or DELETE of one table touches, before and after.
+            [$affected, $changes] = app(SqlChangeCapture::class)->around(
+                $statement,
+                $this->bare($statement),
+                fn (string $sql, array $params = []): array => array_map(
+                    fn (object $row): array => array_map(fn ($value) => $value === null ? null : $this->text((string) $value), (array) $row),
+                    $connection->select($sql, $params),
+                ),
+                fn (string $table): array => app(DatabaseBrowser::class)->keyColumns($database, trim((string) last(explode('.', $table)), '`"')),
+                fn () => $connection->affectingStatement($statement),
+                fn (string $column): string => '`'.str_replace('`', '``', $column).'`',
+            );
 
             return [
                 'kind' => 'write',
                 'sql' => $statement,
                 'affected' => $affected,
+                'changes' => $changes,
                 'message' => $affected === 0 ? 'Done.' : $affected.' '.($affected === 1 ? 'row' : 'rows').' changed.',
             ];
         }
@@ -294,7 +306,7 @@ class DatabaseSql
     /**
      * The statement with quotes and comments replaced by spaces, so a check sees the SQL itself.
      */
-    private function bare(string $sql): string
+    public function bare(string $sql): string
     {
         $out = '';
         $length = strlen($sql);

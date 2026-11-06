@@ -16,11 +16,13 @@ use App\Services\PanelTaskRunner;
 use App\Support\BackupCron;
 use App\Support\SkippedTables;
 use Illuminate\Support\Collection;
+use Livewire\WithPagination;
 use Throwable;
 
 class Index extends PanelComponent
 {
     use ListsTables;
+    use WithPagination;
 
     /** The Full backup dialog (databases): open, and the tables it leaves out. */
     public bool $fullOpen = false;
@@ -39,12 +41,21 @@ class Index extends PanelComponent
     public const TASK_SCOPE = 'backups';
 
     /** How many backups and restores the list shows, grouped by database (or file schedule). */
-    public const RUNS_SHOWN = 100;
+    /** Runs per page. */
+    public const RUNS_SHOWN = 50;
+
+    /** Newest successful backups offered to restore, view or download. */
+    public const RESTORABLE_SHOWN = 500;
 
     public string $kind = BackupSchedule::KIND_DATABASE;
 
     /** Show only the backups of one database (or one file schedule). */
     public string $filter = '';
+
+    public function updatedFilter(): void
+    {
+        $this->resetPage('runs');
+    }
 
     /** @var list<int> Background tasks whose end was already shown. */
     public array $announced = [];
@@ -602,17 +613,19 @@ class Index extends PanelComponent
     {
         $isDatabase = $this->kind === BackupSchedule::KIND_DATABASE;
         $schedules = BackupSchedule::query()->with('storage')->where('kind', $this->kind)->orderBy('name')->get();
-        $lastRuns = BackupRun::query()->where('kind', $this->kind)->where('type', BackupRun::TYPE_BACKUP)->whereIn('backup_schedule_id', $schedules->pluck('id'))
-            ->latest('id')->get()->unique('backup_schedule_id')->keyBy('backup_schedule_id');
+        // The newest run of each schedule, found by the database (not by loading every run).
+        $lastRuns = BackupRun::query()->whereIn('id', BackupRun::query()->selectRaw('max(id)')->where('kind', $this->kind)
+            ->where('type', BackupRun::TYPE_BACKUP)->whereIn('backup_schedule_id', $schedules->pluck('id'))->groupBy('backup_schedule_id'))
+            ->get()->keyBy('backup_schedule_id');
 
         $runs = BackupRun::query()->with(['storage', 'schedule', 'source'])->where('kind', $this->kind)
             ->when($this->filter !== '', fn ($query) => $isDatabase
                 ? $query->where('target', $this->filter)
                 : $query->where('backup_schedule_id', (int) $this->filter))
-            ->latest('id')->limit(self::RUNS_SHOWN)->get();
+            ->latest('id')->paginate(self::RUNS_SHOWN, pageName: 'runs');
 
         $restorable = BackupRun::query()->with(['storage', 'schedule'])->where('kind', $this->kind)->where('type', BackupRun::TYPE_BACKUP)
-            ->where('status', BackupRun::SUCCESS)->whereNotNull('object_key')->latest('id')->get()
+            ->where('status', BackupRun::SUCCESS)->whereNotNull('object_key')->latest('id')->limit(self::RESTORABLE_SHOWN)->get()
             ->filter(fn (BackupRun $run) => $run->storage !== null);
 
         $tasks = PanelTask::query()->where('scope', self::TASK_SCOPE)->where('updated_at', '>', now()->subHours(6))->latest('id')->limit(4)->get();
@@ -629,7 +642,7 @@ class Index extends PanelComponent
             'runs' => $runs,
             // By schedule: its newest run's dump of each database (or archive of each website) under it,
             // older runs behind a toggle. Restores stand alone.
-            'runGroups' => $runs->groupBy(fn (BackupRun $run) => $run->isBackup() && $run->backup_schedule_id !== null
+            'runGroups' => $runs->getCollection()->groupBy(fn (BackupRun $run) => $run->isBackup() && $run->backup_schedule_id !== null
                 ? 'schedule:'.$run->backup_schedule_id
                 : 'run:'.$run->id),
             'filters' => $this->filterOptions($restorable, $schedules),

@@ -7,7 +7,8 @@ namespace App\Support;
  * type runs one of three ways:
  *
  *   php     nginx → PHP-FPM, with Supervisor workers for Laravel
- *   node    nginx → a Node server kept running by PM2
+ *   node    nginx → a server kept running by PM2: Node.js, or Python, Go and Bun with their
+ *           own toolchain (see TOOLCHAINS)
  *   static  nginx serves the files of a build folder (single-page apps, static sites)
  */
 final class SiteTypes
@@ -191,7 +192,191 @@ final class SiteTypes
                 'start' => 'node build/index.js',
                 'icon' => 'terminal',
             ],
+
+            // Python, Go and Bun servers run like Node apps (PM2 keeps them up behind nginx), with
+            // their own toolchain on PATH (scripts/with-toolchain.sh), installed on demand.
+            'django' => [
+                'label' => 'Django',
+                'group' => 'backend',
+                'subgroup' => 'Python',
+                'runtime' => self::RUNTIME_NODE,
+                'toolchain' => 'python',
+                'language' => 'Python',
+                'strength' => 'Batteries included: ORM, admin, auth, migrations. Served by Gunicorn.',
+                'best' => 'Content sites, SaaS backends, and admin-heavy apps.',
+                'install' => 'uv venv --allow-existing --python "$LARAVELIFY_RUNTIME_VERSION" .venv && uv pip install -r requirements.txt gunicorn',
+                'build' => 'python manage.py collectstatic --noinput && python manage.py migrate --noinput',
+                'start' => 'gunicorn "$LARAVELIFY_WSGI" --bind "127.0.0.1:$PORT" --workers 2',
+                'icon' => 'terminal',
+            ],
+            'flask' => [
+                'label' => 'Flask',
+                'group' => 'backend',
+                'subgroup' => 'Python',
+                'runtime' => self::RUNTIME_NODE,
+                'toolchain' => 'python',
+                'language' => 'Python',
+                'strength' => 'Small and flexible: the most common Python web micro-framework.',
+                'best' => 'APIs, dashboards, and small services.',
+                'install' => 'uv venv --allow-existing --python "$LARAVELIFY_RUNTIME_VERSION" .venv && uv pip install -r requirements.txt gunicorn',
+                'start' => 'gunicorn app:app --bind "127.0.0.1:$PORT" --workers 2',
+                'icon' => 'terminal',
+            ],
+            'fastapi' => [
+                'label' => 'FastAPI',
+                'group' => 'backend',
+                'subgroup' => 'Python',
+                'runtime' => self::RUNTIME_NODE,
+                'toolchain' => 'python',
+                'language' => 'Python',
+                'strength' => 'Fast async APIs with typed requests and automatic OpenAPI docs. Served by Uvicorn.',
+                'best' => 'REST APIs, AI and ML services.',
+                'install' => 'uv venv --allow-existing --python "$LARAVELIFY_RUNTIME_VERSION" .venv && uv pip install -r requirements.txt uvicorn',
+                'start' => 'uvicorn main:app --host 127.0.0.1 --port "$PORT" --workers 2',
+                'icon' => 'terminal',
+            ],
+            'go' => [
+                'label' => 'Go',
+                'group' => 'backend',
+                'subgroup' => 'Go',
+                'runtime' => self::RUNTIME_NODE,
+                'toolchain' => 'go',
+                'language' => 'Go',
+                'strength' => 'One fast binary: Gin, Echo, Fiber, Chi, or plain net/http.',
+                'best' => 'High-traffic APIs and microservices.',
+                'install' => 'go mod download',
+                'build' => 'go build -o .laravelify-app .',
+                'start' => './.laravelify-app',
+                'icon' => 'terminal',
+            ],
+            'spring' => [
+                'label' => 'Spring Boot',
+                'group' => 'backend',
+                'subgroup' => 'Java',
+                'runtime' => self::RUNTIME_NODE,
+                'toolchain' => 'java',
+                'language' => 'Java / Kotlin',
+                'strength' => 'The enterprise standard: Spring MVC, Data, Security. Built with Maven or Gradle.',
+                'best' => 'Enterprise APIs, banking, and large business apps.',
+                'install' => 'true',
+                'build' => 'if [ -x ./mvnw ]; then ./mvnw -q -B -DskipTests package; elif [ -x ./gradlew ]; then ./gradlew -q bootJar -x test; else mvn -q -B -DskipTests package; fi',
+                'start' => 'java -jar "$(ls target/*.jar build/libs/*.jar 2>/dev/null | grep -v -- -plain | head -n 1)" --server.address=127.0.0.1 --server.port="$PORT"',
+                'icon' => 'terminal',
+            ],
+            'aspnet' => [
+                'label' => 'ASP.NET Core',
+                'group' => 'backend',
+                'subgroup' => 'C# / .NET',
+                'runtime' => self::RUNTIME_NODE,
+                'toolchain' => 'dotnet',
+                'language' => 'C#',
+                'strength' => 'Fast, typed web APIs and apps on .NET: minimal APIs, MVC, Razor, Blazor Server.',
+                'best' => 'Business apps, APIs, and teams already on Microsoft tools.',
+                'install' => 'dotnet restore',
+                'build' => 'dotnet publish -c Release -o .laravelify-out --no-restore',
+                'start' => 'dotnet ".laravelify-out/$(basename "$(ls *.csproj | head -n 1)" .csproj).dll"',
+                'icon' => 'terminal',
+            ],
+            'bun' => [
+                'label' => 'Bun',
+                'group' => 'backend',
+                'subgroup' => 'TypeScript / JavaScript',
+                'runtime' => self::RUNTIME_NODE,
+                'toolchain' => 'bun',
+                'language' => 'TypeScript / JavaScript',
+                'strength' => 'The fast all-in-one JavaScript runtime: Hono, Elysia, or any Bun server.',
+                'best' => 'Fast APIs and TypeScript servers without a build step.',
+                'install' => 'bun install',
+                'start' => 'bun run start',
+                'icon' => 'terminal',
+            ],
+
+            // Static site generators: built on the server, nginx serves the output.
+            'hugo' => [
+                'label' => 'Hugo',
+                'group' => 'frontend',
+                'subgroup' => 'Static sites',
+                'runtime' => self::RUNTIME_STATIC,
+                'toolchain' => 'hugo',
+                'language' => 'Markdown / Go templates',
+                'strength' => 'The fastest static site generator: thousands of pages in seconds.',
+                'best' => 'Blogs, docs, and marketing sites.',
+                'install' => 'true',
+                'build' => 'hugo --minify',
+                'output' => ['public'],
+                'icon' => 'files',
+            ],
+            'gatsby' => [
+                'label' => 'Gatsby',
+                'group' => 'frontend',
+                'subgroup' => 'Static sites',
+                'runtime' => self::RUNTIME_STATIC,
+                'language' => 'React',
+                'strength' => 'React static sites with a GraphQL data layer and many plugins.',
+                'best' => 'Content-rich marketing sites and blogs.',
+                'build' => 'npm run build',
+                'output' => ['public'],
+                'icon' => 'files',
+            ],
+            'docusaurus' => [
+                'label' => 'Docusaurus',
+                'group' => 'frontend',
+                'subgroup' => 'Static sites',
+                'runtime' => self::RUNTIME_STATIC,
+                'language' => 'React / MDX',
+                'strength' => 'Documentation sites with versioning, search, and blog.',
+                'best' => 'Product and open-source documentation.',
+                'build' => 'npm run build',
+                'output' => ['build'],
+                'spa' => true,
+                'icon' => 'files',
+            ],
+            'vitepress' => [
+                'label' => 'VitePress',
+                'group' => 'frontend',
+                'subgroup' => 'Static sites',
+                'runtime' => self::RUNTIME_STATIC,
+                'language' => 'Vue / Markdown',
+                'strength' => 'Fast Vue-powered docs from Markdown.',
+                'best' => 'Documentation and simple content sites.',
+                'build' => 'npm run docs:build',
+                'output' => ['docs/.vitepress/dist', '.vitepress/dist'],
+                'icon' => 'files',
+            ],
+            'eleventy' => [
+                'label' => 'Eleventy',
+                'group' => 'frontend',
+                'subgroup' => 'Static sites',
+                'runtime' => self::RUNTIME_STATIC,
+                'language' => 'JavaScript / Markdown',
+                'strength' => 'Simple and flexible static sites with any template language.',
+                'best' => 'Blogs and small sites with little JavaScript.',
+                'build' => 'npx @11ty/eleventy',
+                'output' => ['_site'],
+                'icon' => 'files',
+            ],
         ];
+    }
+
+    /**
+     * Toolchains other than Node.js, with the versions the panel offers first. Any other valid
+     * version works too; a missing one is installed before the website uses it.
+     *
+     * @var array<string, array{label: string, versions: list<string>, default: string, pattern: string}>
+     */
+    public const TOOLCHAINS = [
+        'python' => ['label' => 'Python', 'versions' => ['3.9', '3.10', '3.11', '3.12', '3.13'], 'default' => '3.12', 'pattern' => '/^3\.(8|9|1[0-4])(\.[0-9]{1,2})?$/'],
+        'go' => ['label' => 'Go', 'versions' => ['1.22', '1.23', '1.24', '1.25'], 'default' => '1.24', 'pattern' => '/^1\.(1[8-9]|2[0-9])(\.[0-9]{1,2})?$/'],
+        'bun' => ['label' => 'Bun', 'versions' => ['1.1', '1.2', '1.3'], 'default' => '1.2', 'pattern' => '/^1\.[0-9]{1,2}(\.[0-9]{1,2})?$/'],
+        'java' => ['label' => 'Java', 'versions' => ['17', '21', '25'], 'default' => '21', 'pattern' => '/^(11|17|21|2[2-9])$/'],
+        'dotnet' => ['label' => '.NET', 'versions' => ['8.0', '9.0', '10.0'], 'default' => '8.0', 'pattern' => '/^(6|7|8|9|10)\.0$/'],
+        'hugo' => ['label' => 'Hugo', 'versions' => ['0.140', '0.145', '0.150'], 'default' => '0.145', 'pattern' => '/^0\.[0-9]{2,3}(\.[0-9]{1,2})?$/'],
+    ];
+
+    /** The toolchain a type runs with: node (the default) or one of TOOLCHAINS. */
+    public static function toolchain(?string $type): string
+    {
+        return (string) (self::get($type)['toolchain'] ?? 'node');
     }
 
     /**

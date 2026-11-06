@@ -30,6 +30,17 @@ class Glitchtip
     /** Where the panel reaches GlitchTip's API (its own process; nginx is for browsers). */
     public const API = 'http://127.0.0.1:8095/glitchtip/api/0';
 
+    public const ISSUE_STATUSES = ['unresolved', 'resolved', 'ignored'];
+
+    public const ISSUE_SORTS = ['-last_seen' => 'Last seen', '-first_seen' => 'Newest', '-count' => 'Most events', '-priority' => 'Priority'];
+
+    public const TRANSACTION_SORTS = ['-avg_duration' => 'Slowest', '-count' => 'Most runs', 'avg_duration' => 'Fastest', '-created' => 'Newest'];
+
+    public const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
+
+    /** Time ranges for performance and logs. */
+    public const PERIODS = ['1h' => '1h', '24h' => '24h', '7d' => '7d', '14d' => '14d', '30d' => '30d'];
+
     public function __construct(private HostWriter $host) {}
 
     public function installed(): bool
@@ -254,6 +265,355 @@ class Glitchtip
         ], array_slice((array) $issues, 0, $limit));
     }
 
+    /**
+     * The organization's projects (one per website), by id.
+     *
+     * @return array<int, string> id => name
+     */
+    public function projects(): array
+    {
+        return collect($this->api()->get('/organizations/'.self::ORGANIZATION.'/projects/')->throw()->json())
+            ->mapWithKeys(fn (array $project) => [(int) $project['id'] => (string) $project['name']])
+            ->sort()
+            ->all();
+    }
+
+    /**
+     * One page of issues, as GlitchTip's own Issues page lists them, with each issue's trend.
+     *
+     * @param  array{status?: string, search?: string, projects?: list<int>, sort?: string, period?: string}  $filters
+     * @return array{items: list<array<string, mixed>>, next: ?string, total: ?int}
+     */
+    public function issuePage(array $filters, ?string $cursor = null, int $limit = 25): array
+    {
+        $status = in_array($filters['status'] ?? '', self::ISSUE_STATUSES, true) ? $filters['status'] : 'unresolved';
+        $query = trim('is:'.$status.' '.trim((string) ($filters['search'] ?? '')));
+        $response = $this->list('/organizations/'.self::ORGANIZATION.'/issues/', [
+            'query' => $query,
+            'project' => $filters['projects'] ?? [],
+            'sort' => in_array($filters['sort'] ?? '', array_keys(self::ISSUE_SORTS), true) ? $filters['sort'] : '-last_seen',
+            'limit' => $limit,
+            'cursor' => $cursor,
+        ]);
+        $period = ($filters['period'] ?? '24h') === '14d' ? '14d' : '24h';
+        $trends = $this->issueTrends(array_column($response['items'], 'id'), $period);
+
+        $response['items'] = array_map(fn (array $issue) => [
+            'id' => (int) $issue['id'],
+            'shortId' => (string) ($issue['shortId'] ?? ''),
+            'title' => (string) ($issue['title'] ?? $issue['metadata']['value'] ?? 'Error'),
+            'culprit' => (string) ($issue['culprit'] ?: trim(($issue['metadata']['filename'] ?? '').' '.($issue['metadata']['function'] ?? ''))),
+            'type' => (string) ($issue['metadata']['type'] ?? ''),
+            'project' => (string) ($issue['project']['name'] ?? ''),
+            'projectId' => (int) ($issue['project']['id'] ?? 0),
+            'count' => (int) ($issue['count'] ?? 0),
+            'users' => (int) ($issue['userCount'] ?? 0),
+            'level' => (string) ($issue['level'] ?? 'error'),
+            'status' => (string) ($issue['status'] ?? 'unresolved'),
+            'firstSeen' => $issue['firstSeen'] ?? null,
+            'lastSeen' => $issue['lastSeen'] ?? null,
+            'release' => $issue['lastRelease']['shortVersion'] ?? null,
+            'trend' => $trends[(int) $issue['id']] ?? [],
+        ], $response['items']);
+
+        return $response;
+    }
+
+    /**
+     * Events per hour (24h) or per day (14d) of each issue, oldest first, with empty buckets filled in.
+     *
+     * @param  list<int|string>  $ids
+     * @return array<int, list<int>>
+     */
+    public function issueTrends(array $ids, string $period = '24h'): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        $stats = $this->api()->get('/organizations/'.self::ORGANIZATION.'/issues-stats/?'.$this->query(['groups' => $ids, 'statsPeriod' => $period]))->throw()->json();
+        [$buckets, $size] = $period === '14d' ? [14, 86400] : [24, 3600];
+        $end = intdiv(time(), $size) * $size;
+        $trends = [];
+
+        foreach ((array) $stats as $issue) {
+            $points = array_fill(0, $buckets, 0);
+
+            foreach ($issue['stats'][$period] ?? [] as [$at, $count]) {
+                $index = $buckets - 1 - intdiv($end - intdiv((int) $at, $size) * $size, $size);
+
+                if ($index >= 0 && $index < $buckets) {
+                    $points[$index] += (int) $count;
+                }
+            }
+
+            $trends[(int) $issue['id']] = $points;
+        }
+
+        return $trends;
+    }
+
+    /**
+     * The project of each of these issues, whatever their status.
+     *
+     * @param  list<int>  $ids
+     * @return array<int, int> issue id => project id
+     */
+    public function issueProjects(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        return collect($this->list('/organizations/'.self::ORGANIZATION.'/issues/', ['id' => $ids, 'limit' => 100])['items'])
+            ->mapWithKeys(fn (array $issue) => [(int) $issue['id'] => (int) ($issue['project']['id'] ?? 0)])
+            ->all();
+    }
+
+    /**
+     * Resolve, ignore, or reopen issues.
+     *
+     * @param  list<int>  $ids
+     */
+    public function setIssueStatus(array $ids, string $status): void
+    {
+        if ($ids === [] || ! in_array($status, self::ISSUE_STATUSES, true)) {
+            return;
+        }
+
+        $this->api()->put('/organizations/'.self::ORGANIZATION.'/issues/?'.$this->query(['id' => $ids]), ['status' => $status])->throw();
+    }
+
+    /**
+     * One issue with its latest event: the stack trace, breadcrumbs, request, and tags.
+     *
+     * @return array<string, mixed>
+     */
+    public function issueDetail(int $id): array
+    {
+        $issue = $this->api()->get('/organizations/'.self::ORGANIZATION.'/issues/'.$id.'/')->throw()->json();
+        $event = $this->api()->get('/organizations/'.self::ORGANIZATION.'/issues/'.$id.'/events/latest/')->json() ?? [];
+        $entries = collect($event['entries'] ?? [])->keyBy('type');
+
+        $exceptions = array_map(fn (array $exception) => [
+            'type' => (string) ($exception['type'] ?? ''),
+            'value' => (string) ($exception['value'] ?? ''),
+            'frames' => array_reverse(array_map(fn (array $frame) => [
+                'file' => (string) ($frame['filename'] ?? $frame['absPath'] ?? $frame['module'] ?? '?'),
+                'function' => (string) ($frame['function'] ?? ''),
+                'line' => $frame['lineNo'] ?? null,
+                'inApp' => (bool) ($frame['inApp'] ?? false),
+                'context' => array_map(fn ($line) => ['line' => (int) $line[0], 'code' => (string) $line[1]], $frame['context'] ?? []),
+            ], $exception['stacktrace']['frames'] ?? [])),
+        ], $entries['exception']['data']['values'] ?? []);
+
+        $request = $entries['request']['data'] ?? null;
+
+        return [
+            'id' => (int) $issue['id'],
+            'shortId' => (string) ($issue['shortId'] ?? ''),
+            'title' => (string) ($issue['title'] ?? 'Error'),
+            'culprit' => (string) ($issue['culprit'] ?? ''),
+            'level' => (string) ($issue['level'] ?? 'error'),
+            'status' => (string) ($issue['status'] ?? 'unresolved'),
+            'project' => (string) ($issue['project']['name'] ?? ''),
+            'projectId' => (int) ($issue['project']['id'] ?? 0),
+            'count' => (int) ($issue['count'] ?? 0),
+            'users' => (int) ($issue['userCount'] ?? 0),
+            'firstSeen' => $issue['firstSeen'] ?? null,
+            'lastSeen' => $issue['lastSeen'] ?? null,
+            'firstRelease' => $issue['firstRelease']['shortVersion'] ?? null,
+            'lastRelease' => $issue['lastRelease']['shortVersion'] ?? null,
+            'eventAt' => $event['dateCreated'] ?? null,
+            'message' => (string) ($event['message'] ?? ''),
+            'exceptions' => $exceptions,
+            'breadcrumbs' => array_map(fn (array $crumb) => [
+                'at' => $crumb['timestamp'] ?? null,
+                'category' => (string) ($crumb['category'] ?? $crumb['type'] ?? ''),
+                'message' => (string) ($crumb['message'] ?? json_encode($crumb['data'] ?? [])),
+                'level' => (string) ($crumb['level'] ?? 'info'),
+            ], array_slice($entries['breadcrumbs']['data']['values'] ?? [], -30)),
+            'request' => $request === null ? null : [
+                'method' => (string) ($request['method'] ?? ''),
+                'url' => (string) ($request['url'] ?? ''),
+            ],
+            'tags' => collect($event['tags'] ?? [])->mapWithKeys(fn (array $tag) => [(string) $tag['key'] => (string) $tag['value']])->all(),
+            'url' => $this->open(self::ORGANIZATION.'/issues/'.$issue['id']),
+        ];
+    }
+
+    /**
+     * One page of transaction groups (Performance): each route or job, how often it ran and how long it took.
+     *
+     * @param  array{search?: string, projects?: list<int>, sort?: string, period?: string}  $filters
+     * @return array{items: list<array<string, mixed>>, next: ?string, total: ?int}
+     */
+    public function transactionPage(array $filters, ?string $cursor = null, int $limit = 25): array
+    {
+        $response = $this->list('/organizations/'.self::ORGANIZATION.'/transaction-groups/', [
+            'query' => trim((string) ($filters['search'] ?? '')) ?: null,
+            'project' => $filters['projects'] ?? [],
+            'sort' => in_array($filters['sort'] ?? '', array_keys(self::TRANSACTION_SORTS), true) ? $filters['sort'] : '-avg_duration',
+            'start' => $this->since($filters['period'] ?? '24h'),
+            'limit' => $limit,
+            'cursor' => $cursor,
+        ]);
+
+        $response['items'] = array_map(fn (array $group) => [
+            'id' => (int) $group['id'],
+            'name' => (string) $group['transaction'],
+            'op' => (string) ($group['op'] ?? ''),
+            'method' => (string) ($group['method'] ?? ''),
+            'projectId' => (int) ($group['project'] ?? 0),
+            'count' => (int) ($group['count'] ?? 0),
+            'avg' => (float) ($group['avgDuration'] ?? 0),
+            'p50' => isset($group['p50']) ? (float) $group['p50'] : null,
+            'p95' => isset($group['p95']) ? (float) $group['p95'] : null,
+            'errors' => (int) ($group['errorCount'] ?? 0),
+            'errorRate' => (float) ($group['errorRate'] ?? 0),
+            'lastSeen' => $group['lastSeen'] ?? null,
+        ], $response['items']);
+
+        return $response;
+    }
+
+    /**
+     * Where one transaction spends its time (span groups) and how its speed changed (trend).
+     *
+     * @return array{group: array<string, mixed>, spans: list<array<string, mixed>>, trend: list<array<string, mixed>>}
+     */
+    public function transactionDetail(int $id, string $period = '24h'): array
+    {
+        $base = '/organizations/'.self::ORGANIZATION.'/transaction-groups/'.$id.'/';
+        $range = $this->query(['start' => $this->since($period)]);
+        $group = $this->api()->get($base)->throw()->json();
+
+        return [
+            'group' => [
+                'id' => (int) $group['id'],
+                'name' => (string) $group['transaction'],
+                'op' => (string) ($group['op'] ?? ''),
+                'method' => (string) ($group['method'] ?? ''),
+                'projectId' => (int) ($group['project'] ?? 0),
+                'count' => (int) ($group['count'] ?? 0),
+                'avg' => (float) ($group['avgDuration'] ?? 0),
+                'p50' => isset($group['p50']) ? (float) $group['p50'] : null,
+                'p95' => isset($group['p95']) ? (float) $group['p95'] : null,
+                'errorRate' => (float) ($group['errorRate'] ?? 0),
+            ],
+            'spans' => array_map(fn (array $span) => [
+                'op' => (string) $span['op'],
+                'description' => (string) $span['description'],
+                'count' => (int) $span['count'],
+                'avg' => (float) $span['avgDuration'],
+                'p95' => (float) $span['p95Duration'],
+                'total' => (float) $span['totalTime'],
+            ], (array) $this->api()->get($base.'spans/?'.$range)->json()),
+            'trend' => array_map(fn (array $point) => [
+                'at' => $point['date'],
+                'count' => (int) $point['transactionCount'],
+                'avg' => (float) $point['avgDuration'],
+            ], (array) $this->api()->get($base.'trend/?'.$range)->json()),
+        ];
+    }
+
+    /**
+     * One page of log lines, newest first.
+     *
+     * @param  array{search?: string, projects?: list<int>, levels?: list<string>, period?: string}  $filters
+     * @return array{items: list<array<string, mixed>>, next: ?string, total: ?int}
+     */
+    public function logPage(array $filters, ?string $cursor = null, int $limit = 50): array
+    {
+        $response = $this->list('/organizations/'.self::ORGANIZATION.'/logs/', [
+            'query' => trim((string) ($filters['search'] ?? '')) ?: null,
+            'project' => $filters['projects'] ?? [],
+            'level' => array_values(array_intersect($filters['levels'] ?? [], self::LOG_LEVELS)),
+            'start' => $this->since($filters['period'] ?? '24h'),
+            'limit' => $limit,
+            'cursor' => $cursor,
+        ]);
+
+        $response['items'] = array_map(fn (array $log) => [
+            'id' => (string) $log['id'],
+            'at' => $log['timestamp'],
+            'level' => (string) $log['level'],
+            'body' => (string) $log['body'],
+            'service' => (string) ($log['service'] ?? ''),
+            'environment' => (string) ($log['environment'] ?? ''),
+            'host' => (string) ($log['host'] ?? ''),
+            'traceId' => $log['traceID'] ?? null,
+            'projectId' => (int) ($log['projectId'] ?? 0),
+            'data' => (array) ($log['data'] ?? []),
+        ], $response['items']);
+
+        return $response;
+    }
+
+    /**
+     * Log lines per level over time, for the chart above the logs.
+     *
+     * @param  array{projects?: list<int>, period?: string}  $filters
+     * @return array{intervals: list<string>, series: array<string, list<int>>}
+     */
+    public function logStats(array $filters): array
+    {
+        $stats = $this->api()->get('/organizations/'.self::ORGANIZATION.'/logs/stats/?'.$this->query([
+            'project' => $filters['projects'] ?? [],
+            'start' => $this->since($filters['period'] ?? '24h'),
+        ]))->throw()->json();
+
+        return [
+            'intervals' => (array) ($stats['intervals'] ?? []),
+            'series' => collect($stats['series'] ?? [])->mapWithKeys(fn (array $series) => [(string) $series['name'] => array_map('intval', $series['data'])])->all(),
+        ];
+    }
+
+    /**
+     * A GET of a paginated list: its rows, the cursor of the next page (from the Link header), and
+     * the total GlitchTip counted (X-Hits) when it says.
+     *
+     * @param  array<string, mixed>  $parameters
+     * @return array{items: list<array<string, mixed>>, next: ?string, total: ?int}
+     */
+    private function list(string $path, array $parameters): array
+    {
+        $response = $this->api()->get($path.'?'.$this->query($parameters))->throw();
+        preg_match('/rel="next"; results="true"; cursor="([^"]+)"/', (string) $response->header('Link'), $next);
+
+        return [
+            'items' => array_values((array) $response->json()),
+            'next' => $next[1] ?? null,
+            'total' => $response->header('X-Hits') !== '' ? (int) $response->header('X-Hits') : null,
+        ];
+    }
+
+    /**
+     * A query string as GlitchTip reads it: a list repeats its name (project=1&project=2), empty values are left out.
+     *
+     * @param  array<string, mixed>  $parameters
+     */
+    private function query(array $parameters): string
+    {
+        $pairs = [];
+
+        foreach ($parameters as $name => $value) {
+            foreach ((array) $value as $item) {
+                if ($item !== null && $item !== '') {
+                    $pairs[] = rawurlencode($name).'='.rawurlencode((string) $item);
+                }
+            }
+        }
+
+        return implode('&', $pairs);
+    }
+
+    /** The start of a time range, as GlitchTip's relative dates (now-24h). */
+    private function since(string $period): string
+    {
+        return 'now-'.(array_key_exists($period, self::PERIODS) ? $period : '24h');
+    }
+
     /** The website's issues in GlitchTip. */
     public function projectUrl(Website $website): string
     {
@@ -291,6 +651,10 @@ class Glitchtip
         [$file, $needle] = match ($website->type) {
             'laravel', 'php' => ['composer.json', '"sentry/'],
             'static' => [($folder !== '' && $folder !== '.' ? $folder.'/' : '').'index.html', 'Sentry.init'],
+            'spring' => [is_file($root.'/pom.xml') ? 'pom.xml' : (is_file($root.'/build.gradle.kts') ? 'build.gradle.kts' : 'build.gradle'), 'io.sentry'],
+            'aspnet' => [basename((string) (glob($root.'/*.csproj')[0] ?? 'project.csproj')), 'Sentry.AspNetCore'],
+            'django', 'flask', 'fastapi' => ['requirements.txt', 'sentry-sdk'],
+            'go' => ['go.mod', 'getsentry/sentry-go'],
             default => ['package.json', '"@sentry/'],
         };
 
@@ -312,7 +676,12 @@ class Glitchtip
             'sveltekit' => 'sveltekit',
             'react', 'vue', 'svelte', 'astro' => 'vite',
             'angular' => 'angular',
-            'static' => 'browser',
+            'static', 'hugo', 'gatsby', 'docusaurus', 'vitepress', 'eleventy' => 'browser',
+            'spring' => 'java',
+            'aspnet' => 'dotnet',
+            'django', 'flask', 'fastapi' => 'python',
+            'go' => 'go',
+            'bun' => 'bun',
             default => 'node',
         };
     }
@@ -327,7 +696,14 @@ class Glitchtip
             'vue', 'nuxt' => 'javascript-vue',
             'angular' => 'javascript-angular',
             'svelte', 'sveltekit' => 'javascript-svelte',
-            'astro', 'static' => 'javascript',
+            'astro', 'static', 'hugo', 'gatsby', 'docusaurus', 'vitepress', 'eleventy' => 'javascript',
+            'spring' => 'java-spring-boot',
+            'aspnet' => 'dotnet-aspnetcore',
+            'django' => 'python-django',
+            'flask' => 'python-flask',
+            'fastapi' => 'python-fastapi',
+            'go' => 'go',
+            'bun' => 'bun',
             default => 'node',
         };
     }

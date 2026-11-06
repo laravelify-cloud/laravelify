@@ -1,12 +1,15 @@
 @php
-    $latestDeployment = $deployments->first();
     $publicUrl = $website->publicUrl();
     $repositoryUrl = preg_match('#^https?://#', (string) $website->repository) === 1 ? preg_replace('/\.git$/', '', (string) $website->repository) : null;
     $navGroups = [
-        'settings' => ['Settings', ['general' => ['General', 'settings'], 'environment' => ['Environment', 'variables'], 'runtime' => ['Runtime', 'runtime'], 'nginx' => ['Nginx', 'nginx'], 'security' => ['Security', 'shield'], 'redirects' => ['Redirects', 'arrow-up-right']]],
+        'settings' => ['Settings', ['general' => ['General', 'settings'], 'environment' => ['Environment', 'variables'], 'runtime' => ['Runtime', 'runtime'], 'php' => ['PHP', 'tune'], 'nginx' => ['Nginx', 'nginx'], 'security' => ['Security', 'shield'], 'redirects' => ['Redirects', 'arrow-up-right']]],
         'observe' => ['Observe', ['monitoring' => ['Monitoring', 'chart'], 'deployments' => ['Deployments', 'deployments'], 'logs' => ['Logs', 'logs'], 'glitchtip' => ['GlitchTip', 'bug'], 'health' => ['Health', 'pulse'], 'processes' => ['Processes', 'processes'], 'terminal' => ['Terminal', 'terminal'], 'files' => ['Files', 'files']]],
         'operations' => ['Operations', ['danger' => ['Danger zone', 'danger']]],
     ];
+
+    if (! $website->isPhp()) {
+        unset($navGroups['settings'][1]['php']);
+    }
 
     if (! $website->hasProcessFile()) {
         unset($navGroups['observe'][1]['processes']);
@@ -19,9 +22,11 @@
     @input="markDirty($event)"
     @change="markDirty($event)"
     @saved.window="clearDirty()"
-    @if ($deploying) wire:poll.2s @endif
 >
     @include('livewire.partials.followed-tasks')
+    @if ($deploying)
+        <span hidden wire:poll.2s></span>
+    @endif
 
     {{-- Resource header --}}
     <div class="page-header">
@@ -348,12 +353,32 @@
             </x-layer-card>
 
             @if ($website->isPhp() || $website->isNode())
-                <x-layer-card title="Database" helper="A MySQL database and user for this site." x-show="tab === 'general'" x-cloak>
+                @php
+                    $dbEngine = $website->db_engine ?: \App\Support\DatabaseEngines::MYSQL;
+                @endphp
+                <x-layer-card title="Database" :helper="$website->db_name ? 'A '.\App\Support\DatabaseEngines::label($dbEngine).' database for this site.' : 'A database for this site. PostgreSQL and MongoDB are installed on this server the first time a site needs them.'" x-show="tab === 'general'" x-cloak>
                     <x-slot:actions>
-                        <button class="btn" type="button" wire:click="provisionDatabase">{{ $website->db_name ? 'Re-provision' : 'Provision MySQL' }}</button>
+                        @if ($website->db_name)
+                            <button class="btn" type="button" wire:click="provisionDatabase">Re-provision</button>
+                        @else
+                            @foreach ([...\App\Support\DatabaseEngines::available(), ...array_filter(\App\Services\DatabaseServers::INSTALLABLE, fn ($engine) => ! \App\Support\DatabaseEngines::has($engine))] as $engine)
+                                <button class="btn" type="button" wire:click="provisionDatabase('{{ $engine }}')" title="{{ \App\Support\DatabaseEngines::has($engine) ? \App\Support\DatabaseEngines::hint($engine) : 'Not installed on this server yet: asks to install it first.' }}">
+                                    Create {{ \App\Support\DatabaseEngines::label($engine) }}
+                                    @unless (\App\Support\DatabaseEngines::has($engine))
+                                        <span class="db-not-installed">not installed</span>
+                                    @endunless
+                                </button>
+                            @endforeach
+                        @endif
                     </x-slot:actions>
-                    @if ($website->db_name)
+                    @if ($website->db_name && $dbEngine === \App\Support\DatabaseEngines::SQLITE)
                         <dl class="grid gap-3 text-[13px] sm:grid-cols-2">
+                            <div><dt class="text-muted">Engine</dt><dd class="mt-0.5">SQLite</dd></div>
+                            <div><dt class="text-muted">File</dt><dd class="mt-0.5 break-all font-mono">{{ app(\App\Services\DatabaseProvisioner::class)->sqlitePath($website) }}</dd></div>
+                        </dl>
+                    @elseif ($website->db_name)
+                        <dl class="grid gap-3 text-[13px] sm:grid-cols-2">
+                            <div><dt class="text-muted">Engine</dt><dd class="mt-0.5">{{ \App\Support\DatabaseEngines::label($dbEngine) }}</dd></div>
                             <div><dt class="text-muted">Database</dt><dd class="mt-0.5 font-mono">{{ $website->db_name }}</dd></div>
                             <div><dt class="text-muted">User</dt><dd class="mt-0.5 font-mono">{{ $website->db_username }}</dd></div>
                             <div class="sm:col-span-2" x-data="secretText('db_password')">
@@ -380,7 +405,14 @@
                 <x-slot:actions>
                     <button class="btn btn-primary" type="submit" form="website-environment">Save</button>
                 </x-slot:actions>
-                <form id="website-environment" wire:submit="saveEnvironment">
+                @if (! $envUnlocked)
+                    <div class="env-locked">
+                        <x-menu-icon name="lock" class="size-6" />
+                        <p>The .env holds this website's secrets: passwords, keys and tokens.</p>
+                        <button class="btn btn-primary" type="button" x-data @click="if (await Alpine.store('secretGate').request($wire)) $wire.loadEnvironment()"><x-menu-icon name="eye" /> Show and edit with your authenticator code</button>
+                    </div>
+                @endif
+                <form id="website-environment" wire:submit="saveEnvironment" @if (! $envUnlocked) hidden @endif>
                     <textarea class="textarea textarea-flush" wire:model="env_content" spellcheck="false" aria-label=".env contents"></textarea>
                     @error('env_content') <p class="error px-4 pb-3">{{ $message }}</p> @enderror
                 </form>
@@ -431,7 +463,26 @@
                                     <button class="choice {{ $node_version === $version ? 'active' : '' }}" type="button" wire:click="$set('node_version', '{{ $version }}')">{{ $version }}</button>
                                 @endforeach
                             </div>
+                            <input class="input mt-2 w-40 font-mono" wire:model.live.debounce.400ms="node_version" placeholder="or any: 19.0.0" aria-label="Another Node.js version" spellcheck="false">
+                            <small class="text-muted">Any Node.js from 14 on, like 19 or 19.0.0. A version the server does not have is installed on the next deploy.</small>
                             @error('node_version') <small class="error">{{ $message }}</small> @enderror
+                        </div>
+                    @endif
+
+                    @if ($website->hasToolchain())
+                        @php
+                            $toolchain = \App\Support\SiteTypes::TOOLCHAINS[$website->toolchain()];
+                        @endphp
+                        <div class="field">
+                            <span>{{ $toolchain['label'] }} version</span>
+                            <div class="flex flex-wrap gap-2">
+                                @foreach ($toolchain['versions'] as $version)
+                                    <button class="choice {{ $runtime_version === $version ? 'active' : '' }}" type="button" wire:click="$set('runtime_version', '{{ $version }}')">{{ $version }}</button>
+                                @endforeach
+                            </div>
+                            <input class="input mt-2 w-40 font-mono" wire:model.live.debounce.400ms="runtime_version" aria-label="Another {{ $toolchain['label'] }} version" spellcheck="false">
+                            <small class="text-muted">Installed on the next deploy if the server does not have it.</small>
+                            @error('runtime_version') <small class="error">{{ $message }}</small> @enderror
                         </div>
                     @endif
 
@@ -482,6 +533,12 @@
             </x-layer-card>
 
             {{-- Nginx --}}
+            @if ($website->isPhp())
+                <section x-show="tab === 'php'" x-cloak>
+                    <livewire:websites.php-config lazy :website="$website" :key="'site-php-'.$website->id" />
+                </section>
+            @endif
+
             <x-layer-card title="Nginx" helper="The site file. Saving tests and reloads nginx." flush x-show="tab === 'nginx'" x-cloak>
                 <x-slot:actions>
                     <button class="btn btn-primary" type="submit" form="website-nginx">Save and apply</button>
@@ -623,7 +680,7 @@
 
             {{-- Deployments --}}
             <div class="flex flex-col gap-6" x-show="tab === 'deployments'" x-cloak>
-                <x-layer-card title="Deployments" helper="The last 20 builds. Click a row to read its log." flush>
+                <x-layer-card title="Deployments" helper="{{ number_format($deployments->total()) }} {{ $deployments->total() === 1 ? 'build' : 'builds' }}, newest first, 20 per page. Click a row to read its log; Roll back puts an earlier deploy live again." flush>
                     <x-slot:actions>
                         @if (count($selectedDeployments) > 0)
                             <x-confirm-delete
@@ -649,9 +706,11 @@
                                     <th class="max-sm:hidden">Trigger</th>
                                     <th class="max-sm:hidden">Duration</th>
                                     <th class="max-sm:hidden">Started</th>
+                                    <th class="w-1"></th>
                                 </tr>
                             </thead>
                             <tbody>
+                                @php $liveId = $website->liveDeployment()?->id; @endphp
                                 @forelse ($deployments as $deployment)
                                     <tr
                                         wire:key="deployment-{{ $deployment->id }}"
@@ -665,6 +724,12 @@
                                                 @if ($deployment->commit_sha)
                                                     <code class="shrink-0">{{ substr($deployment->commit_sha, 0, 7) }}</code>
                                                 @endif
+                                                @if ($deployment->id === $liveId)
+                                                    <span class="deploy-live" title="This deployment's code is live now">Live</span>
+                                                @endif
+                                                @if ($deployment->trigger === 'rollback')
+                                                    <span class="deploy-rollback" title="A rollback to an earlier deployment"><x-menu-icon name="restore" class="size-3" /> Rollback</span>
+                                                @endif
                                                 <span class="truncate" title="{{ $deployment->commit_message }}">{{ $deployment->commit_message ? strtok($deployment->commit_message, "\n") : ($deployment->commit_sha ? '' : '-') }}</span>
                                             </div>
                                             @if ($deployment->commit_author || $deployment->branch)
@@ -676,13 +741,27 @@
                                         <td class="capitalize text-muted max-sm:hidden">{{ $deployment->trigger }}</td>
                                         <td class="tabular-nums text-muted max-sm:hidden">{{ $deployment->durationLabel() ?? '-' }}</td>
                                         <td class="whitespace-nowrap text-muted max-sm:hidden" title="@datetime($deployment->created_at)">@ago($deployment->created_at)</td>
+                                        <td class="whitespace-nowrap text-right" @click.stop>
+                                            <div class="row-actions justify-end">
+                                                @if ($deployment->snapshot_path)
+                                                    <button class="btn btn-sm" type="button" wire:click="downloadSnapshot({{ $deployment->id }})" title="Download the code this rollback replaced (.tar.gz)"><x-menu-icon name="download" class="size-4" /> Replaced code</button>
+                                                @endif
+                                                @if ($deployment->status === 'success' && $deployment->commit_sha && $deployment->id !== $liveId)
+                                                    <button class="btn btn-sm" type="button" wire:click="rollBack({{ $deployment->id }})" @disabled($deploying)
+                                                        wire:confirm="Roll back to {{ substr($deployment->commit_sha, 0, 7) }}? Its code goes live again (install, migrations and restart run as in a deploy). The code live now is saved first, so you can download it or roll forward to it later. The next push deploys the newest commit again.">
+                                                        <x-menu-icon name="restore" class="size-4" /> Roll back to this
+                                                    </button>
+                                                @endif
+                                            </div>
+                                        </td>
                                     </tr>
                                 @empty
-                                    <tr><td colspan="6" class="table-empty">No deployments yet. Deploy the site to see its build log here.</td></tr>
+                                    <tr><td colspan="7" class="table-empty">No deployments yet. Deploy the site to see its build log here.</td></tr>
                                 @endforelse
                             </tbody>
                         </table>
                     </div>
+                    <x-pager :rows="$deployments" name="deploys" noun="deployments" />
                 </x-layer-card>
 
                 @if ($selectedDeployment)
@@ -815,7 +894,7 @@
             </section>
 
             <section x-show="tab === 'logs'" x-cloak>
-                <livewire:websites.logs :website="$website" :key="'site-logs-'.$website->id" />
+                <livewire:websites.logs lazy :website="$website" :key="'site-logs-'.$website->id" />
             </section>
 
             {{-- GlitchTip: where this website's error tracking stands, its errors, and how to send them --}}
@@ -879,28 +958,10 @@
                         @include('livewire.websites.partials.error-guide')
                     </x-layer-card>
                 @else
-                    <x-layer-card title="Errors" helper="Open errors of this website, newest first." flush>
-                        @if ($errorTracking['problem'])
-                            <p class="error px-4 py-3">{{ $errorTracking['problem'] }}</p>
-                        @endif
-                        <div class="errors-list">
-                            @forelse ($errorTracking['issues'] as $issue)
-                                <a class="errors-row" href="{{ $issue['url'] }}" target="_blank" rel="noopener" wire:key="issue-{{ $issue['id'] }}">
-                                    <span @class(['errors-level', 'is-'.$issue['level']])></span>
-                                    <span class="min-w-0 flex-1">
-                                        <b class="block truncate">{{ $issue['title'] }}</b>
-                                        <small class="block truncate text-muted">{{ $issue['culprit'] ?: '—' }}</small>
-                                    </span>
-                                    <span class="errors-meta">
-                                        <b>{{ number_format($issue['count']) }}</b> <small>events</small>
-                                        @if ($issue['lastSeen']) <small class="max-sm:hidden">· {{ \Illuminate\Support\Carbon::parse($issue['lastSeen'])->diffForHumans() }}</small> @endif
-                                    </span>
-                                </a>
-                            @empty
-                                <div class="table-empty">No errors yet. Once the SDK below is in the code and deployed, errors show here.</div>
-                            @endforelse
-                        </div>
-                    </x-layer-card>
+                    @if ($errorTracking['problem'])
+                        <p class="error">{{ $errorTracking['problem'] }}</p>
+                    @endif
+                    <livewire:monitoring.glitchtip :locked-project="(int) $website->glitchtip_project_id" section="issues" wire:key="glitchtip-{{ $website->id }}" />
 
                     <x-layer-card title="Send this website's errors" helper="Add the Sentry SDK (GlitchTip speaks its language) with these steps, then commit and deploy.">
                         <div class="flex flex-col gap-4">
@@ -923,12 +984,12 @@
                                     <div class="copy-field"><input class="input" value="{{ $errorTracking['login']['email'] }}" readonly aria-label="GlitchTip email"><x-copy-button :text="\Illuminate\Support\Js::from((string) $errorTracking['login']['email'])" /></div>
                                 </div>
                                 @if ($errorTracking['login']['password'])
-                                    <div class="field" x-data="{ show: false }">
+                                    <div class="field" x-data="secretText('glitchtip_password')">
                                         <span>Password</span>
-                                        <div class="copy-field has-reveal">
-                                            <input class="input font-mono" :type="show ? 'text' : 'password'" value="{{ $errorTracking['login']['password'] }}" readonly aria-label="GlitchTip password">
-                                            <button class="icon-btn reveal-button" type="button" @click="show = ! show" :aria-label="show ? 'Hide password' : 'Show password'" :title="show ? 'Hide' : 'Show'"><x-menu-icon name="eye" class="size-4" /></button>
-                                            <x-copy-button :text="\Illuminate\Support\Js::from((string) $errorTracking['login']['password'])" />
+                                        <div class="flex items-center gap-1.5">
+                                            <code class="min-w-0 flex-1 truncate" x-text="shown ? value : '••••••••••••••••'"></code>
+                                            <button class="icon-btn" type="button" @click="toggle()" :title="shown ? 'Hide' : 'Show (asks for your authenticator code)'"><x-menu-icon name="eye" class="size-4" x-show="!shown" /><x-menu-icon name="eye-off" class="size-4" x-cloak x-show="shown" /></button>
+                                            <button class="icon-btn" type="button" title="Copy" @click="copy()"><x-menu-icon name="copy" class="size-4" /></button>
                                         </div>
                                     </div>
                                 @endif
@@ -958,11 +1019,11 @@
             </section>
 
             <section x-show="tab === 'terminal'" x-cloak>
-                <livewire:websites.terminal :website="$website" :key="'site-terminal-'.$website->id" />
+                <livewire:websites.terminal lazy :website="$website" :key="'site-terminal-'.$website->id" />
             </section>
 
             <section x-show="tab === 'files'" x-cloak>
-                <livewire:websites.files :website="$website" :key="'site-files-'.$website->id" />
+                <livewire:websites.files lazy :website="$website" :key="'site-files-'.$website->id" />
             </section>
 
             {{-- Danger zone --}}
@@ -999,4 +1060,30 @@
             </x-layer-card>
         </div>
     </div>
+    <x-modal-frame open="$wire.installEngine !== ''" close="$wire.set('installEngine', '')">
+        @php
+            $installLabel = $installEngine !== '' ? \App\Support\DatabaseEngines::label($installEngine) : '';
+            $installedEngines = \App\Support\DatabaseEngines::available();
+        @endphp
+        <div class="grid gap-4">
+            <div class="modal-head">
+                <div class="min-w-0">
+                    <p class="text-[12px] text-muted">Database</p>
+                    <h2 class="mt-1">{{ $installLabel }} is not installed on this server</h2>
+                </div>
+                <button class="icon-btn" type="button" wire:click="$set('installEngine', '')" aria-label="Close"><x-menu-icon name="close" /></button>
+            </div>
+            <p class="text-[13.5px]">Do you want to install {{ $installLabel }} on your server now? It takes a few minutes and runs in the background. When it is done, {{ $website->name }} gets its {{ $installLabel }} database.</p>
+            <p class="text-[12.5px] text-muted">{{ $installLabel }} runs on this server only (127.0.0.1), with its own login for the panel. Other websites can use it too afterwards.{{ $installEngine === 'mongodb' ? ' It comes from MongoDB\'s own package repository.' : '' }}</p>
+            @if ($installedEngines !== [])
+                <p class="text-[12.5px] text-muted">Or use an engine this server already has:</p>
+            @endif
+            <div class="flex flex-wrap justify-end gap-2">
+                @foreach ($installedEngines as $engine)
+                    <button class="btn" type="button" wire:click="provisionDatabase('{{ $engine }}')">Use {{ \App\Support\DatabaseEngines::label($engine) }}</button>
+                @endforeach
+                <button class="btn btn-primary" type="button" wire:click="installDatabaseEngine"><x-menu-icon name="download" /> Install {{ $installLabel }}</button>
+            </div>
+        </div>
+    </x-modal-frame>
 </div>

@@ -18,7 +18,7 @@ class Index extends PanelComponent
     #[Url(as: 'q', except: '')]
     public string $search = '';
 
-    #[Url(as: 'kind', except: '')]
+    #[Url(as: 'kind', except: '', history: true)]
     public string $kind = '';
 
     public function stopLive(int $websiteId, LiveServer $live): void

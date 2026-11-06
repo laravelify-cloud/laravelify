@@ -10,11 +10,15 @@ namespace App\Support;
 class ProjectDetector
 {
     /**
-     * @param  array{composer?: ?string, package?: ?string, nvmrc?: ?string, node_version?: ?string, index?: bool}  $files  The files' contents (null when missing).
-     * @return array{type: ?string, stack: string, php_version: ?string, node_version: ?string, reason: ?string}
+     * @param  array{composer?: ?string, package?: ?string, nvmrc?: ?string, node_version?: ?string, index?: bool, requirements?: ?string, pyproject?: ?string, manage?: bool, python_version?: ?string, gomod?: ?string, bun?: bool, hugo?: bool}  $files  The files' contents (null when missing).
+     * @return array{type: ?string, stack: string, php_version: ?string, node_version: ?string, runtime_version: ?string, reason: ?string}
      */
     public static function detect(array $files): array
     {
+        if ($other = self::otherLanguage($files)) {
+            return $other + ['stack' => '', 'php_version' => null, 'node_version' => null];
+        }
+
         $composer = json_decode((string) ($files['composer'] ?? ''), true);
         $package = json_decode((string) ($files['package'] ?? ''), true);
         $composer = is_array($composer) ? $composer : null;
@@ -32,8 +36,99 @@ class ProjectDetector
             'stack' => $stack,
             'php_version' => isset($phpRequire['php']) ? self::phpVersion((string) $phpRequire['php']) : null,
             'node_version' => $package !== null || $nodeWanted !== '' ? self::nodeVersion($nodeWanted) : null,
+            'runtime_version' => null,
             'reason' => $reason,
         ];
+    }
+
+    /**
+     * Python (Django, FastAPI, Flask), Go, Hugo, and Bun projects, before the PHP and npm checks.
+     *
+     * @param  array<string, mixed>  $files
+     * @return array{type: string, runtime_version: ?string, reason: string}|null
+     */
+    private static function otherLanguage(array $files): ?array
+    {
+        $python = strtolower((string) ($files['requirements'] ?? '')."\n".(string) ($files['pyproject'] ?? ''));
+        $isPython = ($files['requirements'] ?? null) !== null || ($files['pyproject'] ?? null) !== null || ($files['manage'] ?? false);
+
+        if ($isPython) {
+            $version = self::pythonVersion((string) ($files['python_version'] ?? ''), (string) ($files['pyproject'] ?? ''));
+            $type = match (true) {
+                ($files['manage'] ?? false) || self::requires($python, 'django') => ['django', 'manage.py or Django in the requirements'],
+                self::requires($python, 'fastapi') => ['fastapi', 'FastAPI in the requirements'],
+                self::requires($python, 'flask') => ['flask', 'Flask in the requirements'],
+                default => null,
+            };
+
+            if ($type !== null) {
+                return ['type' => $type[0], 'runtime_version' => $version, 'reason' => $type[1]];
+            }
+        }
+
+        if (($files['maven'] ?? null) !== null || ($files['gradle'] ?? null) !== null) {
+            $build = (string) ($files['maven'] ?? $files['gradle']);
+            preg_match('/<java\.version>(\d+)<\/java\.version>|languageVersion(?:\.set)?\s*[=(]?\s*JavaLanguageVersion\.of\((\d+)\)|sourceCompatibility\s*=\s*[\'"]?(?:JavaVersion\.VERSION_)?(\d+)/', $build, $match);
+            $java = array_values(array_filter(array_slice($match, 1)))[0] ?? null;
+
+            return ['type' => 'spring', 'runtime_version' => $java, 'reason' => ($files['maven'] ?? null) !== null ? 'pom.xml' : 'build.gradle'];
+        }
+
+        if ($files['dotnet'] ?? false) {
+            return ['type' => 'aspnet', 'runtime_version' => null, 'reason' => 'Program.cs'];
+        }
+
+        if (($files['gomod'] ?? null) !== null) {
+            preg_match('/^go\s+(1\.\d+)/m', (string) $files['gomod'], $match);
+
+            return ['type' => 'go', 'runtime_version' => $match[1] ?? null, 'reason' => 'go.mod'];
+        }
+
+        if ($files['hugo'] ?? false) {
+            return ['type' => 'hugo', 'runtime_version' => null, 'reason' => 'a Hugo config file'];
+        }
+
+        $package = json_decode((string) ($files['package'] ?? ''), true);
+        $npm = is_array($package) ? array_merge((array) ($package['dependencies'] ?? []), (array) ($package['devDependencies'] ?? [])) : [];
+
+        foreach (['gatsby' => 'gatsby', '@docusaurus/core' => 'docusaurus', 'vitepress' => 'vitepress', '@11ty/eleventy' => 'eleventy'] as $dependency => $type) {
+            if (isset($npm[$dependency])) {
+                return ['type' => $type, 'runtime_version' => null, 'reason' => $dependency.' in package.json'];
+            }
+        }
+
+        $frameworks = ['next', 'nuxt', '@sveltejs/kit', 'astro', '@angular/core', '@nestjs/core', 'react', 'vue', 'svelte'];
+
+        if (($files['bun'] ?? false) && array_intersect($frameworks, array_keys($npm)) === []) {
+            return ['type' => 'bun', 'runtime_version' => null, 'reason' => 'a bun.lock file'];
+        }
+
+        return null;
+    }
+
+    /**
+     * A package in requirements.txt (a line) or pyproject.toml (a quoted item, like "flask>=3").
+     */
+    private static function requires(string $python, string $package): bool
+    {
+        return preg_match('/(^|["\'\[,\s])'.preg_quote($package, '/').'\b/m', $python) === 1;
+    }
+
+    /** "3.12" from .python-version or requires-python (">=3.11" → the newest offered from 3.11). */
+    private static function pythonVersion(string $pinned, string $pyproject): ?string
+    {
+        if (preg_match('/^(3\.\d{1,2})/', trim($pinned), $match)) {
+            return $match[1];
+        }
+
+        if (preg_match('/requires-python\s*=\s*"[^"]*?(3\.\d{1,2})/', $pyproject, $match)) {
+            $minimum = $match[1];
+            $offered = array_filter(SiteTypes::TOOLCHAINS['python']['versions'], fn (string $version) => version_compare($version, $minimum, '>='));
+
+            return $offered !== [] ? max($offered) : $minimum;
+        }
+
+        return null;
     }
 
     /**

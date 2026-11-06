@@ -120,7 +120,7 @@ class McpToolsTest extends TestCase
         $this->assertFalse($website->auto_deploy);
 
         $server->tool(UpdateWebsite::class, ['website' => 'shop', 'php_version' => '8.4'])->assertHasErrors(['has no php version']);
-        $server->tool(UpdateWebsite::class, ['website' => 'shop', 'node_version' => '19'])->assertHasErrors();
+        $server->tool(UpdateWebsite::class, ['website' => 'shop', 'node_version' => '9'])->assertHasErrors();
         $server->tool(UpdateWebsite::class, ['website' => 'shop'])->assertHasErrors(['Give at least one setting']);
     }
 

@@ -144,6 +144,13 @@ class PanelTaskRunner
             'websites.domains' => $this->domainsTask($task),
             'websites.redirects' => $this->redirectsTask($task),
             'ai.install' => $this->aiInstallTask($task),
+            'runtimes.php' => $this->phpRuntimeTask($task),
+            'php.extensions' => app(PhpExtensions::class)->apply(
+                in_array($version = (string) ($task->payload['version'] ?? ''), config('laravelify.php_versions'), true) ? $version : throw new RuntimeException('Unknown PHP version.'),
+                array_map('boolval', array_intersect_key((array) ($task->payload['changes'] ?? []), PhpExtensions::catalog())),
+                $progress,
+            ),
+            'databases.install' => ['message' => app(DatabaseServers::class)->install((string) ($task->payload['engine'] ?? ''), Website::query()->find((int) ($task->payload['website_id'] ?? 0)))],
             'glitchtip.install' => ['message' => app(Glitchtip::class)->install(User::query()->findOrFail((int) ($task->payload['user_id'] ?? 0)))],
             'glitchtip.remove' => ['message' => app(Glitchtip::class)->uninstall()],
             'glitchtip.sdk' => app(GlitchtipSdk::class)->setUp(Website::query()->findOrFail((int) ($task->payload['website_id'] ?? 0))),
@@ -258,5 +265,23 @@ class PanelTaskRunner
     private function countLabel(int $count): string
     {
         return $count === 1 ? '1 item' : $count.' items';
+    }
+
+    /**
+     * Install a PHP version the server lacks, then move the website to it.
+     *
+     * @return array{message: string}
+     */
+    private function phpRuntimeTask(PanelTask $task): array
+    {
+        $website = Website::query()->findOrFail((int) ($task->payload['website_id'] ?? 0));
+        $version = (string) ($task->payload['version'] ?? '');
+        abort_unless(in_array($version, config('laravelify.php_versions'), true), 422, 'Unknown PHP version.');
+
+        app(HostWriter::class)->phpInstall($version);
+        $website->update(['php_version' => $version]);
+        app(HostWriter::class)->writeWebsite($website->fresh());
+
+        return ['message' => "PHP {$version} is installed. {$website->name} now runs on it."];
     }
 }

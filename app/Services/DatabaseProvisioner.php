@@ -3,11 +3,22 @@
 namespace App\Services;
 
 use App\Models\Website;
+use App\Support\DatabaseEngines;
+use App\Support\EnvFile;
 use Illuminate\Support\Str;
+use PDO;
 use RuntimeException;
+use Throwable;
 
+/**
+ * A website's own database and user, in the engine it picked: MySQL or MariaDB, PostgreSQL,
+ * MongoDB, or SQLite (a file in the site folder), and the .env values that reach it.
+ */
 class DatabaseProvisioner
 {
+    /** Where a website's SQLite database lives: in its folder, kept by deploys, and private (nginx refuses dot paths). */
+    public const SQLITE_FILE = '.data/database.sqlite';
+
     /**
      * @return array{db_name: string, db_username: string, db_password: string}
      */
@@ -39,16 +50,36 @@ class DatabaseProvisioner
     }
 
     /**
-     * Variables written into the site .env. PHP uses DB_*. Node servers also get DATABASE_URL,
-     * which Prisma and most Node drivers read, pointing at 127.0.0.1 (TCP, not the socket).
+     * Variables written into the site .env. PHP uses DB_* (MONGODB_* for MongoDB). Node servers
+     * also get DATABASE_URL, which Prisma and most Node drivers read, pointing at 127.0.0.1 (TCP).
+     * Keys of another engine are removed (null), so switching engines leaves no stale login.
      *
-     * @return array<string, string>
+     * @return array<string, ?string>
      */
     public function envValues(Website $website): array
     {
+        $engine = $website->db_engine ?: DatabaseEngines::MYSQL;
+
+        if ($engine === DatabaseEngines::SQLITE) {
+            $path = $this->sqlitePath($website);
+            $values = ['DB_HOST' => null, 'DB_PORT' => null, 'DB_DATABASE' => $path, 'DB_USERNAME' => null, 'DB_PASSWORD' => null];
+
+            return $website->isNode()
+                ? ['DATABASE_URL' => 'file:'.$path] + $values
+                : ['DB_CONNECTION' => 'sqlite'] + $values + self::redisValues($website);
+        }
+
+        if ($engine === DatabaseEngines::MONGODB) {
+            $values = ['MONGODB_URI' => $this->url($website), 'MONGODB_DATABASE' => (string) $website->db_name];
+
+            return $website->isNode()
+                ? ['DATABASE_URL' => $this->url($website)] + $values
+                : ['DB_CONNECTION' => 'mongodb'] + $values + self::redisValues($website);
+        }
+
         $values = [
             'DB_HOST' => '127.0.0.1',
-            'DB_PORT' => '3306',
+            'DB_PORT' => $engine === DatabaseEngines::POSTGRESQL ? '5432' : '3306',
             'DB_DATABASE' => (string) $website->db_name,
             'DB_USERNAME' => (string) $website->db_username,
             'DB_PASSWORD' => (string) $website->db_password,
@@ -58,7 +89,7 @@ class DatabaseProvisioner
             return ['DATABASE_URL' => $this->url($website)] + $values;
         }
 
-        return ['DB_CONNECTION' => 'mysql'] + $values + self::redisValues($website);
+        return ['DB_CONNECTION' => $engine === DatabaseEngines::POSTGRESQL ? 'pgsql' : 'mysql'] + $values + self::redisValues($website);
     }
 
     /**
@@ -80,16 +111,52 @@ class DatabaseProvisioner
 
     public function url(Website $website): string
     {
-        return sprintf(
-            'mysql://%s:%s@127.0.0.1:3306/%s',
-            rawurlencode((string) $website->db_username),
-            rawurlencode((string) $website->db_password),
-            rawurlencode((string) $website->db_name),
-        );
+        $engine = $website->db_engine ?: DatabaseEngines::MYSQL;
+        $user = rawurlencode((string) $website->db_username);
+        $password = rawurlencode((string) $website->db_password);
+        $name = rawurlencode((string) $website->db_name);
+
+        return match ($engine) {
+            DatabaseEngines::SQLITE => 'file:'.$this->sqlitePath($website),
+            DatabaseEngines::POSTGRESQL => "postgresql://{$user}:{$password}@127.0.0.1:5432/{$name}",
+            DatabaseEngines::MONGODB => "mongodb://{$user}:{$password}@127.0.0.1:27017/{$name}?authSource={$name}",
+            default => "mysql://{$user}:{$password}@127.0.0.1:3306/{$name}",
+        };
+    }
+
+    public function sqlitePath(Website $website): string
+    {
+        return rtrim((string) $website->deploy_path, '/').'/'.self::SQLITE_FILE;
+    }
+
+    /**
+     * Give a website without a database one in this engine: its login, its .env (PHP gets its
+     * usual template; a Node app keeps its own .env and gets the database variables, DATABASE_URL
+     * for Prisma and the other drivers), then the database itself.
+     */
+    public function provisionFor(Website $website, string $engine): string
+    {
+        if (! $website->db_name) {
+            $website->db_engine = DatabaseEngines::has($engine) ? $engine : DatabaseEngines::default();
+            $website->fill($this->credentials($website->slug));
+            $website->provision_database = true;
+            $website->env_content = $website->isNode()
+                ? EnvFile::set((string) $website->env_content, $this->envValues($website))
+                : app(ConfigRenderer::class)->env($website);
+            $website->save();
+        }
+
+        return $this->create($website);
     }
 
     public function create(Website $website): string
     {
+        $engine = $website->db_engine ?: DatabaseEngines::MYSQL;
+
+        if ($engine === DatabaseEngines::SQLITE) {
+            return $this->createSqlite($website);
+        }
+
         if (! $website->db_name || ! $website->db_username || ! $website->db_password) {
             throw new RuntimeException('Database credentials are missing.');
         }
@@ -104,6 +171,15 @@ class DatabaseProvisioner
             return '[skipped] host commands are disabled';
         }
 
+        return match ($engine) {
+            DatabaseEngines::POSTGRESQL => $this->createPostgres($website),
+            DatabaseEngines::MONGODB => $this->createMongo($website, $runner),
+            default => $this->createMysql($website, $runner),
+        };
+    }
+
+    private function createMysql(Website $website, CommandRunner $runner): string
+    {
         $password = str_replace("'", "''", $website->db_password);
         // localhost is the socket (PHP). 127.0.0.1 is TCP, which Node and Prisma use.
         $sql = sprintf(
@@ -142,6 +218,88 @@ class DatabaseProvisioner
         }
 
         return 'Database '.$website->db_name.' is ready.';
+    }
+
+    /**
+     * The panel signs in as postgres (over TCP, with the password the installer set) and makes the
+     * role and a database it owns. Running again resets the role's password.
+     */
+    private function createPostgres(Website $website): string
+    {
+        $password = (string) config('laravelify.postgres_password');
+
+        if ($password === '' || ! extension_loaded('pdo_pgsql')) {
+            throw new RuntimeException('PostgreSQL is not set up for the panel on this server. Install it with the installer (--databases=postgresql).');
+        }
+
+        try {
+            $pdo = new PDO('pgsql:host=127.0.0.1;port=5432;dbname=postgres', (string) config('laravelify.postgres_user', 'postgres'), $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            $role = '"'.$website->db_username.'"';
+            $secret = $pdo->quote((string) $website->db_password);
+            $exists = $pdo->prepare('SELECT 1 FROM pg_roles WHERE rolname = ?');
+            $exists->execute([$website->db_username]);
+            $pdo->exec(($exists->fetchColumn() ? 'ALTER ROLE ' : 'CREATE ROLE ').$role.' LOGIN PASSWORD '.$secret);
+
+            $exists = $pdo->prepare('SELECT 1 FROM pg_database WHERE datname = ?');
+            $exists->execute([$website->db_name]);
+
+            if (! $exists->fetchColumn()) {
+                $pdo->exec('CREATE DATABASE "'.$website->db_name.'" OWNER '.$role." ENCODING 'UTF8'");
+            }
+        } catch (Throwable $exception) {
+            throw new RuntimeException('PostgreSQL: '.$exception->getMessage(), 0, $exception);
+        }
+
+        return 'PostgreSQL database '.$website->db_name.' is ready.';
+    }
+
+    /**
+     * The panel signs in as MongoDB's admin and makes a user that owns the website's database.
+     * Passwords go through the environment, never the command line.
+     */
+    private function createMongo(Website $website, CommandRunner $runner): string
+    {
+        $password = (string) config('laravelify.mongodb_password');
+
+        if ($password === '') {
+            throw new RuntimeException('MongoDB is not set up for the panel on this server. Install it with the installer (--databases=mongodb).');
+        }
+
+        $script = <<<'JS'
+            const admin = connect('mongodb://' + encodeURIComponent(process.env.LFY_ADMIN_USER) + ':' + encodeURIComponent(process.env.LFY_ADMIN) + '@127.0.0.1:27017/admin');
+            const site = admin.getSiblingDB(process.env.LFY_DB);
+            const user = { pwd: process.env.LFY_PASSWORD, roles: [{ role: 'dbOwner', db: process.env.LFY_DB }] };
+            if (site.getUser(process.env.LFY_USER)) { site.updateUser(process.env.LFY_USER, user); }
+            else { site.createUser(Object.assign({ user: process.env.LFY_USER }, user)); }
+            JS;
+
+        $result = $runner->run(['mongosh', '--quiet', '--nodb', '--eval', $script], null, [
+            'LFY_ADMIN_USER' => (string) config('laravelify.mongodb_user', 'admin'),
+            'LFY_ADMIN' => $password,
+            'LFY_DB' => (string) $website->db_name,
+            'LFY_USER' => (string) $website->db_username,
+            'LFY_PASSWORD' => (string) $website->db_password,
+        ]);
+
+        if (! $result->ok) {
+            throw new RuntimeException('MongoDB: '.($result->output ?: 'mongosh failed'));
+        }
+
+        return 'MongoDB database '.$website->db_name.' is ready.';
+    }
+
+    /** An empty SQLite file in the site folder, made by the site's own user so the site can write it. */
+    private function createSqlite(Website $website): string
+    {
+        $path = $this->sqlitePath($website);
+        $files = app(SiteFiles::class);
+
+        if (! file_exists($path)) {
+            $files->makeDirectory(dirname($path), 0750, true);
+            $files->put($path, '', 0640);
+        }
+
+        return 'SQLite database '.$path.' is ready.';
     }
 
     public function clientDefaultsFile(): string

@@ -2,17 +2,21 @@
 
 namespace App\Livewire\Websites;
 
+use App\Livewire\Concerns\FollowsTasks;
 use App\Livewire\PanelComponent;
 use App\Models\CloudflareTunnel;
 use App\Models\GithubApp;
 use App\Models\Group;
+use App\Services\CloudDomains;
 use App\Services\CloudflareApi;
 use App\Services\CloudflareRoutes;
+use App\Services\DatabaseServers;
 use App\Services\DomainSuggestions;
 use App\Services\GithubAppClient;
 use App\Services\PortAllocator;
 use App\Services\ServerProcesses;
 use App\Services\WebsiteCreator;
+use App\Support\DatabaseEngines;
 use App\Support\Examples;
 use App\Support\ProjectDetector;
 use App\Support\SiteTypes;
@@ -21,11 +25,13 @@ use Throwable;
 
 class Form extends PanelComponent
 {
+    use FollowsTasks;
+
     /** What the browser keeps as a draft of the form, and puts back after a reload. */
     public const DRAFT_FIELDS = [
         'name', 'type', 'stack', 'domain', 'include_www', 'extra_domains', 'http_port', 'repository', 'branch',
-        'use_example', 'create_repository', 'new_repository_name', 'new_repository_private', 'php_version', 'node_version',
-        'install_command', 'build_command', 'start_command', 'public_dir', 'enable_reverb', 'provision_database',
+        'use_example', 'create_repository', 'new_repository_name', 'new_repository_private', 'php_version', 'node_version', 'runtime_version',
+        'install_command', 'build_command', 'start_command', 'public_dir', 'enable_reverb', 'provision_database', 'db_engine',
         'cloudflare_tunnel_id', 'github_app_id', 'picking', 'repositories', 'selectedRepository',
     ];
 
@@ -95,6 +101,9 @@ class Form extends PanelComponent
 
     public string $node_version = '22';
 
+    /** Python, Go, Bun or Hugo version, for types with their own toolchain. */
+    public string $runtime_version = '';
+
     public string $install_command = '';
 
     public string $build_command = '';
@@ -106,6 +115,9 @@ class Form extends PanelComponent
     public bool $enable_reverb = false;
 
     public bool $provision_database = false;
+
+    /** The database engine, '' for the server's default (see DatabaseEngines). */
+    public string $db_engine = '';
 
     public string $cloudflare_tunnel_id = '';
 
@@ -194,7 +206,11 @@ class Form extends PanelComponent
         }
 
         try {
-            $files = $client->files($app, $fullName, $branch, ['composer.json', 'package.json', '.nvmrc', '.node-version', 'index.html']);
+            $files = $client->files($app, $fullName, $branch, [
+                'composer.json', 'package.json', '.nvmrc', '.node-version', 'index.html',
+                'requirements.txt', 'pyproject.toml', 'manage.py', '.python-version', 'go.mod', 'bun.lock', 'bun.lockb', 'hugo.toml', 'hugo.yaml',
+                'pom.xml', 'build.gradle', 'build.gradle.kts', 'Program.cs',
+            ]);
         } catch (Throwable) {
             return;
         }
@@ -204,6 +220,16 @@ class Form extends PanelComponent
             'package' => $files['package.json'],
             'nvmrc' => $files['.nvmrc'] ?? $files['.node-version'],
             'index' => $files['index.html'] !== null,
+            'requirements' => $files['requirements.txt'] ?? null,
+            'pyproject' => $files['pyproject.toml'] ?? null,
+            'manage' => ($files['manage.py'] ?? null) !== null,
+            'python_version' => $files['.python-version'] ?? null,
+            'gomod' => $files['go.mod'] ?? null,
+            'bun' => ($files['bun.lock'] ?? $files['bun.lockb'] ?? null) !== null,
+            'hugo' => ($files['hugo.toml'] ?? $files['hugo.yaml'] ?? null) !== null,
+            'maven' => $files['pom.xml'] ?? null,
+            'gradle' => $files['build.gradle'] ?? $files['build.gradle.kts'] ?? null,
+            'dotnet' => ($files['Program.cs'] ?? null) !== null,
         ]);
 
         if ($found['type'] === null) {
@@ -215,6 +241,7 @@ class Form extends PanelComponent
         $this->chooseType($found['type'], $found['stack']);
         $this->php_version = $found['php_version'] ?? $this->php_version;
         $this->node_version = $found['node_version'] ?? $this->node_version;
+        $this->runtime_version = (string) ($found['runtime_version'] ?? '');
 
         $definition = SiteTypes::get($found['type']);
         $label = $found['stack'] !== '' ? (SiteTypes::stacks()[$found['stack']]['label'] ?? $definition['label']) : $definition['label'];
@@ -237,13 +264,24 @@ class Form extends PanelComponent
         $this->picking = true;
     }
 
+    /** Install PostgreSQL or MongoDB in the background, so the new site can use it. */
+    public function installDatabaseEngine(string $engine): void
+    {
+        if (! DatabaseServers::installable($engine)) {
+            return;
+        }
+
+        $this->runInBackground('databases.install', 'databases', 'Installing '.DatabaseEngines::label($engine), ['engine' => $engine]);
+        $this->toast('Installing '.DatabaseEngines::label($engine).'. This takes a few minutes; you can keep filling in the form.');
+    }
+
     public function save(WebsiteCreator $creator): void
     {
         $this->resetErrorBag();
 
         $result = $creator->create($this->group, ['aliases' => $this->extra_domains] + $this->only([
             'name', 'type', 'domain', 'include_www', 'http_port', 'repository', 'branch', 'use_example', 'php_version', 'node_version',
-            'install_command', 'build_command', 'start_command', 'public_dir', 'enable_reverb', 'provision_database',
+            'install_command', 'build_command', 'start_command', 'public_dir', 'enable_reverb', 'provision_database', 'db_engine',
             'cloudflare_tunnel_id', 'github_app_id', 'create_repository', 'new_repository_name', 'new_repository_private',
         ]));
 
@@ -298,9 +336,28 @@ class Form extends PanelComponent
         return $processes->portMap();
     }
 
+    /** Use <client>-<name>.<domain> from Laravelify Cloud as the website's domain. */
+    public function useFreeDomain(string $name, CloudDomains $free): void
+    {
+        $name = strtolower(trim($name));
+        $this->resetErrorBag('free_domain');
+
+        if (! $free->configured() || ! preg_match('/^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])?$/', $name) || str_contains($name, '--')) {
+            $this->addError('free_domain', 'Use 1 to 30 letters, numbers and dashes, starting and ending with a letter or number.');
+
+            return;
+        }
+
+        $this->domain = $free->hostFor($name);
+        $this->include_www = false;
+    }
+
     public function render()
     {
+        $free = app(CloudDomains::class);
+
         return view('livewire.websites.form', [
+            'freeDomains' => $free->configured() ? ['prefix' => $free->prefix(), 'domain' => $free->domain()] : null,
             'groups' => SiteTypes::GROUPS,
             'definition' => SiteTypes::get($this->type),
             'hasExample' => Examples::has($this->type),

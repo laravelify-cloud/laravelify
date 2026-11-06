@@ -2,6 +2,60 @@
  * The Database tool's rows grid: an Alpine component that loads AG Grid (its own file) only when a
  * table page opens, and takes each page of rows the server renders.
  */
+/** The SQL editor with autocomplete (CodeMirror, its own file, loaded only with an SQL box). */
+window.sqlEditor = function (dialect, placeholder) {
+    return {
+        editor: null,
+
+        async init() {
+            const { mountSqlEditor } = await import('./sql-editor');
+            this.editor = mountSqlEditor(this.$refs.host, this.$refs.source, { dialect, placeholder, onRun: () => this.runNow() });
+            this.loadSchema();
+        },
+
+        async loadSchema() {
+            try {
+                const tables = await this.$wire.sqlSchema();
+                this.editor?.setSchema(tables);
+            } catch (e) {}
+        },
+
+        /** From the history: put the SQL in the editor, and run it when asked. */
+        setSql(detail) {
+            if (!this.editor) return;
+            this.editor.setValue(detail.sql || '');
+            this.$el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (detail.run) this.runNow();
+        },
+
+        runNow() {
+            if (this.editor) {
+                this.run(this.editor.selection(), this.editor.value());
+            }
+        },
+
+        destroy() {
+            this.editor?.destroy();
+        },
+    };
+};
+
+/** A list already in the page (databases, tables, an SQL result) in the rows grid: filters, sorting, search, pages. */
+window.localGrid = function (spec) {
+    return {
+        api: null,
+
+        async init() {
+            const { mountLocalGrid } = await import('./db-grid');
+            this.api = mountLocalGrid(this.$refs.grid, spec, this.$wire, this.$refs.search);
+        },
+
+        destroy() {
+            this.api?.destroy();
+        },
+    };
+};
+
 window.dbGrid = function () {
     return {
         update: null,
@@ -94,6 +148,15 @@ window.dbGrid = function () {
     };
 
     new MutationObserver(update).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['data-loading'] });
+
+    // An element removed while it loads (a popup that closes on click) never loses data-loading:
+    // check again whenever a request ends.
+    document.addEventListener('livewire:init', () => {
+        window.Livewire.hook('request', ({ succeed, fail }) => {
+            succeed(() => setTimeout(update));
+            fail(() => setTimeout(update));
+        });
+    });
 })();
 
 /*

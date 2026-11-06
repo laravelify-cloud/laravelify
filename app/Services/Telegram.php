@@ -279,7 +279,7 @@ class Telegram
         }
 
         try {
-            $response = Http::timeout(10)->asJson()->post('https://api.telegram.org/bot'.$token.'/'.$method, $payload);
+            $response = Http::timeout(10)->asJson()->post(rtrim(Setting::getValue('telegram_api_url') ?: 'https://api.telegram.org', '/').'/bot'.$token.'/'.$method, $payload);
         } catch (Throwable $exception) {
             throw new RuntimeException('Could not reach Telegram: '.str_replace($token, '***', $exception->getMessage()));
         }

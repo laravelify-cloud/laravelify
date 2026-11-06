@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Websites;
 
+use App\Livewire\Concerns\LazyPlaceholder;
 use App\Livewire\PanelComponent;
 use App\Models\PanelTask;
 use App\Models\TrashItem;
@@ -24,6 +25,11 @@ use Throwable;
 
 class Files extends PanelComponent
 {
+    use LazyPlaceholder;
+
+    /** Newest trashed items listed; the rest stay in the Trash and show as the list empties. */
+    public const TRASH_SHOWN = 300;
+
     use WithFileUploads;
 
     /**
@@ -1004,7 +1010,7 @@ class Files extends PanelComponent
      */
     private function trashGroups(): Collection
     {
-        return TrashItem::query()->where('scope', $this->taskScope())->latest('id')->get()
+        return TrashItem::query()->where('scope', $this->taskScope())->latest('id')->limit(self::TRASH_SHOWN)->get()
             ->groupBy('original_path')
             ->map(fn ($versions, string $path) => [
                 'path' => $path,

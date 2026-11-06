@@ -9,6 +9,7 @@ use App\Models\BackupSchedule;
 use App\Models\BackupStorage;
 use App\Support\BackupCron;
 use App\Support\BackupExcludes;
+use App\Support\DatabaseEngines;
 use App\Support\SkippedTables;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Number;
@@ -115,7 +116,7 @@ class BackupManager
      */
     public function backupDatabases(array $databases): BackupSchedule
     {
-        $databases = array_values(array_filter($databases, fn (string $name): bool => DatabaseDumper::validName($name)));
+        $databases = array_values(array_filter($databases, fn (string $name): bool => DatabaseDumper::validName($name) || EngineDatabases::parseBackupTarget($name) !== null));
         $storage = BackupStorage::query()->where('is_default', true)->first() ?? BackupStorage::query()->first()
             ?? throw new RuntimeException('Add a backup storage first (Backups → Backup storage): an S3 bucket or a folder on this server.');
 
@@ -308,14 +309,20 @@ class BackupManager
         $run->forceFill(['status' => BackupRun::RUNNING, 'started_at' => now(), 'phase' => 'Starting', 'progress' => null])->save();
         $phase = fn (string $text, ?int $percent = null) => $run->forceFill(['phase' => $text, 'progress' => $percent])->save();
         $workDir = $this->workDir();
-        $extension = $schedule->isDatabase() ? 'sql.gz' : 'tar.gz';
+        $otherEngine = $schedule->isDatabase() ? EngineDatabases::parseBackupTarget((string) ($target['database'] ?? '')) : null;
+        $extension = $otherEngine ? EngineDatabases::DUMP_EXTENSIONS[$otherEngine[0]] : ($schedule->isDatabase() ? 'sql.gz' : 'tar.gz');
         $file = $workDir.'/'.Str::random(12).'.'.$extension;
 
         try {
             $storage = $schedule->storage ?? throw new RuntimeException('This schedule has no storage. Choose a storage and save it.');
             $meta = [];
 
-            if ($schedule->isDatabase()) {
+            if ($otherEngine) {
+                $phase('Dumping the database');
+                $log->line('Dumping '.DatabaseEngines::label($otherEngine[0]).' database '.$otherEngine[1].'...');
+                app(EngineDatabases::class)->dump($otherEngine[0], $otherEngine[1], $file);
+                $meta['engine'] = $otherEngine[0];
+            } elseif ($schedule->isDatabase()) {
                 $phase('Dumping the database');
                 $skip = array_values($target['skip'] ?? []);
                 $log->line('Dumping database '.$target['database'].'...');
@@ -369,7 +376,7 @@ class BackupManager
             $log->line('Done. '.$key);
 
             try {
-                $this->inspector->remember($run, $file);
+                $otherEngine || $this->inspector->remember($run, $file);
             } catch (Throwable $exception) {
                 $log->line('Saved, but the list of what is inside could not be read: '.$exception->getMessage());
             }

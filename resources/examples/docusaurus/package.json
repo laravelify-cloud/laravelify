@@ -1,0 +1,6 @@
+{
+  "name": "laravelify-docusaurus",
+  "private": true,
+  "scripts": { "build": "docusaurus build" },
+  "dependencies": { "@docusaurus/core": "^3", "@docusaurus/preset-classic": "^3", "react": "^18", "react-dom": "^18" }
+}

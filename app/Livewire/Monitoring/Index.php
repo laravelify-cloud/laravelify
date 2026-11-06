@@ -6,15 +6,24 @@ use App\Livewire\PanelComponent;
 use App\Models\SiteIssue;
 use App\Models\Website;
 use App\Services\SiteMetrics;
+use Livewire\Attributes\Url;
 
 /**
- * Every website at a glance: up or down, traffic, errors, speed, and threats
- * over the last 24 hours.
+ * Every website at a glance: up or down, traffic, errors, speed, and threats over the last 24
+ * hours. The Issues, Performance and Logs tabs show GlitchTip's data here, in the panel.
  */
 class Index extends PanelComponent
 {
+    /** overview, issues, performance or logs (the last three come from GlitchTip). */
+    #[Url(history: true)]
+    public string $tab = 'overview';
+
     public function render(SiteMetrics $metrics)
     {
+        if (! in_array($this->tab, ['overview', 'issues', 'performance', 'logs'], true)) {
+            $this->tab = 'overview';
+        }
+
         $websites = Website::query()->with('group')->orderBy('name')->get();
         $overview = $metrics->overview($websites);
         $openIssues = SiteIssue::query()

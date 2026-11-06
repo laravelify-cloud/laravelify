@@ -5,6 +5,7 @@ namespace App\Mcp\Servers;
 use App\Mcp\Prompts\DeployProject;
 use App\Mcp\Tools\CancelDeployment;
 use App\Mcp\Tools\CheckWebsite;
+use App\Mcp\Tools\CommitFiles;
 use App\Mcp\Tools\CreateGroup;
 use App\Mcp\Tools\CreateWebsite;
 use App\Mcp\Tools\DeleteFile;
@@ -22,6 +23,7 @@ use App\Mcp\Tools\ListBackups;
 use App\Mcp\Tools\ListDeployments;
 use App\Mcp\Tools\ListFiles;
 use App\Mcp\Tools\ListGroups;
+use App\Mcp\Tools\ListIssues;
 use App\Mcp\Tools\ListPorts;
 use App\Mcp\Tools\ListSiteTypes;
 use App\Mcp\Tools\ListSources;
@@ -63,6 +65,8 @@ use Laravel\Mcp\Server\Attributes\Version;
       nginx [get-nginx, update-nginx, rolled back when rejected]; on or off [set-website-enabled]; restart its workers or PM2 app [restart-website].
     - Debug: logs [get-logs], health checks [check-website], run one command in the site folder as the web user, like php artisan [run-command],
       read files [list-files, read-file; .env is only through get-environment].
+    - Fix errors: a website's open GlitchTip errors with stack traces [list-issues], then change its code in its Git repository as one
+      commit that deploys [commit-files, whole files, read them first]. Never edit deployed files to fix code: the next deploy undoes it.
     - Files and data: files the repository does not carry, like a Firebase key in storage/app/private [upload-file, up to 20 MB, a .zip/.tgz can be
       unpacked]; delete a file, which goes to the Trash [delete-file]; import a .sql or .sql.gz dump into the site's database [import-database, then get-task].
     - Backups to S3: [list-backups, run-backup].
@@ -122,6 +126,8 @@ class LaravelifyServer extends Server
         RunCommand::class,
         ListFiles::class,
         ReadFile::class,
+        ListIssues::class,
+        CommitFiles::class,
         UploadFile::class,
         DeleteFile::class,
         ImportDatabase::class,

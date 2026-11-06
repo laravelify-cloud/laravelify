@@ -24,7 +24,7 @@ class Show extends PanelComponent
 
     public string $database = '';
 
-    #[Url]
+    #[Url(history: true)]
     public string $tab = 'tables';
 
     #[Url]
@@ -225,7 +225,6 @@ class Show extends PanelComponent
         }
 
         $shown = collect($tables)
-            ->filter(fn (array $table): bool => $this->filter === '' || str_contains(strtolower($table['name']), strtolower(trim($this->filter))))
             ->sortBy(fn (array $table) => $table[in_array($this->sort, ['rows', 'size', 'engine', 'updated'], true) ? $this->sort : 'name'] ?? '', SORT_NATURAL | SORT_FLAG_CASE, $this->direction === 'desc')
             ->values();
 

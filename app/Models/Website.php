@@ -32,8 +32,9 @@ class Website extends Model
         'redirects',
         'repository',
         'branch',
-        'php_version',
+        'php_version', 'php_options',
         'node_version',
+        'runtime_version',
         'install_command',
         'build_command',
         'start_command',
@@ -43,6 +44,7 @@ class Website extends Model
         'reverb_port',
         'enable_reverb',
         'provision_database',
+        'db_engine',
         'db_name',
         'db_username',
         'db_password',
@@ -97,6 +99,7 @@ class Website extends Model
             'seed_example' => 'boolean',
             'aliases' => 'array',
             'redirects' => 'array',
+            'php_options' => 'array',
             'enable_reverb' => 'boolean',
             'provision_database' => 'boolean',
             'db_password' => 'encrypted',
@@ -173,7 +176,47 @@ class Website extends Model
      */
     public function usesNode(): bool
     {
-        return $this->isNode() || ($this->isStatic() && $this->type !== 'static');
+        return $this->toolchain() === 'node' && ($this->isNode() || ($this->isStatic() && $this->type !== 'static'));
+    }
+
+    /** node, or the type's own toolchain: python, go, bun, hugo. */
+    public function toolchain(): string
+    {
+        return SiteTypes::toolchain($this->type);
+    }
+
+    public function hasToolchain(): bool
+    {
+        return $this->toolchain() !== 'node';
+    }
+
+    /** The toolchain version: the one saved, else the toolchain's default. */
+    public function runtimeVersion(): ?string
+    {
+        if (! $this->hasToolchain()) {
+            return null;
+        }
+
+        return filled($this->runtime_version) ? (string) $this->runtime_version : SiteTypes::TOOLCHAINS[$this->toolchain()]['default'];
+    }
+
+    /** "Python 3.12", "Go 1.24", or null for PHP and Node.js sites. */
+    public function runtimeLabel(): ?string
+    {
+        return $this->hasToolchain() ? SiteTypes::TOOLCHAINS[$this->toolchain()]['label'].' '.$this->runtimeVersion() : null;
+    }
+
+    /**
+     * The command line that runs something with the site's tools: its toolchain (with Node.js
+     * too), or Node.js alone.
+     *
+     * @return list<string>
+     */
+    public function toolCommand(string ...$command): array
+    {
+        return $this->hasToolchain()
+            ? ['bash', base_path('scripts/with-toolchain.sh'), $this->toolchain(), (string) $this->runtimeVersion(), ...$command]
+            : ['bash', base_path('scripts/with-node.sh'), (string) ($this->node_version ?: '22'), ...$command];
     }
 
     /**
@@ -186,7 +229,7 @@ class Website extends Model
 
     public function installCommand(): ?string
     {
-        return filled($this->install_command) ? (string) $this->install_command : null;
+        return filled($this->install_command) ? (string) $this->install_command : ($this->hasToolchain() ? ($this->definition()['install'] ?? null) : null);
     }
 
     /**
@@ -260,7 +303,8 @@ class Website extends Model
      */
     public function deployments(): HasMany
     {
-        return $this->hasMany(Deployment::class)->latest();
+        // Newest first; deploys started in the same second keep their order by id.
+        return $this->hasMany(Deployment::class)->latest()->latest('id');
     }
 
     /**
@@ -323,6 +367,34 @@ class Website extends Model
         RunDeployment::dispatch($deployment->id);
 
         return $deployment;
+    }
+
+    /**
+     * Put the code of an earlier deployment live again: a deploy of that commit (install,
+     * migrations, restart as usual). The code live now is saved first, so it can be looked at
+     * or put back later. The next push deploys the newest commit again.
+     */
+    public function queueRollback(Deployment $to): ?Deployment
+    {
+        if (! $to->commit_sha || $to->website_id !== $this->id) {
+            return null;
+        }
+
+        $first = strtok((string) $to->commit_message, "\n") ?: '';
+
+        $deployment = $this->queueDeployment('rollback', null, [
+            'commit_message' => 'Roll back to '.substr($to->commit_sha, 0, 7).($first !== '' ? ': '.$first : ''),
+            'commit_author' => $to->commit_author,
+        ]);
+        $deployment?->update(['target_sha' => $to->commit_sha]);
+
+        return $deployment;
+    }
+
+    /** The deployment whose code is live now: the newest one that finished. */
+    public function liveDeployment(): ?Deployment
+    {
+        return $this->deployments()->where('status', 'success')->whereNotNull('commit_sha')->first();
     }
 
     public function recordWebhook(string $result): void

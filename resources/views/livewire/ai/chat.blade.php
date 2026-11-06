@@ -56,7 +56,10 @@
         </header>
 
         <div class="ai-body">
-            <div class="ai-messages" @if ($busy) wire:poll.1s @endif
+            @if ($busy)
+                <span hidden wire:poll.1s></span>
+            @endif
+            <div class="ai-messages"
                 x-data="{ stick: true }" @scroll="stick = $el.scrollHeight - $el.scrollTop - $el.clientHeight < 120"
                 x-init="$el.scrollTop = $el.scrollHeight; Livewire.hook('commit', ({ succeed }) => succeed(() => $nextTick(() => { if (stick) $el.scrollTop = $el.scrollHeight })))">
                 <div class="ai-column">
@@ -103,8 +106,8 @@
                                                     @if (($attachment['kind'] ?? null) === 'image')
                                                         <button type="button" class="ai-thumb" @click="lightbox = @js(route('ai.attachment', [$item, $index]))" title="{{ $attachment['label'] }}"><img src="{{ route('ai.attachment', [$item, $index]) }}" alt="{{ $attachment['label'] }}" loading="lazy"></button>
                                                     @else
-                                                        <span class="ai-chip" title="{{ $attachment['kind'] === 'log' ? \Illuminate\Support\Str::limit($attachment['text'] ?? '', 600) : $attachment['label'] }}">
-                                                            <x-menu-icon :name="$attachment['kind'] === 'repo' ? 'git' : 'logs'" class="size-3.5" /> {{ $attachment['label'] }}
+                                                        <span class="ai-chip" title="{{ in_array($attachment['kind'], ['log', 'issue'], true) ? \Illuminate\Support\Str::limit($attachment['text'] ?? '', 600) : $attachment['label'] }}">
+                                                            <x-menu-icon :name="match ($attachment['kind']) { 'repo' => 'git', 'issue' => 'bug', default => 'logs' }" class="size-3.5" /> {{ $attachment['label'] }}
                                                         </span>
                                                     @endif
                                                 @endforeach
@@ -200,9 +203,43 @@
                             @endforelse
                         @endif
                     </div>
+                @elseif ($picker === 'issue')
+                    <div class="ai-pop" @click.outside="$wire.closePicker()">
+                        <p class="ai-pop-head">{{ $issueWebsite ? 'Which issue?' : 'Issues of which website?' }} <button type="button" class="ai-icon is-small" wire:click="closePicker" aria-label="Close"><x-menu-icon name="close" class="size-4" /></button></p>
+                        @if (! $issueWebsite)
+                            @forelse ($issueWebsites as $website)
+                                <button type="button" wire:click="$set('issueWebsite', {{ $website->id }})" wire:key="issuesite-{{ $website->id }}"><x-menu-icon name="globe" class="size-4 shrink-0" /> <b>{{ $website->name }}</b></button>
+                            @empty
+                                <p class="ai-note px-2 py-3">No website sends errors to GlitchTip yet. Turn it on in a website's GlitchTip tab.</p>
+                            @endforelse
+                        @else
+                            <input class="input" type="search" wire:model.live.debounce.300ms="pickerSearch" placeholder="Search issues">
+                            <div wire:loading.flex wire:target="issueWebsite,pickerSearch" class="ai-note px-2 py-2">Loading from GlitchTip…</div>
+                            @forelse ($issueRows as $issue)
+                                <button type="button" wire:click="addIssue(@js($issue['id']))" wire:key="issue-{{ $issue['id'] }}" class="ai-issue">
+                                    <span class="ai-issue-level" data-level="{{ $issue['level'] }}">{{ $issue['level'] }}</span>
+                                    <b>{{ $issue['type'] !== '' ? $issue['type'] : $issue['title'] }}</b>
+                                    <span>{{ \Illuminate\Support\Str::after($issue['title'], ': ') }} · {{ $issue['count'] }}×</span>
+                                </button>
+                            @empty
+                                <p class="ai-note px-2 py-3">No open issues{{ $pickerSearch !== '' ? ' match' : '' }}.</p>
+                            @endforelse
+                        @endif
+                    </div>
+                @elseif ($picker === 'fix')
+                    <div class="ai-pop" @click.outside="$wire.closePicker()">
+                        <p class="ai-pop-head">Fix the open issues of which website? <button type="button" class="ai-icon is-small" wire:click="closePicker" aria-label="Close"><x-menu-icon name="close" class="size-4" /></button></p>
+                        <p class="ai-note px-2 pb-2">Its open GlitchTip issues are attached with their stack traces, and the message asks the AI to fix them in the code, commit, deploy and check. You can edit the message before sending.</p>
+                        @forelse ($issueWebsites as $website)
+                            <button type="button" wire:click="fixWebsite({{ $website->id }})" wire:key="fixsite-{{ $website->id }}"><x-menu-icon name="globe" class="size-4 shrink-0" /> <b>{{ $website->name }}</b></button>
+                        @empty
+                            <p class="ai-note px-2 py-3">No website sends errors to GlitchTip yet. Turn it on in a website's GlitchTip tab.</p>
+                        @endforelse
+                        <div wire:loading.flex wire:target="fixWebsite" class="ai-note px-2 py-2">Reading the issues and their stack traces…</div>
+                    </div>
                 @endif
 
-                <div class="ai-box" @dragover.prevent @drop.prevent="for (const file of $event.dataTransfer.files) { if (file.type.startsWith('image/')) $wire.upload('pasted', file) }">
+                <div class="ai-box" @dragover.prevent @drop.prevent="Array.from($event.dataTransfer.files).filter((file) => file.type.startsWith('image/')).forEach((file) => $wire.upload('pasted', file))">
                     @if ($attached)
                         <div class="ai-attachments">
                             @foreach ($attached as $index => $attachment)
@@ -214,8 +251,8 @@
                                     </span>
                                 @else
                                     <span class="ai-chip" wire:key="att-{{ $index }}-{{ $attachment['label'] }}">
-                                        <x-menu-icon :name="$attachment['kind'] === 'repo' ? 'github' : 'article'" class="size-4" />
-                                        {{ $attachment['label'] }}
+                                        <x-menu-icon :name="match ($attachment['kind']) { 'repo' => 'github', 'issue' => 'bug', default => 'article' }" class="size-4" />
+                                        <span class="ai-chip-label">{{ $attachment['label'] }}</span>
                                         <button type="button" wire:click="removeAttachment({{ $index }})" aria-label="Remove"><x-menu-icon name="close" class="size-3.5" /></button>
                                     </span>
                                 @endif
@@ -227,7 +264,7 @@
                     <textarea x-ref="box" wire:model="message" rows="1" placeholder="Ask, or describe what to do…" aria-label="Message"
                         @keydown.enter="if (! $event.shiftKey && ! window.matchMedia('(pointer: coarse)').matches) { $event.preventDefault(); $wire.send() }"
                         @input="slash = $event.target.value === '/'"
-                        @paste="for (const item of $event.clipboardData.items) { if (item.type.startsWith('image/')) { $event.preventDefault(); $wire.upload('pasted', item.getAsFile()) } }"></textarea>
+                        @paste="Array.from($event.clipboardData.items).filter((item) => item.type.startsWith('image/')).forEach((item) => { $event.preventDefault(); $wire.upload('pasted', item.getAsFile()) })"></textarea>
                     <div class="ai-composer-bar">
                         <div class="relative">
                             <button type="button" class="ai-round" @click="plus = ! plus" title="Attach" aria-label="Attach"><x-menu-icon name="plus" class="size-5" /></button>
@@ -235,6 +272,8 @@
                                 <label class="cursor-pointer"><x-menu-icon name="image" class="size-4" /> Add an image <small class="ml-auto text-muted">or paste</small> <input type="file" accept="image/*" class="hidden" wire:model="pasted" @change="plus = false"></label>
                                 <button type="button" wire:click="openPicker('repo')" @click="plus = false"><x-menu-icon name="github" class="size-4" /> Import a GitHub repository</button>
                                 <button type="button" wire:click="openPicker('log')" @click="plus = false"><x-menu-icon name="article" class="size-4" /> Add a website's error logs</button>
+                                <button type="button" wire:click="openPicker('issue')" @click="plus = false"><x-menu-icon name="bug" class="size-4" /> Attach a GlitchTip issue</button>
+                                <button type="button" wire:click="openPicker('fix')" @click="plus = false"><x-menu-icon name="bolt" class="size-4" /> Fix a website's issues</button>
                                 <button type="button" @click="plus = false; slash = true"><x-menu-icon name="build" class="size-4" /> Use a panel tool <small class="ml-auto text-muted">/</small></button>
                             </div>
                         </div>
@@ -305,7 +344,10 @@
             $who = $statuses[$login]['who'] ?? null;
         @endphp
         <x-modal-frame class="modal-root-top" open="$wire.login" close="$wire.closeLogin()">
-            <div class="ai-login" @if ($loginExit === null) wire:poll.1s="pollLogin" @endif>
+            <div class="ai-login">
+                @if ($loginExit === null)
+                    <span hidden wire:poll.1s="pollLogin"></span>
+                @endif
                 <div class="modal-head">
                     <h2 class="flex min-w-0 items-center gap-2.5">
                         <span class="ai-mark is-big"><x-agent-icon :agent="$login" /></span>

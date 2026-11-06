@@ -34,6 +34,7 @@
         <button type="button" wire:click="$set('tab', 'browse')" aria-pressed="{{ $tab === 'browse' ? 'true' : 'false' }}">Rows</button>
         <button type="button" wire:click="$set('tab', 'structure')" aria-pressed="{{ $tab === 'structure' ? 'true' : 'false' }}">Structure</button>
         <button type="button" wire:click="$set('tab', 'sql')" aria-pressed="{{ $tab === 'sql' ? 'true' : 'false' }}">SQL</button>
+        <button type="button" wire:click="$set('tab', 'history')" aria-pressed="{{ $tab === 'history' ? 'true' : 'false' }}">History</button>
     </div>
 
     @if ($error)
@@ -42,6 +43,8 @@
 
     @if ($tab === 'sql')
         @include('livewire.database.partials.sql', ['sqlTarget' => $database])
+    @elseif ($tab === 'history')
+        @include('livewire.database.partials.sql-history')
     @elseif ($tab === 'structure')
         <x-layer-card title="Columns" :helper="$cryptoMethods->isNotEmpty() ? 'Encrypted with: the Rows grid, filters, search, and the row form show that column decrypted with the method, and save it encrypted. Only the setting is kept; the data is not changed.' : null" flush>
             <div class="overflow-x-auto">

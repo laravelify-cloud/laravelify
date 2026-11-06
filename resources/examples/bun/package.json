@@ -1,0 +1,5 @@
+{
+  "name": "laravelify-bun",
+  "private": true,
+  "scripts": { "start": "bun run index.ts" }
+}

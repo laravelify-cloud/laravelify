@@ -143,6 +143,21 @@
                 </div>
             </div>
 
+            @if ($freeDomains)
+                {{-- A free domain from Laravelify Cloud: <client>-<name>.laravelify.cloud --}}
+                <div class="free-domain" x-data="{ name: '' }">
+                    <span class="text-[12px] text-muted">Free domain</span>
+                    <div class="free-domain-input">
+                        <span class="font-mono">https://{{ $freeDomains['prefix'] }}-</span>
+                        <input class="input font-mono" x-model="name" @input="name = name.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 30)" placeholder="shop" aria-label="Free domain name" spellcheck="false">
+                        <span class="font-mono">.{{ $freeDomains['domain'] }}</span>
+                        <button type="button" class="btn" :disabled="name.length === 0" @click="$wire.useFreeDomain(name).then(() => value = $wire.domain)">Use</button>
+                    </div>
+                    <small class="text-muted">Made for you by Laravelify Cloud when you save: HTTPS works at once, nothing to set up in Cloudflare.</small>
+                    @error('free_domain') <small class="error">{{ $message }}</small> @enderror
+                </div>
+            @endif
+
             {{-- What the typed name is now: free, in DNS already, or a website's --}}
             <p class="domain-state" x-show="value.trim() !== ''" x-cloak :class="'is-' + state().kind">
                 <span x-text="state().icon"></span>
@@ -304,13 +319,27 @@
                 <span>Run Laravel Reverb (websocket) under Supervisor</span>
             </label>
         @endif
-        <label class="flex items-center gap-2">
-            <input type="checkbox" wire:model="provision_database">
-            <span>Create a MySQL database and user for this site</span>
-        </label>
+        @include('livewire.websites.partials.database-choice')
     @endif
 
-    @if ($runtime === 'node' || ($runtime === 'static' && $type !== 'static'))
+    @php
+        $toolchain = \App\Support\SiteTypes::TOOLCHAINS[\App\Support\SiteTypes::toolchain($type)] ?? null;
+    @endphp
+    @if ($toolchain)
+        <div class="field">
+            <span>{{ $toolchain['label'] }} version</span>
+            <div class="flex flex-wrap gap-2">
+                @foreach ($toolchain['versions'] as $version)
+                    <button class="choice {{ ($runtime_version ?: $toolchain['default']) === $version ? 'active' : '' }}" type="button" wire:click="$set('runtime_version', '{{ $version }}')">{{ $version }}</button>
+                @endforeach
+            </div>
+            <input class="input mt-2 w-40 font-mono" wire:model.live.debounce.400ms="runtime_version" placeholder="or any: {{ $toolchain['versions'][0] }}.1" aria-label="Another {{ $toolchain['label'] }} version" spellcheck="false">
+            <small class="text-muted">The server installs this {{ $toolchain['label'] }} on the first deploy if it does not have it yet.</small>
+            @error('runtime_version') <small class="error">{{ $message }}</small> @enderror
+        </div>
+    @endif
+
+    @if (! $toolchain && ($runtime === 'node' || ($runtime === 'static' && $type !== 'static')))
         <div class="field">
             <span>Node.js version</span>
             <div class="flex flex-wrap gap-2">
@@ -318,21 +347,26 @@
                     <button class="choice {{ $node_version === $version ? 'active' : '' }}" type="button" wire:click="$set('node_version', '{{ $version }}')">{{ $version }}</button>
                 @endforeach
             </div>
+                <input class="input mt-2 w-40 font-mono" wire:model.live.debounce.400ms="node_version" placeholder="or any: 19.0.0" aria-label="Another Node.js version" spellcheck="false">
+                <small class="text-muted">Any Node.js from 14 on, like 19 or 19.0.0. A version the server does not have is installed on the next deploy.</small>
             @error('node_version') <small class="error">{{ $message }}</small> @enderror
         </div>
         @if ($runtime === 'node')
-            <label class="flex items-center gap-2">
-                <input type="checkbox" wire:model="provision_database">
-                <span>Create a MySQL database and user for this site</span>
-            </label>
+            @include('livewire.websites.partials.database-choice')
         @endif
+    @endif
 
+    @if ($toolchain && $runtime === 'node')
+        @include('livewire.websites.partials.database-choice')
+    @endif
+
+    @if ($runtime === 'node' || ($runtime === 'static' && $type !== 'static'))
         <details class="card p-3">
             <summary class="cursor-pointer text-[13.5px] font-medium">Build settings <span class="font-normal text-muted">(optional, the defaults work for most projects)</span></summary>
             <div class="mt-3 flex flex-col gap-3">
                 <label class="field">
                     <span>Install command</span>
-                    <input class="input font-mono" wire:model="install_command" placeholder="auto: npm ci, pnpm install, or yarn install, from your lockfile">
+                    <input class="input font-mono" wire:model="install_command" placeholder="{{ $definition['install'] ?? 'auto: npm ci, pnpm install, or yarn install, from your lockfile' }}">
                     @error('install_command') <small class="error">{{ $message }}</small> @enderror
                 </label>
                 <label class="field">

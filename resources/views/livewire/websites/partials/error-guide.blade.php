@@ -41,6 +41,29 @@
         'browser' => [
             ['In the <head> of every page, before your own scripts', "<script src=\"https://browser.sentry-cdn.com/11.9.0/bundle.min.js\" crossorigin=\"anonymous\"></script>\n<script>Sentry.init({ dsn: '{$dsn}' });</script>"],
         ],
+        'java' => [
+            ['Maven (pom.xml), in <dependencies>. Spring Boot 2 uses sentry-spring-boot-starter instead', "<dependency>\n    <groupId>io.sentry</groupId>\n    <artifactId>sentry-spring-boot-starter-jakarta</artifactId>\n    <version>".\App\Support\SentrySetup::JAVA_VERSION."</version>\n</dependency>"],
+            ['Or Gradle (build.gradle)', "implementation 'io.sentry:sentry-spring-boot-starter-jakarta:".\App\Support\SentrySetup::JAVA_VERSION."'"],
+            ['Nothing else: the starter reads SENTRY_DSN from .env and reports unhandled errors. Commit, push or Deploy.', 'SENTRY_DSN='.$dsn],
+        ],
+        'dotnet' => [
+            ['Install the Sentry SDK for ASP.NET Core', 'dotnet add package Sentry.AspNetCore'],
+            ['In Program.cs, right after CreateBuilder', "var builder = WebApplication.CreateBuilder(args);\nbuilder.WebHost.UseSentry();"],
+        ],
+        'python' => [
+            ['Add to requirements.txt (django, flask or fastapi in the brackets)', 'sentry-sdk['.($errorTracking['type'] ?? 'django').']'],
+            [($errorTracking['type'] ?? '') === 'django' ? 'At the end of settings.py' : 'At the top of the file that makes the app (app.py or main.py)', "import sentry_sdk\n\nsentry_sdk.init(traces_sample_rate=0.2)"],
+            ['It reads SENTRY_DSN from .env and finds the framework by itself.', 'SENTRY_DSN='.$dsn],
+        ],
+        'go' => [
+            ['Add the Sentry SDK for Go', 'go get github.com/getsentry/sentry-go'],
+            ['At the start of main()', "if err := sentry.Init(sentry.ClientOptions{Dsn: os.Getenv(\"SENTRY_DSN\")}); err != nil {\n    log.Printf(\"sentry: %v\", err)\n}\ndefer sentry.Flush(2 * time.Second)"],
+            ['Report a recovered panic or an error', 'sentry.CaptureException(err)'],
+        ],
+        'bun' => [
+            ['Install the Sentry SDK for Bun', 'bun add @sentry/bun'],
+            ['First lines of the file Bun runs (index.ts)', "import * as Sentry from '@sentry/bun';\n\nSentry.init({ dsn: process.env.SENTRY_DSN });"],
+        ],
         default => [
             ['Install the Sentry SDK for Node.js', 'npm install @sentry/node'],
             ['First lines of your entry file, before anything else', "const Sentry = require('@sentry/node');\n\nSentry.init({ dsn: process.env.SENTRY_DSN || '{$dsn}' });"],

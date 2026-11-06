@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Website;
+use App\Support\DatabaseEngines;
 use RuntimeException;
 
 /**
@@ -27,6 +28,11 @@ class DatabaseImporter
     {
         if ((! $website->isPhp() && ! $website->isNode()) || ! $website->provision_database || blank($website->db_name) || blank($website->db_username) || blank($website->db_password)) {
             throw new RuntimeException($website->name.' has no database made by the panel. Create the website with create_database, or add one on its page.');
+        }
+
+        // .sql dumps are MySQL's: other engines import with their own tools for now.
+        if (($website->db_engine ?: DatabaseEngines::MYSQL) !== DatabaseEngines::MYSQL) {
+            throw new RuntimeException($website->name.' uses '.DatabaseEngines::label($website->db_engine).': importing .sql dumps works for MySQL and MariaDB only. Use psql, mongorestore, or sqlite3 in the website\'s terminal.');
         }
 
         $relative = trim(str_replace('\\', '/', $relative), '/');

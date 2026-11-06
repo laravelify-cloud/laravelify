@@ -249,6 +249,10 @@ class AiAssistant
                 case 'log':
                     $notes[] = 'The last lines of the log "'.$attachment['label'].'":'."\n```\n".mb_substr((string) $attachment['text'], -12000)."\n```";
                     break;
+
+                case 'issue':
+                    $notes[] = 'Errors from GlitchTip ('.$attachment['label'].'). list-issues shows more; fix code with commit-files:'."\n```\n".mb_substr((string) $attachment['text'], 0, 20000)."\n```";
+                    break;
             }
         }
 

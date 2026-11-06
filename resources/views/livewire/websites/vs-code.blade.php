@@ -33,7 +33,10 @@
                 $percent = $downloading && $total > 0 ? min(100, (int) floor($installing / $total * 100)) : null;
             @endphp
             <p class="vsc-launch-step">{{ $downloading && ! $done ? 'Installing VS Code…' : 'Starting VS Code…' }}</p>
-            <ol class="vsc-launch-steps" @if ($downloading) wire:poll.3s="launch" @endif>
+            @if ($downloading)
+                <span hidden wire:poll.3s="launch"></span>
+            @endif
+            <ol class="vsc-launch-steps">
                 <li @class(['is-active' => $downloading && ! $done, 'is-done' => ! $downloading])>
                     <span class="vsc-step-icon">
                         @if ($downloading && ! $done)

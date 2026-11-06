@@ -7,6 +7,7 @@ use App\Services\ConfigRenderer;
 use App\Services\HostWriter;
 use App\Support\BuildOutput;
 use App\Support\GitInput;
+use App\Support\NodeVersion;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -37,7 +38,7 @@ class UpdateWebsite extends Tool
             'auto_deploy' => ['boolean'],
             'github_app_id' => ['nullable', 'integer', 'exists:github_apps,id'],
             'php_version' => ['string', Rule::in(config('laravelify.php_versions'))],
-            'node_version' => ['string', Rule::in(config('laravelify.node_versions'))],
+            'node_version' => ['string', 'max:10', 'regex:'.NodeVersion::PATTERN],
             'install_command' => $command,
             'build_command' => $command,
             'start_command' => $command,

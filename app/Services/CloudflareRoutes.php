@@ -25,16 +25,35 @@ class CloudflareRoutes
      */
     public function sync(Website $website, array $removed = []): array
     {
+        // Free domains (john-shop.laravelify.cloud) are made by Laravelify Cloud on this server's
+        // tunnel; the rest go through the website's own tunnel and the saved Cloudflare token.
+        $free = app(CloudDomains::class);
+        $freeLines = [];
+        $hosts = $website->hostnames();
+
+        foreach (array_filter($hosts, fn (string $host) => $free->isFree($host)) as $host) {
+            $status = $free->claim($host);
+            $freeLines[] = $this->line($host, 'Laravelify Cloud', $status, str_starts_with($status, 'error') ? $status : null);
+        }
+
+        foreach (array_filter($removed, fn (string $host) => $free->isFree($host) && ! in_array($host, $hosts, true)) as $host) {
+            $freeLines[] = $this->line($host, 'removed', $free->release($host), null);
+        }
+
+        $hosts = array_values(array_filter($hosts, fn (string $host) => ! $free->isFree($host)));
+        $removed = array_values(array_filter($removed, fn (string $host) => ! $free->isFree($host)));
         $tunnel = $website->tunnel;
 
-        if (! $tunnel) {
-            return ['configured' => $this->api->configured(), 'lines' => [], 'note' => null];
+        if (! $tunnel || $hosts === [] && $removed === []) {
+            return ['configured' => $this->api->configured() || $freeLines !== [], 'lines' => $freeLines, 'note' => null];
         }
 
         $service = 'http://127.0.0.1:'.($website->http_port ?: 80);
-        $desired = array_fill_keys($website->hostnames(), $service);
+        $desired = array_fill_keys($hosts, $service);
+        $report = $this->reconcile($tunnel, $desired, array_values(array_diff($removed, array_keys($desired))));
+        $report['lines'] = [...$freeLines, ...$report['lines']];
 
-        return $this->reconcile($tunnel, $desired, array_values(array_diff($removed, array_keys($desired))));
+        return $report;
     }
 
     /**

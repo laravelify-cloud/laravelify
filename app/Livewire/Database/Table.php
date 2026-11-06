@@ -27,7 +27,7 @@ class Table extends PanelComponent
 
     public string $table = '';
 
-    #[Url]
+    #[Url(history: true)]
     public string $tab = 'browse';
 
     #[Url]

@@ -15,8 +15,10 @@ use App\Services\ConfigRenderer;
 use App\Services\DatabaseProvisioner;
 use App\Services\DeploymentLogger;
 use App\Services\GithubWebhook;
+use App\Services\ServerCatalog;
 use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -110,6 +112,39 @@ class DeployAndTunnelTest extends TestCase
         $this->assertSame('phpmyadmin.internal', $phpmyadmin->domain);
         $this->assertSame('127.0.0.1', ServerService::query()->where('key', 'mysql')->value('domain'));
         $this->assertSame('127.0.0.1', ServerService::query()->where('key', 'redis')->value('domain'));
+    }
+
+    public function test_phpmyadmin_at_a_path_of_the_panel_can_move_to_another_path(): void
+    {
+        $this->actingAs(User::factory()->create([
+            'two_factor_secret' => app(TwoFactor::class)->generateSecret(),
+            'two_factor_confirmed_at' => now(),
+        ]));
+        $phpmyadmin = ServerService::query()->where('key', 'phpmyadmin')->firstOrFail();
+        $phpmyadmin->update([
+            'domain' => 'panel.example.com/phpmyadmin',
+            'settings' => ['php_version' => '8.4', 'path' => '/phpmyadmin'],
+            'config' => ServerCatalog::phpMyAdminPathNginx('/phpmyadmin', 'unix:/run/php/php8.4-fpm.sock'),
+        ]);
+
+        Livewire::test(ServerEdit::class, ['service' => $phpmyadmin])
+            ->assertSee('Path')
+            ->assertSet('path', '/phpmyadmin')
+            ->set('path', '/x')
+            ->call('save')
+            ->assertHasErrors('path')
+            ->set('path', 'DB-Admin/')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $phpmyadmin->refresh();
+        $this->assertSame('panel.example.com/db-admin', $phpmyadmin->domain);
+        $this->assertSame('/db-admin', $phpmyadmin->settings['path']);
+        $this->assertStringContainsString('location ^~ /db-admin/ {', $phpmyadmin->config);
+        $this->assertStringContainsString('location = /db-admin/laravelify-signon.php {', $phpmyadmin->config);
+        $this->assertStringNotContainsString('server {', $phpmyadmin->config);
+        $this->assertStringNotContainsString('location ^~ /phpmyadmin/', $phpmyadmin->config);
+        $this->assertSame($phpmyadmin->config, ServerCatalog::withSignonLocation($phpmyadmin->config), 'Sign-in is already in the path config.');
     }
 
     public function test_mysql_redis_and_phpmyadmin_settings_update_their_configs(): void
@@ -280,5 +315,20 @@ class DeployAndTunnelTest extends TestCase
             'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $body, $secret),
         ];
+    }
+
+    public function test_the_page_starts_refreshing_once_a_deploy_is_queued_from_it(): void
+    {
+        $this->actingAs(User::factory()->create([
+            'two_factor_secret' => app(TwoFactor::class)->generateSecret(),
+            'two_factor_confirmed_at' => now(),
+        ]));
+        $website = Website::factory()->create();
+        Queue::fake();
+
+        Livewire::test(WebsiteShow::class, ['website' => $website])
+            ->assertDontSeeHtml('<span hidden wire:poll.2s></span>')
+            ->call('deploy')
+            ->assertSeeHtml('<span hidden wire:poll.2s></span>');
     }
 }

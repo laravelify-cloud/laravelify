@@ -1,0 +1,6 @@
+{
+  "name": "laravelify-gatsby",
+  "private": true,
+  "scripts": { "build": "gatsby build" },
+  "dependencies": { "gatsby": "^5", "react": "^18", "react-dom": "^18" }
+}

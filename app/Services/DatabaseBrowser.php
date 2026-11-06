@@ -180,6 +180,23 @@ class DatabaseBrowser
     /**
      * @return list<array{name: string, rows: int, size: int, engine: ?string, collation: ?string, comment: string, updated: ?string}>
      */
+    /**
+     * Every table (and view) of a database with its columns in one query, for the SQL editor's autocomplete.
+     *
+     * @return array<string, list<string>>
+     */
+    public function schema(string $database): array
+    {
+        $this->assertDatabase($database);
+        $schema = [];
+
+        foreach ($this->connection()->select('SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION LIMIT 20000', [$database]) as $row) {
+            $schema[(string) $row->t][] = (string) $row->c;
+        }
+
+        return $schema;
+    }
+
     public function tables(string $database): array
     {
         $this->assertDatabase($database);

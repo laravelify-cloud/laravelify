@@ -202,4 +202,28 @@ class NotificationsAndSecretsTest extends TestCase
 
         return $user;
     }
+
+    public function test_laravelify_cloud_turns_on_notifications_through_its_relay(): void
+    {
+        Http::fake(['app.laravelify.cloud/*' => Http::response(['ok' => true, 'result' => []])]);
+        putenv('LARAVELIFY_TELEGRAM_TOKEN=7:'.str_repeat('a', 40));
+
+        try {
+            $this->artisan('laravelify:telegram-connect', ['chat' => '555', '--api' => 'https://app.laravelify.cloud/telegram/'])->assertSuccessful();
+        } finally {
+            putenv('LARAVELIFY_TELEGRAM_TOKEN');
+        }
+
+        $this->assertSame('1', Setting::getValue('telegram_enabled'));
+        app(Telegram::class)->send('Deploy failed');
+
+        Http::assertSent(fn (Request $request) => $request->url() === 'https://app.laravelify.cloud/telegram/bot7:'.str_repeat('a', 40).'/sendMessage'
+            && $request['chat_id'] === '555');
+    }
+
+    public function test_the_telegram_connect_command_needs_a_token(): void
+    {
+        $this->artisan('laravelify:telegram-connect', ['chat' => '555'])->assertFailed();
+        $this->assertNull(Setting::getValue('telegram_enabled'));
+    }
 }

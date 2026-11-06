@@ -10,30 +10,42 @@ use App\Models\GithubApp;
 use App\Models\Website;
 use App\Services\ConfigRenderer;
 use App\Services\DatabaseProvisioner;
+use App\Services\DatabaseServers;
 use App\Services\Glitchtip;
 use App\Services\HostWriter;
 use App\Services\PanelPreview;
 use App\Services\PanelTaskRunner;
 use App\Services\ServerProcesses;
+use App\Services\SiteFiles;
 use App\Services\SiteSecurity;
+use App\Services\SiteUser;
 use App\Services\WebsiteDomains;
 use App\Services\WebsiteRedirects;
 use App\Services\WebsiteSwitch;
 use App\Support\BuildOutput;
+use App\Support\DatabaseEngines;
 use App\Support\EnvFile;
 use App\Support\GitInput;
+use App\Support\NodeVersion;
 use App\Support\Redirects;
 use App\Support\SentrySetup;
+use App\Support\SiteTypes;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Renderless;
+use Livewire\WithPagination;
 use Throwable;
 
 class Show extends PanelComponent
 {
     use FollowsTasks;
+    use WithPagination;
+
+    /** Deployments shown per page in the Deployments tab. */
+    public const DEPLOYMENTS_PER_PAGE = 20;
 
     public Website $website;
 
@@ -65,6 +77,8 @@ class Show extends PanelComponent
 
     public string $node_version = '22';
 
+    public string $runtime_version = '';
+
     public string $install_command = '';
 
     public string $build_command = '';
@@ -78,6 +92,9 @@ class Show extends PanelComponent
     public bool $enable_reverb = false;
 
     public string $env_content = '';
+
+    /** The .env is in the page: only after the authenticator code (it holds the site's secrets). */
+    public bool $envUnlocked = false;
 
     public string $nginx_config = '';
 
@@ -191,14 +208,16 @@ class Show extends PanelComponent
                 'public_dir' => $folder,
             ],
             $website->isNode() => [
-                'node_version' => ['required', Rule::in(config('laravelify.node_versions'))],
+                'node_version' => $website->hasToolchain() ? ['nullable'] : NodeVersion::rule(),
+                'runtime_version' => $website->hasToolchain() ? ['required', 'string', 'max:20', 'regex:'.SiteTypes::TOOLCHAINS[$website->toolchain()]['pattern']] : ['nullable'],
                 'port' => ['required', 'integer', 'min:1024', 'max:65535', Rule::unique('websites', 'port')->ignore($website->id)],
                 'install_command' => $command,
                 'build_command' => $command,
                 'start_command' => $command,
             ],
             default => [
-                'node_version' => $website->usesNode() ? ['required', Rule::in(config('laravelify.node_versions'))] : ['nullable'],
+                'node_version' => $website->usesNode() ? NodeVersion::rule() : ['nullable'],
+                'runtime_version' => $website->hasToolchain() ? ['required', 'string', 'max:20', 'regex:'.SiteTypes::TOOLCHAINS[$website->toolchain()]['pattern']] : ['nullable'],
                 'install_command' => $command,
                 'build_command' => $command,
                 'public_dir' => $folder,
@@ -228,6 +247,7 @@ class Show extends PanelComponent
         } elseif ($website->isNode()) {
             $website->update([
                 'node_version' => $this->node_version,
+                'runtime_version' => $website->hasToolchain() ? $this->runtime_version : null,
                 'port' => $this->port,
                 'install_command' => $blank($this->install_command),
                 'build_command' => $blank($this->build_command),
@@ -236,6 +256,7 @@ class Show extends PanelComponent
         } else {
             $website->update([
                 'node_version' => $website->usesNode() ? $this->node_version : null,
+                'runtime_version' => $website->hasToolchain() ? $this->runtime_version : null,
                 'install_command' => $website->usesNode() ? $blank($this->install_command) : null,
                 'build_command' => $website->usesNode() ? $blank($this->build_command) : null,
                 'public_dir' => $blank(trim($this->public_dir, '/')),
@@ -249,8 +270,26 @@ class Show extends PanelComponent
         $this->saved();
     }
 
+    /** Load the .env into the page, after the authenticator code. */
+    public function loadEnvironment(): void
+    {
+        if (! self::secretsUnlocked()) {
+            return;
+        }
+
+        $this->env_content = (string) ($this->website->env_content ?? '');
+        $this->envUnlocked = true;
+    }
+
     public function saveEnvironment(HostWriter $hostWriter): void
     {
+        // Saving what was never loaded would wipe the .env.
+        if (! $this->envUnlocked) {
+            $this->toast('Show the environment with your authenticator code first.', 'error');
+
+            return;
+        }
+
         $this->validate([
             'env_content' => ['nullable', 'string'],
         ]);
@@ -363,26 +402,47 @@ class Show extends PanelComponent
         }
     }
 
-    public function provisionDatabase(DatabaseProvisioner $databases): void
+    /** Make the website's database: in $engine the first time, again in its own engine after that. */
+    /** The database engine the page offers to install (PostgreSQL or MongoDB), or ''. */
+    public string $installEngine = '';
+
+    /** Install the engine asked about in the background, then create this site's database in it. */
+    public function installDatabaseEngine(): void
+    {
+        $engine = $this->installEngine;
+        $this->installEngine = '';
+
+        if (! DatabaseServers::installable($engine)) {
+            return;
+        }
+
+        $this->runInBackground('databases.install', 'databases', 'Installing '.DatabaseEngines::label($engine).' for '.$this->website->name, [
+            'engine' => $engine,
+            'website_id' => $this->website->id,
+        ]);
+    }
+
+    public function provisionDatabase(DatabaseProvisioner $databases, string $engine = ''): void
     {
         if (! $this->website->isPhp() && ! $this->website->isNode()) {
             return;
         }
 
-        if (! $this->website->db_name) {
-            $this->website->fill($databases->credentials($this->website->slug));
-            $this->website->provision_database = true;
-            // PHP gets its usual template. A Node app already has its own .env, so only the
-            // database variables are added (DATABASE_URL for Prisma and the other drivers).
-            $this->website->env_content = $this->website->isNode()
-                ? EnvFile::set((string) $this->website->env_content, $databases->envValues($this->website))
-                : app(ConfigRenderer::class)->env($this->website);
-            $this->website->save();
-            $this->env_content = (string) $this->website->env_content;
+        $this->installEngine = '';
+
+        // PostgreSQL or MongoDB not on this server yet: the page asks whether to install it first.
+        if (! $this->website->db_name && DatabaseServers::installable($engine)) {
+            $this->installEngine = $engine;
+
+            return;
         }
 
         try {
-            $this->toast($databases->create($this->website));
+            $this->toast($databases->provisionFor($this->website, $engine));
+
+            if ($this->envUnlocked) {
+                $this->env_content = (string) $this->website->env_content;
+            }
         } catch (Throwable $exception) {
             $this->addError('database', $exception->getMessage());
             $this->toast($exception->getMessage(), 'error');
@@ -491,6 +551,7 @@ class Show extends PanelComponent
             'basic_auth_password' => $this->website->basic_auth_password,
             'webhook_secret' => $this->website->webhook_secret,
             'db_password' => $this->website->db_password,
+            'glitchtip_password' => app(Glitchtip::class)->login()['password'] ?? null,
             default => null,
         };
     }
@@ -522,6 +583,61 @@ class Show extends PanelComponent
     {
         $this->website->update(['auto_deploy' => ! $this->website->auto_deploy]);
         $this->toast($this->website->auto_deploy ? 'Pushes to '.$this->website->branch.' now deploy automatically.' : 'Auto deploy is off. Pushes are recorded but not deployed.');
+    }
+
+    /** Put an earlier deployment's code live again (the code live now is saved first). */
+    public function rollBack(int $id): void
+    {
+        $to = $this->website->deployments()->whereKey($id)->where('status', 'success')->whereNotNull('commit_sha')->first();
+
+        if (! $to) {
+            $this->toast('Only a deployment that finished can be rolled back to.', 'error');
+
+            return;
+        }
+
+        if (! $this->website->enabled) {
+            $this->toast('This website is turned off. Turn it on in the Danger zone to deploy.', 'error');
+
+            return;
+        }
+
+        $deployment = $this->website->queueRollback($to);
+
+        if (! $deployment) {
+            $this->toast('A deployment is already running. Try again when it is done.', 'error');
+
+            return;
+        }
+
+        $this->deploymentId = $deployment->id;
+        $this->toast('Rolling back to '.substr((string) $to->commit_sha, 0, 7).'. The code live now is saved first.');
+    }
+
+    /** The code a rollback replaced, as the .tar.gz it was saved to. */
+    public function downloadSnapshot(int $id, SiteFiles $files): mixed
+    {
+        $deployment = $this->website->deployments()->whereKey($id)->whereNotNull('snapshot_path')->first();
+        $path = (string) $deployment?->snapshot_path;
+
+        if ($path === '' || ! str_ends_with($path, '.tar.gz')) {
+            $this->toast('No saved code for this deployment.', 'error');
+
+            return null;
+        }
+
+        $copy = storage_path('app/tmp/snapshot-'.bin2hex(random_bytes(6)).'.tar.gz');
+        File::ensureDirectoryExists(dirname($copy));
+        $read = $files->execToFile(['cat', $path], $copy, null, app(SiteUser::class)->for($this->website));
+
+        if (! $read->ok || ! is_file($copy) || filesize($copy) === 0) {
+            @unlink($copy);
+            $this->toast('The saved code could not be read: '.($read->output ?: 'the file is gone.'), 'error');
+
+            return null;
+        }
+
+        return response()->download($copy, basename($path))->deleteFileAfterSend();
     }
 
     public function deploy(): void
@@ -563,7 +679,7 @@ class Show extends PanelComponent
 
     public function toggleDeploymentSelection(): void
     {
-        $ids = $this->website->deployments()->limit(20)->pluck('id')->map(fn ($id) => (string) $id)->all();
+        $ids = $this->website->deployments()->forPage($this->getPage('deploys'), self::DEPLOYMENTS_PER_PAGE)->pluck('id')->map(fn ($id) => (string) $id)->all();
         $this->selectedDeployments = count($this->selectedDeployments) === count($ids) ? [] : $ids;
     }
 
@@ -667,8 +783,9 @@ class Show extends PanelComponent
             'nodeVersions' => config('laravelify.node_versions'),
             'tunnels' => CloudflareTunnel::query()->orderBy('name')->get(),
             'sources' => GithubApp::query()->orderBy('name')->get(),
-            'deployments' => $deployments = $this->website->deployments()->limit(20)->get(),
-            'deploying' => $deployments->contains(fn ($deployment) => in_array($deployment->status, ['queued', 'running'], true)),
+            'deployments' => $deployments = $this->website->deployments()->paginate(self::DEPLOYMENTS_PER_PAGE, pageName: 'deploys'),
+            'latestDeployment' => $this->website->deployments()->first(),
+            'deploying' => $this->website->deployments()->whereIn('status', ['queued', 'running'])->exists(),
             'selectedDeployment' => $this->deploymentId
                 ? Deployment::query()->find($this->deploymentId)
                 : $this->website->deployments()->first(),
@@ -712,6 +829,10 @@ class Show extends PanelComponent
         $sdkFile = match ($this->website->type) {
             'laravel', 'php' => 'composer.json',
             'static' => 'index.html',
+            'spring' => is_file($this->website->deploy_path.'/build.gradle') || is_file($this->website->deploy_path.'/build.gradle.kts') ? 'build.gradle' : 'pom.xml',
+            'aspnet' => 'the .csproj',
+            'django', 'flask', 'fastapi' => 'requirements.txt',
+            'go' => 'go.mod',
             default => 'package.json',
         };
 
@@ -747,6 +868,7 @@ class Show extends PanelComponent
             'dsn' => $dsn,
             'keys' => $glitchtip->envKeys($this->website),
             'guide' => $glitchtip->guide($this->website),
+            'type' => $this->website->type,
             'issues' => $issues,
             'problem' => $problem,
             'url' => $connected ? $glitchtip->projectUrl($this->website) : $glitchtip->open(),
@@ -773,13 +895,15 @@ class Show extends PanelComponent
         $this->github_app_id = (string) ($this->website->github_app_id ?? '');
         $this->php_version = $this->website->php_version ?: '8.4';
         $this->node_version = $this->website->node_version ?: '22';
+        $this->runtime_version = (string) ($this->website->runtimeVersion() ?? '');
         $this->install_command = (string) ($this->website->install_command ?? '');
         $this->build_command = (string) ($this->website->build_command ?? '');
         $this->start_command = (string) ($this->website->start_command ?? '');
         $this->public_dir = (string) ($this->website->public_dir ?? '');
         $this->port = $this->website->port;
         $this->enable_reverb = $this->website->enable_reverb;
-        $this->env_content = $this->website->env_content ?? '';
+        $this->envUnlocked = self::secretsUnlocked();
+        $this->env_content = $this->envUnlocked ? (string) ($this->website->env_content ?? '') : '';
         $this->nginx_config = $this->website->nginx_config ?? '';
         $this->process_config = $this->website->process_config ?? '';
         $this->hide_from_search = (bool) $this->website->hide_from_search;
