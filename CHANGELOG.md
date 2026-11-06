@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.82] - 2026-11-06
+
+- **The installer asks for the Cloudflare tunnel token first and checks it.** A wrong paste stops at once with where to find the token, and the whole `cloudflared service install …` command can be pasted too. Then it asks for the panel domain.
+- **The installer shows that the tunnel connected.** After starting the tunnel it waits for Cloudflare to register it and shows "Cloudflare tunnel connected", or what to check when it did not connect in 30 seconds.
+
 ## [0.3.0-beta.81] - 2026-11-06
 
 - **The installer no longer asks for a database password.** It makes a random 40-character one for MySQL or MariaDB root, PostgreSQL, and MongoDB. The panel shows it on Server → MySQL after your authenticator code, and you can change it there. Pass `MYSQL_ROOT_PASSWORD` to pick your own; a repair keeps the old one.

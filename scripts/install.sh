@@ -17,7 +17,7 @@
 #   PHPMYADMIN_PATH           phpMyAdmin at this path of the panel's address (default /phpmyadmin)
 #   LARAVELIFY_PACK           full (default) or minimal: no phpMyAdmin, no VS Code
 #   LARAVELIFY_TOOLS          exactly which tools: phpmyadmin,vscode,glitchtip (default: vscode), or --tools=
-#   CLOUDFLARE_TUNNEL_TOKEN   skip the tunnel token prompt
+#   CLOUDFLARE_TUNNEL_TOKEN   skip the tunnel token prompt (asked first and checked)
 #   LARAVELIFY_VERSION        release to install, like 1.2.0 (default: latest)
 #   LARAVELIFY_REPO           GitHub owner/name to download releases from
 #   LARAVELIFY_SOURCE         directory to copy into /opt/laravelify instead
@@ -376,6 +376,30 @@ else
   MYSQL_ROOT_PASSWORD=""
 fi
 
+# The tunnel token comes first and is checked before anything else is asked: a token is base64 JSON
+# with the account (a), the tunnel (t), and its secret (s). Whether it really connects is shown
+# after the tunnel starts, near the end.
+if [[ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then
+  read_tty -s -p "Cloudflare tunnel token: " CLOUDFLARE_TUNNEL_TOKEN
+  echo
+fi
+CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN#cloudflared service install }"
+CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN#sudo cloudflared service install }"
+
+if [[ -z "$CLOUDFLARE_TUNNEL_TOKEN" || "$CLOUDFLARE_TUNNEL_TOKEN" =~ [[:space:]] ]]; then
+  echo "The Cloudflare tunnel token is required and cannot contain spaces." >&2
+  exit 1
+fi
+
+TUNNEL_TOKEN_JSON="$(printf '%s' "$CLOUDFLARE_TUNNEL_TOKEN" | base64 -d 2>/dev/null || true)"
+TUNNEL_ID="$(printf '%s' "$TUNNEL_TOKEN_JSON" | grep -oP '"t"\s*:\s*"\K[0-9a-f-]{36}' || true)"
+unset TUNNEL_TOKEN_JSON
+if [[ -z "$TUNNEL_ID" ]]; then
+  echo "That is not a Cloudflare tunnel token. Copy it from Zero Trust → Networks → Tunnels → your tunnel → Install connector (the long text after --token or 'service install')." >&2
+  exit 1
+fi
+printf '%s│%s  %s✓ Tunnel token accepted%s (tunnel %s…)\n' "$C_DIM" "$C_RESET" "$C_GREEN" "$C_RESET" "${TUNNEL_ID:0:8}" >&3
+
 if [[ -z "${PANEL_DOMAIN:-}" ]]; then
   read_tty -p "Laravelify panel domain (example: panel.example.com): " PANEL_DOMAIN
 fi
@@ -417,15 +441,6 @@ else
   PHPMYADMIN_PATH=""
 fi
 
-if [[ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then
-  read_tty -s -p "Cloudflare tunnel token: " CLOUDFLARE_TUNNEL_TOKEN
-  echo
-fi
-
-if [[ -z "$CLOUDFLARE_TUNNEL_TOKEN" || "$CLOUDFLARE_TUNNEL_TOKEN" =~ [[:space:]] ]]; then
-  echo "The Cloudflare tunnel token is required and cannot contain spaces." >&2
-  exit 1
-fi
 
 # A re-run with a new database password: keep the old one, which MySQL still has, so the
 # setup below can sign in with it and change it.
@@ -1195,6 +1210,20 @@ TUNNEL_SLUG="$(tr -d '\r\n' < /tmp/laravelify-install/tunnel-slug)"
 install -d /etc/cloudflared
 systemctl daemon-reload
 systemctl enable --now "laravelify-tunnel-${TUNNEL_SLUG}.service"
+# Show whether the tunnel reached Cloudflare: cloudflared logs "Registered tunnel connection" per edge.
+TUNNEL_CONNECTED=""
+for _ in $(seq 1 30); do
+  if journalctl -u "laravelify-tunnel-${TUNNEL_SLUG}.service" --since "-2min" --no-pager 2>/dev/null | grep -q "Registered tunnel connection"; then
+    TUNNEL_CONNECTED=1
+    break
+  fi
+  sleep 1
+done
+if [[ -n "$TUNNEL_CONNECTED" ]]; then
+  STEP_LABEL="Cloudflare tunnel connected"
+else
+  echo "The tunnel did not connect to Cloudflare in 30 seconds. Check the token, then: journalctl -u laravelify-tunnel-${TUNNEL_SLUG}" >&2
+fi
 
 step "Turning on the firewall (SSH, 80, 443)"
 ufw default deny incoming
