@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.84] - 2026-11-06
+
+- **Fixed: the installer did not see that the tunnel connected.** Its check always waited the full 30 seconds and then said the tunnel had not connected, even when it had. It now shows "Cloudflare tunnel connected" as soon as Cloudflare registers it.
+
 ## [0.3.0-beta.83] - 2026-11-06
 
 - **Fixed: the installer hid "the tunnel did not connect".** When the Cloudflare tunnel does not connect within 30 seconds, the warning and the command to check it now show on screen, not only in the install log.

@@ -1213,7 +1213,7 @@ systemctl enable --now "laravelify-tunnel-${TUNNEL_SLUG}.service"
 # Show whether the tunnel reached Cloudflare: cloudflared logs "Registered tunnel connection" per edge.
 TUNNEL_CONNECTED=""
 for _ in $(seq 1 30); do
-  if journalctl -u "laravelify-tunnel-${TUNNEL_SLUG}.service" --since "-2min" --no-pager 2>/dev/null | grep -q "Registered tunnel connection"; then
+  if journalctl -u "laravelify-tunnel-${TUNNEL_SLUG}.service" --since "-2min" --no-pager 2>/dev/null | grep -c "Registered tunnel connection" >/dev/null; then
     TUNNEL_CONNECTED=1
     break
   fi
