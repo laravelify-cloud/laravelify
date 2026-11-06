@@ -11,7 +11,7 @@
 # cloudflared, and a firewall that allows only SSH, 80, and 443.
 #
 # Optional environment variables:
-#   MYSQL_ROOT_PASSWORD       skip the password prompt
+#   MYSQL_ROOT_PASSWORD       the database password (default: a random 40-character one)
 #   PANEL_DOMAIN              skip the panel domain prompt
 #   PHPMYADMIN_DOMAIN         phpMyAdmin on a domain of its own (old style)
 #   PHPMYADMIN_PATH           phpMyAdmin at this path of the panel's address (default /phpmyadmin)
@@ -362,15 +362,10 @@ fi
 # One password for the database servers chosen: MySQL's or MariaDB's root, PostgreSQL's postgres
 # user, and MongoDB's admin. Not asked when there is no database server (SQLite only).
 if [[ -n "$DATABASES" ]]; then
+  # Not asked: a random 40-character password is made. The panel shows it after your authenticator
+  # code (Server → MySQL), and it can be changed there. A repair reuses the previous one.
   if [[ -z "${MYSQL_ROOT_PASSWORD:-}" ]]; then
-    read_tty -s -p "Database password (for ${DATABASES// /, }): " MYSQL_ROOT_PASSWORD
-    echo
-    read_tty -s -p "Database password again: " MYSQL_ROOT_PASSWORD_CONFIRM
-    echo
-    if [[ "$MYSQL_ROOT_PASSWORD" != "$MYSQL_ROOT_PASSWORD_CONFIRM" ]]; then
-      echo "The passwords do not match." >&2
-      exit 1
-    fi
+    MYSQL_ROOT_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40 || true)"
   fi
 
   if [[ -z "$MYSQL_ROOT_PASSWORD" || "$MYSQL_ROOT_PASSWORD" =~ [[:space:]\'\"\\] ]]; then
@@ -1225,7 +1220,7 @@ else
 fi
 printf '  %s3.%s Add a group and a website, and deploy it from GitHub.\n\n' "$C_CYAN" "$C_RESET"
 if [[ -n "$WITH_PHPMYADMIN" ]]; then
-  printf '  %sphpMyAdmin%s  %s  (user root, the database password you set)\n' "$C_DIM" "$C_RESET" "$PHPMYADMIN_URL"
+  printf '  %sphpMyAdmin%s  %s  (user root; the password is on Server → MySQL in the panel)\n' "$C_DIM" "$C_RESET" "$PHPMYADMIN_URL"
 fi
 printf '  %sDatabases%s   %s\n' "$C_DIM" "$C_RESET" "${DATABASE_LABELS:+${DATABASE_LABELS}, }SQLite: each website picks one when you add it"
 printf '  %sRedis%s       no password yet: set one in the panel under Server → Redis\n' "$C_DIM" "$C_RESET"

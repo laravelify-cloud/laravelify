@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.81] - 2026-11-06
+
+- **The installer no longer asks for a database password.** It makes a random 40-character one for MySQL or MariaDB root, PostgreSQL, and MongoDB. The panel shows it on Server → MySQL after your authenticator code, and you can change it there. Pass `MYSQL_ROOT_PASSWORD` to pick your own; a repair keeps the old one.
+- phpMyAdmin is never asked about: it opens at `https://<panel>/phpmyadmin`, and the path can be changed on Server → phpMyAdmin.
+
 ## [0.3.0-beta.80] - 2026-11-06
 
 - **Every database on the server, in one place.** The Database tool now lists PostgreSQL, SQLite, and MongoDB databases next to MySQL, with an engine filter. Each has its tables (collections for MongoDB) with row counts and sizes, rows in the spreadsheet grid with search, header filters, and sorting, adding, changing, and deleting rows (documents as JSON for MongoDB), an SQL box, Export, and Back up to your backup storage.
