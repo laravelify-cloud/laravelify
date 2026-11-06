@@ -35,6 +35,12 @@ class PhpConfigTest extends TestCase
             'two_factor_confirmed_at' => now(),
         ]));
         $this->website = Website::factory()->create(['slug' => 'shop', 'type' => 'laravel', 'php_version' => '8.4']);
+
+        $extensions = Mockery::mock(PhpExtensions::class)->makePartial();
+        $extensions->shouldReceive('forVersion')->andReturnUsing(fn () => collect(PhpExtensions::catalog())->map(fn (array $extension, string $module) => [
+            'module' => $module, 'label' => $extension['label'], 'help' => $extension['help'], 'installed' => false, 'enabled' => false,
+        ])->values()->all());
+        $this->app->instance(PhpExtensions::class, $extensions);
     }
 
     public function test_only_known_options_with_valid_values_reach_the_pool(): void
