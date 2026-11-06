@@ -131,6 +131,7 @@ The panel lives in `/opt/laravelify`, websites in `/var/www/<slug>`, and the ins
 - **Git push to deploy** through a **GitHub App** (created in one click, private repositories, automatic webhooks) or a personal token, with a branch per site.
 - **Live build log** in a real console that streams while the build runs: commands, warnings, and errors in colour, no jumping.
 - **Deployments page**: every website as a card with its latest deploy (waiting, in progress, finished, failed), commit, trigger, and time, with Deploy and Watch live.
+- **Roll back** to any earlier deploy in one click: its commit goes live again, and the code it replaces is saved as a `.tar.gz` to download or roll forward to.
 - npm, pnpm, and Yarn are detected from the lock file; Composer, migrations, and caches for Laravel; zero-config builds for the front-end frameworks.
 - **Example projects** for every framework to try a deploy in a minute.
 - **One-click MySQL database** per site, `.env` editor with secrets hidden, nginx editor with a config test and automatic rollback, Supervisor and PM2 process editors.
@@ -144,11 +145,12 @@ The panel lives in `/opt/laravelify`, websites in `/var/www/<slug>`, and the ins
 
 ### 🗄️ Database tool
 
+- **MySQL, PostgreSQL, SQLite, and MongoDB** in one place, each with export and backup to S3.
 - Browse every database and table in a fast **grid** (AG Grid Community): scroll through millions of rows (loaded from the server as you scroll), spreadsheet-style **header filters** with value counts, sort, pin, resize, and hide columns.
 - **Search** in every database at once, by table name, column name, or the data itself.
 - **Edit rows** in a form made for each column type (date and time pickers, enum lists, NULL), add and delete rows. Every change goes to a **change log you can undo**.
 - **Foreign keys** both ways: click a value to open the row it points at, or the rows that point at it.
-- **SQL console** with Ctrl+Enter, structure view, export to SQL, triggers, procedures, functions, and events.
+- **SQL editor** with syntax colors and autocomplete of tables and columns, results in the same filterable grid, and a **history per database** that keeps the rows each UPDATE and DELETE changed, before and after. Structure view, export to SQL, triggers, procedures, functions, and events.
 - **Encrypted columns**: add your site's own encryption method (PHP code that runs inside your site, with its own keys), mark a column, and it is shown, searched, filtered, and edited decrypted. Only the setting is saved; the data never leaves your site decrypted.
 
 ### 💾 Backups to S3
