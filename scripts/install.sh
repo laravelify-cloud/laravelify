@@ -1222,7 +1222,7 @@ done
 if [[ -n "$TUNNEL_CONNECTED" ]]; then
   STEP_LABEL="Cloudflare tunnel connected"
 else
-  echo "The tunnel did not connect to Cloudflare in 30 seconds. Check the token, then: journalctl -u laravelify-tunnel-${TUNNEL_SLUG}" >&2
+  printf '%s│%s  %s! The tunnel did not connect to Cloudflare in 30 seconds.%s Check: journalctl -u laravelify-tunnel-%s\n' "$C_DIM" "$C_RESET" "$C_YELLOW" "$C_RESET" "$TUNNEL_SLUG" >&3
 fi
 
 step "Turning on the firewall (SSH, 80, 443)"

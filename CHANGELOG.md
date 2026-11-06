@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.83] - 2026-11-06
+
+- **Fixed: the installer hid "the tunnel did not connect".** When the Cloudflare tunnel does not connect within 30 seconds, the warning and the command to check it now show on screen, not only in the install log.
+
 ## [0.3.0-beta.82] - 2026-11-06
 
 - **The installer asks for the Cloudflare tunnel token first and checks it.** A wrong paste stops at once with where to find the token, and the whole `cloudflared service install …` command can be pasted too. Then it asks for the panel domain.
