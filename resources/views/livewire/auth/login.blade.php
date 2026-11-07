@@ -1,7 +1,7 @@
-<form class="flex flex-col gap-4" wire:submit="authenticate">
+<form class="flex flex-col gap-5" wire:submit="authenticate">
     <div>
-        <h2 class="text-base font-medium">Log in</h2>
-        <p class="mt-1 text-muted">Superadmin password and authenticator code.</p>
+        <h2 class="guest-title">Log in</h2>
+        <p class="mt-1.5 text-muted">Superadmin password and authenticator code.</p>
     </div>
 
     <label class="field">
@@ -22,5 +22,5 @@
         @error('code') <small class="error">{{ $message }}</small> @enderror
     </label>
 
-    <button class="btn btn-primary" type="submit">Log in</button>
+    <button class="btn btn-primary guest-submit" type="submit" wire:loading.attr="disabled" wire:target="authenticate">Log in</button>
 </form>

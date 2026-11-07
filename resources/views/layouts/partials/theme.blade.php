@@ -7,6 +7,7 @@
 
         theme = theme || localStorage.getItem('laravelify-theme') || 'dark';
         document.documentElement.classList.toggle('dark', theme !== 'light');
+        window.dispatchEvent(new CustomEvent('theme-changed', { detail: theme !== 'light' }));
     }
 
     laravelifyTheme();

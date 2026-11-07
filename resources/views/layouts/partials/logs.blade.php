@@ -27,6 +27,7 @@
         return {
             history: history,
             cursor: history.length,
+            draft: '',
             suggestions: suggestions,
             live: [],
             liveState: 'idle',
@@ -51,8 +52,9 @@
                     return;
                 }
 
-                this.history = this.history.filter((item) => item !== command).concat([command]).slice(-50);
+                this.history = this.history.filter((item) => item !== command).concat([command]).slice(-200);
                 this.cursor = this.history.length;
+                this.draft = '';
 
                 try {
                     localStorage.setItem(key, JSON.stringify(this.history));
@@ -64,8 +66,33 @@
                     return;
                 }
 
+                if (this.cursor === this.history.length) {
+                    // Keep what was being typed, to come back to it with Down.
+                    this.draft = this.input().value;
+                }
+
                 this.cursor = Math.min(this.history.length, Math.max(0, this.cursor + step));
-                this.setCommand(this.cursor === this.history.length ? '' : this.history[this.cursor]);
+                this.setCommand(this.cursor === this.history.length ? this.draft : this.history[this.cursor]);
+
+                var field = this.input();
+                this.$nextTick(() => field.setSelectionRange(field.value.length, field.value.length));
+            },
+
+            /** "clear" and "cls" empty the window here in the browser; nothing is sent to the server. */
+            interceptLocal(event) {
+                var value = this.input().value.trim();
+
+                if (value !== 'clear' && value !== 'cls') {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.remember(value);
+                this.draft = '';
+                this.setCommand('');
+                this.$dispatch('terminal-clear');
+                this.$nextTick(() => this.input().focus());
             },
 
             onInput(event) {
@@ -186,6 +213,10 @@
                 if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
                     event.preventDefault();
                     this.recall(event.key === 'ArrowUp' ? -1 : 1);
+                } else if (event.key === 'l' && event.ctrlKey && !event.altKey && !event.metaKey) {
+                    event.preventDefault();
+                    this.$dispatch('terminal-clear');
+                    this.$nextTick(() => this.input().focus());
                 }
             },
 

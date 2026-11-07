@@ -1,7 +1,9 @@
-<form class="flex flex-col gap-4" wire:submit="confirm">
+<form class="flex flex-col gap-5" wire:submit="confirm">
+    <x-setup-steps :current="2" />
+
     <div>
-        <h2 class="text-base font-medium">Set up two-factor authentication</h2>
-        <p class="mt-1 text-muted">The panel asks for a 6-digit code from an authenticator app at every sign-in. The dashboard stays locked until this is confirmed.</p>
+        <h2 class="guest-title">Set up two-factor authentication</h2>
+        <p class="mt-1.5 text-muted">The panel asks for a 6-digit code from an authenticator app at every sign-in. The dashboard stays locked until this is confirmed.</p>
     </div>
 
     <div class="segmented self-start" role="group" aria-label="Which key to use">
@@ -43,5 +45,5 @@
         @error('code') <small class="error">{{ $message }}</small> @enderror
     </label>
 
-    <button class="btn btn-primary" type="submit" wire:loading.attr="disabled" wire:target="confirm">Confirm and open the panel</button>
+    <button class="btn btn-primary guest-submit" type="submit" wire:loading.attr="disabled" wire:target="confirm">Confirm and open the panel</button>
 </form>

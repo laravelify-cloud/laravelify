@@ -25,10 +25,10 @@
             <aside class="sidebar" :class="nav && 'is-open'">
                 <a href="{{ route('dashboard') }}" class="sidebar-brand" wire:navigate>
                     <x-brand-mark :size="26" />
-                    Laravelify
+                    <span>Laravel<span class="text-accent">ify</span></span>
                 </a>
 
-                <nav class="sidebar-nav">
+                <nav class="sidebar-nav" aria-label="Main">
                     <p class="nav-section">Workspace</p>
                     <a class="menu-item {{ request()->routeIs('dashboard') ? 'menu-item-active' : '' }}" href="{{ route('dashboard') }}" wire:navigate>
                         <x-menu-icon name="dashboard" />
@@ -46,154 +46,163 @@
                         <x-menu-icon name="cpu" />
                         <span>Server monitoring</span>
                     </a>
-
-                    <p class="nav-section">Deployments</p>
                     <a class="menu-item {{ request()->routeIs('deployments.*') ? 'menu-item-active' : '' }}" href="{{ route('deployments.index') }}" wire:navigate>
                         <x-menu-icon name="deployments" />
                         <span>All deployments</span>
                     </a>
 
-                    <p class="nav-section">Tools</p>
-                    <a class="menu-item {{ request()->routeIs('files.*') ? 'menu-item-active' : '' }}" href="{{ route('files.index') }}" wire:navigate>
-                        <x-menu-icon name="files" />
-                        <span>File manager</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('terminal.*') ? 'menu-item-active' : '' }}" href="{{ route('terminal.index') }}" wire:navigate>
-                        <x-menu-icon name="terminal" />
-                        <span>Terminal</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('database.*') ? 'menu-item-active' : '' }}" href="{{ route('database.index') }}" wire:navigate>
-                        <x-menu-icon name="database" />
-                        <span>Database</span>
-                    </a>
+                    <x-nav-section key="tools" label="Tools" :active="request()->routeIs('files.*', 'terminal.*', 'database.*')">
+                        <a class="menu-item {{ request()->routeIs('files.*') ? 'menu-item-active' : '' }}" href="{{ route('files.index') }}" wire:navigate>
+                            <x-menu-icon name="files" />
+                            <span>File manager</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('terminal.*') ? 'menu-item-active' : '' }}" href="{{ route('terminal.index') }}" wire:navigate>
+                            <x-menu-icon name="terminal" />
+                            <span>Terminal</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('database.*') ? 'menu-item-active' : '' }}" href="{{ route('database.index') }}" wire:navigate>
+                            <x-menu-icon name="database" />
+                            <span>Database</span>
+                        </a>
+                    </x-nav-section>
 
                     @php($sidebarLinks = \App\Support\SidebarLinks::custom())
                     @php($hasPhpMyAdmin = \App\Support\SidebarLinks::phpMyAdminAvailable())
-                    <p class="nav-section">
-                        <span>Links</span>
-                        <a class="text-muted transition-colors hover:text-ink" href="{{ route('settings.links') }}" wire:navigate title="Edit links"><x-menu-icon name="pencil" class="size-3.5" /></a>
-                    </p>
-                    @if ($hasPhpMyAdmin)
-                        <a class="menu-item" href="{{ route('tools.phpmyadmin') }}" target="_blank" rel="noopener" title="Opens signed in with a one-time link">
-                            <x-menu-icon name="database" />
-                            <span>phpMyAdmin</span>
-                            <x-menu-icon name="external" class="ml-auto size-3.5 opacity-50" />
-                        </a>
-                    @endif
                     @php($hasGlitchtip = app(\App\Services\Glitchtip::class)->installed())
-                    @if ($hasGlitchtip)
-                        <a class="menu-item" href="{{ route('monitoring.index', ['tab' => 'issues']) }}" wire:navigate title="Errors, performance and logs from GlitchTip, in the panel">
-                            <x-menu-icon name="bug" />
-                            <span>GlitchTip</span>
+                    <x-nav-section key="links" label="Links">
+                        <x-slot:action>
+                            <a class="nav-section-action" href="{{ route('settings.links') }}" wire:navigate title="Edit links" aria-label="Edit links"><x-menu-icon name="pencil" class="size-3.5" /></a>
+                        </x-slot:action>
+                        @if ($hasPhpMyAdmin)
+                            <a class="menu-item" href="{{ route('tools.phpmyadmin') }}" target="_blank" rel="noopener" title="Opens signed in with a one-time link">
+                                <x-menu-icon name="database" />
+                                <span>phpMyAdmin</span>
+                                <x-menu-icon name="external" class="ml-auto size-3.5 opacity-50" />
+                            </a>
+                        @endif
+                        @if ($hasGlitchtip)
+                            <a class="menu-item" href="{{ route('monitoring.index', ['tab' => 'issues']) }}" wire:navigate title="Errors, performance and logs from GlitchTip, in the panel">
+                                <x-menu-icon name="bug" />
+                                <span>GlitchTip</span>
+                            </a>
+                        @endif
+                        @foreach ($sidebarLinks as $link)
+                            <a class="menu-item" href="{{ $link['url'] }}" target="_blank" rel="noopener noreferrer" title="{{ $link['url'] }}">
+                                <x-menu-icon name="link" />
+                                <span>{{ $link['label'] }}</span>
+                                <x-menu-icon name="external" class="ml-auto size-3.5 opacity-50" />
+                            </a>
+                        @endforeach
+                        @if (! $hasPhpMyAdmin && ! $hasGlitchtip && $sidebarLinks === [])
+                            <a class="menu-item" href="{{ route('settings.links') }}" wire:navigate>
+                                <x-menu-icon name="plus" />
+                                <span>Add a link</span>
+                            </a>
+                        @endif
+                    </x-nav-section>
+
+                    @php($backupKind = request()->route('kind') ?? request()->route('schedule')?->kind)
+                    <x-nav-section key="backups" label="Backups" :active="request()->routeIs('backups.*')">
+                        <a class="menu-item {{ request()->routeIs('backups.databases', 'backups.schedules.*') && ($backupKind ?? 'database') !== 'files' ? 'menu-item-active' : '' }}" href="{{ route('backups.databases') }}" wire:navigate>
+                            <x-menu-icon name="database" />
+                            <span>Databases</span>
                         </a>
-                    @endif
-                    @foreach ($sidebarLinks as $link)
-                        <a class="menu-item" href="{{ $link['url'] }}" target="_blank" rel="noopener noreferrer" title="{{ $link['url'] }}">
+                        <a class="menu-item {{ request()->routeIs('backups.files', 'backups.schedules.*') && $backupKind === 'files' ? 'menu-item-active' : '' }}" href="{{ route('backups.files') }}" wire:navigate>
+                            <x-menu-icon name="backup" />
+                            <span>Files</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('backups.storages') ? 'menu-item-active' : '' }}" href="{{ route('backups.storages') }}" wire:navigate>
+                            <x-menu-icon name="s3" />
+                            <span>Backup storage</span>
+                        </a>
+                    </x-nav-section>
+
+                    <x-nav-section key="infrastructure" label="Infrastructure" :active="request()->routeIs('server.*', 'sources.*', 'domains.*', 'ai.*', 'workspaces.*', 'tunnels.*')">
+                        <a class="menu-item {{ request()->routeIs('server.*') ? 'menu-item-active' : '' }}" href="{{ route('server.index') }}" wire:navigate>
+                            <x-menu-icon name="server" />
+                            <span>Server</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('sources.*', 'settings.github') ? 'menu-item-active' : '' }}" href="{{ route('sources.index') }}" wire:navigate>
+                            <x-menu-icon name="sources" />
+                            <span>Sources</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('domains.*') ? 'menu-item-active' : '' }}" href="{{ route('domains.index') }}" wire:navigate>
+                            <x-menu-icon name="globe" />
+                            <span>Domains</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('ai.*') ? 'menu-item-active' : '' }}" href="{{ route('ai.chat') }}" wire:navigate>
+                            <x-menu-icon name="robot" />
+                            <span>AI chat</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('workspaces.*') ? 'menu-item-active' : '' }}" href="{{ route('workspaces.index') }}" wire:navigate>
+                            <x-menu-icon name="grid" />
+                            <span>Workspaces</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('tunnels.*') ? 'menu-item-active' : '' }}" href="{{ route('tunnels.index') }}" wire:navigate>
+                            <x-menu-icon name="tunnels" />
+                            <span>Tunnels</span>
+                        </a>
+                    </x-nav-section>
+
+                    <x-nav-section key="security" label="Security" :active="request()->routeIs('security.*')">
+                        <a class="menu-item {{ request()->routeIs('security.access') ? 'menu-item-active' : '' }}" href="{{ route('security.access') }}" wire:navigate>
+                            <x-menu-icon name="lock" />
+                            <span>Access</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('security.private-keys') ? 'menu-item-active' : '' }}" href="{{ route('security.private-keys') }}" wire:navigate>
+                            <x-menu-icon name="keys" />
+                            <span>Private keys</span>
+                        </a>
+                    </x-nav-section>
+
+                    <x-nav-section key="settings" label="Settings" :active="request()->routeIs('settings.*')">
+                        <a class="menu-item {{ request()->routeIs('settings.general') ? 'menu-item-active' : '' }}" href="{{ route('settings.general') }}" wire:navigate>
+                            <x-menu-icon name="clock" />
+                            <span>General</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('settings.telegram') ? 'menu-item-active' : '' }}" href="{{ route('settings.telegram') }}" wire:navigate>
+                            <x-menu-icon name="telegram" />
+                            <span>Telegram bot</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('settings.links') ? 'menu-item-active' : '' }}" href="{{ route('settings.links') }}" wire:navigate>
                             <x-menu-icon name="link" />
-                            <span>{{ $link['label'] }}</span>
-                            <x-menu-icon name="external" class="ml-auto size-3.5 opacity-50" />
+                            <span>Links</span>
                         </a>
-                    @endforeach
-                    @if (! $hasPhpMyAdmin && ! $hasGlitchtip && $sidebarLinks === [])
-                        <a class="menu-item" href="{{ route('settings.links') }}" wire:navigate>
-                            <x-menu-icon name="plus" />
-                            <span>Add a link</span>
+                        <a class="menu-item {{ request()->routeIs('settings.cloudflare') ? 'menu-item-active' : '' }}" href="{{ route('settings.cloudflare') }}" wire:navigate>
+                            <x-menu-icon name="globe" />
+                            <span>Cloudflare</span>
                         </a>
-                    @endif
+                        <a class="menu-item {{ request()->routeIs('settings.mcp') ? 'menu-item-active' : '' }}" href="{{ route('settings.mcp') }}" wire:navigate>
+                            <x-menu-icon name="robot" />
+                            <span>MCP</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('settings.github') ? 'menu-item-active' : '' }}" href="{{ route('settings.github') }}" wire:navigate>
+                            <x-menu-icon name="git" />
+                            <span>GitHub token</span>
+                        </a>
+                    </x-nav-section>
 
-                    <p class="nav-section">Backups</p>
-                    <a class="menu-item {{ request()->routeIs('backups.databases', 'backups.schedules.*') && (request()->route('kind') ?? request()->route('schedule')?->kind ?? 'database') !== 'files' ? 'menu-item-active' : '' }}" href="{{ route('backups.databases') }}" wire:navigate>
-                        <x-menu-icon name="database" />
-                        <span>Databases</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('backups.files', 'backups.schedules.*') && (request()->route('kind') ?? request()->route('schedule')?->kind) === 'files' ? 'menu-item-active' : '' }}" href="{{ route('backups.files') }}" wire:navigate>
-                        <x-menu-icon name="backup" />
-                        <span>Files</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('backups.storages') ? 'menu-item-active' : '' }}" href="{{ route('backups.storages') }}" wire:navigate>
-                        <x-menu-icon name="s3" />
-                        <span>Backup storage</span>
-                    </a>
-
-                    <p class="nav-section">Infrastructure</p>
-                    <a class="menu-item {{ request()->routeIs('server.*') ? 'menu-item-active' : '' }}" href="{{ route('server.index') }}" wire:navigate>
-                        <x-menu-icon name="server" />
-                        <span>Server</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('sources.*', 'settings.github') ? 'menu-item-active' : '' }}" href="{{ route('sources.index') }}" wire:navigate>
-                        <x-menu-icon name="sources" />
-                        <span>Sources</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('domains.*') ? 'menu-item-active' : '' }}" href="{{ route('domains.index') }}" wire:navigate>
-                        <x-menu-icon name="globe" />
-                        <span>Domains</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('ai.*') ? 'menu-item-active' : '' }}" href="{{ route('ai.chat') }}" wire:navigate>
-                        <x-menu-icon name="robot" />
-                        <span>AI chat</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('workspaces.*') ? 'menu-item-active' : '' }}" href="{{ route('workspaces.index') }}" wire:navigate>
-                        <x-menu-icon name="grid" />
-                        <span>Workspaces</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('tunnels.*') ? 'menu-item-active' : '' }}" href="{{ route('tunnels.index') }}" wire:navigate>
-                        <x-menu-icon name="tunnels" />
-                        <span>Tunnels</span>
-                    </a>
-
-                    <p class="nav-section">Security</p>
-                    <a class="menu-item {{ request()->routeIs('security.access') ? 'menu-item-active' : '' }}" href="{{ route('security.access') }}" wire:navigate>
-                        <x-menu-icon name="lock" />
-                        <span>Access</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('security.private-keys') ? 'menu-item-active' : '' }}" href="{{ route('security.private-keys') }}" wire:navigate>
-                        <x-menu-icon name="keys" />
-                        <span>Private keys</span>
-                    </a>
-
-                    <p class="nav-section">Settings</p>
-                    <a class="menu-item {{ request()->routeIs('settings.general') ? 'menu-item-active' : '' }}" href="{{ route('settings.general') }}" wire:navigate>
-                        <x-menu-icon name="clock" />
-                        <span>General</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('settings.telegram') ? 'menu-item-active' : '' }}" href="{{ route('settings.telegram') }}" wire:navigate>
-                        <x-menu-icon name="telegram" />
-                        <span>Telegram bot</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('settings.links') ? 'menu-item-active' : '' }}" href="{{ route('settings.links') }}" wire:navigate>
-                        <x-menu-icon name="link" />
-                        <span>Links</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('settings.cloudflare') ? 'menu-item-active' : '' }}" href="{{ route('settings.cloudflare') }}" wire:navigate>
-                        <x-menu-icon name="globe" />
-                        <span>Cloudflare</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('settings.mcp') ? 'menu-item-active' : '' }}" href="{{ route('settings.mcp') }}" wire:navigate>
-                        <x-menu-icon name="robot" />
-                        <span>MCP</span>
-                    </a>
-                    <a class="menu-item {{ request()->routeIs('settings.github') ? 'menu-item-active' : '' }}" href="{{ route('settings.github') }}" wire:navigate>
-                        <x-menu-icon name="git" />
-                        <span>GitHub token</span>
-                    </a>
-
-                    <p class="nav-section">Help</p>
-                    <a class="menu-item" href="{{ config('laravelify.docs_url') }}" target="_blank" rel="noopener">
-                        <x-menu-icon name="book" />
-                        <span>Documentation</span>
-                        <x-menu-icon name="external" class="ml-auto size-3.5 opacity-60" />
-                    </a>
-                    <a class="menu-item" href="{{ config('laravelify.repository_url') }}" target="_blank" rel="noopener">
-                        <x-menu-icon name="git" />
-                        <span>GitHub</span>
-                        <span class="ml-auto font-mono text-[11px] text-muted">{{ config('laravelify.version') }}</span>
-                    </a>
+                    <x-nav-section key="help" label="Help">
+                        <a class="menu-item" href="{{ config('laravelify.docs_url') }}" target="_blank" rel="noopener">
+                            <x-menu-icon name="book" />
+                            <span>Documentation</span>
+                            <x-menu-icon name="external" class="ml-auto size-3.5 opacity-60" />
+                        </a>
+                        <a class="menu-item" href="{{ config('laravelify.repository_url') }}" target="_blank" rel="noopener">
+                            <x-menu-icon name="git" />
+                            <span>GitHub</span>
+                            <span class="ml-auto font-mono text-[11px] text-muted">{{ config('laravelify.version') }}</span>
+                        </a>
+                    </x-nav-section>
                 </nav>
 
-                <div class="relative border-t border-line pt-2" x-data="{ open: false, dark: document.documentElement.classList.contains('dark') }" @click.outside="open = false" @keydown.escape.window="open = false">
+                <div class="relative border-t border-line pt-2" x-data="{ open: false, dark: document.documentElement.classList.contains('dark') }" @theme-changed.window="dark = $event.detail" @click.outside="open = false" @keydown.escape.window="open = false">
                     <button class="profile-button" type="button" @click="open = !open" :aria-expanded="open" aria-haspopup="menu">
                         <span class="profile-avatar">{{ strtoupper(substr(auth()->user()->name, 0, 1)) }}</span>
-                        <span class="min-w-0 flex-1 truncate text-left">{{ auth()->user()->name }}</span>
+                        <span class="flex min-w-0 flex-1 flex-col text-left leading-tight">
+                            <span class="truncate">{{ auth()->user()->name }}</span>
+                            <span class="truncate text-[11.5px] font-normal text-muted">{{ auth()->user()->email }}</span>
+                        </span>
                         <x-menu-icon name="chevrons" class="size-4 text-muted" />
                     </button>
                     <div
@@ -227,7 +236,7 @@
                         <a class="dropdown-option" role="menuitem" href="{{ route('settings.github') }}" wire:navigate>
                             <x-menu-icon name="keys" /> Personal access token
                         </a>
-                        <form method="POST" action="{{ route('logout') }}">
+                        <form method="POST" action="{{ route('logout') }}" data-command-logout>
                             @csrf
                             <button class="dropdown-option" role="menuitem" type="submit"><x-menu-icon name="logout" /> Log out</button>
                         </form>
@@ -249,13 +258,28 @@
                             <h1 class="current">Dashboard</h1>
                         @endif
                     </nav>
+                    <div class="topbar-actions" x-data="{ dark: document.documentElement.classList.contains('dark') }" @theme-changed.window="dark = $event.detail">
+                        <button class="search-trigger" type="button" @click="$dispatch('command-palette')" aria-label="Search pages and actions" aria-keyshortcuts="Control+K">
+                            <x-menu-icon name="search" />
+                            <span>Search or jump to…</span>
+                            <kbd class="kbd">Ctrl K</kbd>
+                        </button>
+                        <button class="icon-btn" type="button" @click="dark = ! dark; laravelifyTheme(dark ? 'dark' : 'light')" :aria-label="dark ? 'Switch to light theme' : 'Switch to dark theme'" :title="dark ? 'Light theme' : 'Dark theme'">
+                            <x-menu-icon name="sun" class="size-[18px]" x-show="dark" />
+                            <x-menu-icon name="moon" class="size-[18px]" x-show="! dark" x-cloak />
+                        </button>
+                        <a class="icon-btn" href="{{ config('laravelify.docs_url') }}" target="_blank" rel="noopener" title="Documentation" aria-label="Documentation">
+                            <x-menu-icon name="book" class="size-[18px]" />
+                        </a>
+                    </div>
                 </header>
-                <main class="mx-auto flex w-full max-w-[96rem] flex-col gap-5 px-4 py-5 sm:px-6 lg:py-6">
+                <main class="page-main mx-auto flex w-full max-w-[96rem] flex-col gap-5 px-4 py-5 sm:px-6 lg:py-7">
                     <livewire:panel-worker-alert />
                     {{ $slot }}
                 </main>
             </div>
         </div>
+        @include('layouts.partials.command-palette')
         @include('layouts.partials.motion')
         @include('layouts.partials.file-manager')
         @include('layouts.partials.logs')

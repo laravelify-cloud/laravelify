@@ -84,12 +84,12 @@ class Terminal extends PanelComponent
 
         if ($session === null) {
             // PM2 and Supervisor commands are answered by the panel itself: show the answer.
-            $this->dispatch('terminal-text', command: $command, text: $handled->output, exit: $handled->exitCode);
+            $this->dispatch('terminal-text', command: $command, text: $handled->output, exit: $handled->exitCode, directory: $this->workingDirectory);
 
             return;
         }
 
-        $this->dispatch('terminal-session', id: $session, command: $command);
+        $this->dispatch('terminal-session', id: $session, command: $command, directory: $this->workingDirectory);
     }
 
     /**

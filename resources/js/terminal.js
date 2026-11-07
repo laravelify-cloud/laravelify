@@ -83,7 +83,7 @@ function bytes(base64) {
 
 /**
  * @param {HTMLElement} host
- * @param {{interactive?: boolean, eol?: boolean, csrf?: string, onResize?: (cols: number, rows: number) => void}} options
+ * @param {{interactive?: boolean, eol?: boolean, csrf?: string, onResize?: (cols: number, rows: number) => void, onWrite?: (data: string|Uint8Array) => void}} options
  */
 export function createTerminal(host, options = {}) {
     const term = new Terminal({
@@ -115,6 +115,15 @@ export function createTerminal(host, options = {}) {
     const observer = new ResizeObserver(() => refit());
     observer.observe(host);
 
+    /** Everything shown goes through here, so the page can keep a transcript of it. */
+    const write = (data) => {
+        term.write(data);
+
+        if (options.onWrite) {
+            options.onWrite(data);
+        }
+    };
+
     let run = 0;
     let session = null;
     let queue = '';
@@ -137,7 +146,7 @@ export function createTerminal(host, options = {}) {
                 const response = await fetch(session.urls.input, { method: 'POST', headers: headers(), body: JSON.stringify({ data: encode(data) }) });
 
                 if (!response.ok) {
-                    term.write('\r\n\x1b[31m[could not send that key: ' + response.status + ']\x1b[0m\r\n');
+                    write('\r\n\x1b[31m[could not send that key: ' + response.status + ']\x1b[0m\r\n');
                 }
             } catch (e) {}
         }
@@ -166,6 +175,20 @@ export function createTerminal(host, options = {}) {
 
         focus() {
             term.focus();
+        },
+
+        write,
+
+        /** True while a command is being followed. */
+        busy() {
+            return !!(session && session.running);
+        },
+
+        /** Move to the start of a fresh line, unless the cursor is already there. */
+        newline() {
+            if (term.buffer.active.cursorX !== 0) {
+                write('\r\n');
+            }
         },
 
         refit,
@@ -224,7 +247,7 @@ export function createTerminal(host, options = {}) {
 
                 if (answer) {
                     if (answer.data) {
-                        term.write(bytes(answer.data));
+                        write(bytes(answer.data));
                         delay = 40;
                     } else {
                         delay = Math.min(delay + 40, 400);
@@ -284,7 +307,7 @@ export function createTerminal(host, options = {}) {
                     }
 
                     if (answer.text) {
-                        term.write(answer.text);
+                        write(answer.text);
                         delay = 400;
                     } else {
                         delay = Math.min(delay + 200, 2500);
