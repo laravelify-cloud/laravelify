@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.86] - 2026-11-08
+
+- **Changed: the website terminal keeps earlier commands and output.** Each command gets a header and its exit code, the output comes back after a reload, and there are Clear and Download as .log buttons. Ctrl+L and `clear` clear it; the history keeps the unsent draft. Thanks to Mehman Şamilov.
+- **New: command palette** to jump to any page, and sidebar sections.
+- **Changed: dashboard** with onboarding steps and a note on every stat card; setup, two-factor, and login pages polished; cards keep their actions on the right, and empty tables show an icon.
+
 ## [0.3.0-beta.85] - 2026-11-07
 
 - **Changed: phpMyAdmin opens at /phpmyadmin of the panel address.** Servers installed when phpMyAdmin had a domain of its own (https://phpmyadmin.example.com) move to https://panel.example.com/phpmyadmin on update. The sidebar link follows.
