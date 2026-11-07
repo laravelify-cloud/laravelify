@@ -60,14 +60,14 @@ On a fresh **Ubuntu 22.04, 24.04, or 26.04** server, as a user that can use `sud
 curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash
 ```
 
-You always get the **latest release**. The installer asks for four things:
+You always get the **latest release**. The installer asks for two things:
 
 | Prompt | Example | Used for |
 | --- | --- | --- |
-| MySQL root password (twice) | a long random password | MySQL root, phpMyAdmin sign-in, site databases |
+| Cloudflare tunnel token | `eyJh…` | Connects the server to Cloudflare (HTTPS, no open ports). Asked first and checked at once. |
 | Panel domain | `panel.example.com` | The panel's address |
-| phpMyAdmin domain | `db.example.com` | phpMyAdmin's address |
-| Cloudflare tunnel token | `eyJh…` | Connects the server to Cloudflare (HTTPS, no open ports) |
+
+The database password is not asked: the installer makes a random 40-character one. The panel shows it after your authenticator code (**Server → MySQL**), where you can change it. phpMyAdmin, when you choose it, opens at `https://panel.example.com/phpmyadmin`.
 
 Then it works through the install one step at a time, with a spinner, a check mark, and the time of every step:
 
@@ -80,17 +80,16 @@ Then it works through the install one step at a time, with a spinner, a check ma
 │  Node.js              22 24 (system: 24)
 │  Log                  /var/log/laravelify-install.log
 │
-◆  Downloaded Laravelify 0.3.0-beta.51 4s
+◆  Downloaded Laravelify 0.3.0-beta.85 4s
 ◆  Installing nginx, Redis, Supervisor, Git, and tools 38s
 ◆  Installing PHP 8.3 (FPM, CLI, MySQL, Redis, GD, intl, and more) 51s
 ◆  Installing PHP 8.4 (FPM, CLI, MySQL, Redis, GD, intl, and more) 47s
 ◆  Installing MySQL 8.4 1m 12s
-◆  Installing phpMyAdmin 22s
 ◆  Installing Node.js 24, npm, and PM2 31s
    …
 ◆  Turning on the firewall (SSH, 80, 443) 2s
 │
-└  Laravelify 0.3.0-beta.51 is installed (7m 40s)
+└  Laravelify 0.3.0-beta.85 is installed (7m 40s)
 ```
 
 It ends with your setup link (`https://panel.example.com/setup?token=…`): open it to create the admin account with two-factor sign-in. Only that link opens the setup page, so nobody who finds a fresh panel first can claim it.
@@ -108,17 +107,19 @@ curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- --php=8.3,8
 | `--php=8.3,8.4` | PHP-FPM versions (8.0 to 8.5). The panel needs 8.4 or newer; 8.4 is added if neither 8.4 nor 8.5 is chosen. |
 | `--node=22,24` | Node.js majors (20, 22, 24). The newest is the system Node.js. |
 | `--panel-domain=HOST` | The panel's domain (otherwise asked) |
-| `--phpmyadmin-domain=HOST` | phpMyAdmin's domain (otherwise asked) |
+| `--databases=mysql,postgresql` | Database servers: `mysql` or `mariadb`, `postgresql`, `mongodb`, or `none` (default `mysql`) |
+| `--tools=phpmyadmin,vscode` | Optional tools: `phpmyadmin`, `vscode`, `glitchtip`, or `none` (default `vscode`) |
+| `--phpmyadmin-path=PATH` | phpMyAdmin's path on the panel's address (default `/phpmyadmin`) |
 | `--help` | All options |
 
-The MySQL password and the tunnel token are always asked on the server, so they never end up in a copied command. For unattended installs every prompt is also an environment variable: see the [installation guide](https://docs.laravelify.cloud/installation/install).
+The tunnel token is always asked on the server, so it never ends up in a copied command. For unattended installs every prompt is also an environment variable: see the [installation guide](https://docs.laravelify.cloud/installation/install).
 
 ### What gets installed
 
 | Area | Packages |
 | --- | --- |
 | Web and PHP | nginx, PHP-FPM with the extensions Laravel needs (MySQL, Redis, GD with JPEG/PNG/WebP, intl, bcmath, zip, mbstring, curl, xml), Composer |
-| Data | MySQL 8.4 LTS, Redis, phpMyAdmin (one-click sign-in from the panel) |
+| Data | MySQL 8.4 LTS (or MariaDB, PostgreSQL, MongoDB), Redis, and with `--tools=phpmyadmin` phpMyAdmin at `/phpmyadmin` (one-click sign-in from the panel) |
 | Node and processes | Node.js through `n`, PM2, Supervisor |
 | Network and security | cloudflared, ufw (only SSH, 80, and 443 open), the panel's own user, a user per website, a sudo rule limited to one checked script |
 

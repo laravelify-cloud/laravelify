@@ -5,8 +5,8 @@
 # Downloads the latest release from GitHub (LARAVELIFY_REPO) unless a local
 # copy is given with LARAVELIFY_SOURCE.
 #
-# Asks for the MySQL root password, the panel domain, the phpMyAdmin
-# domain, and a Cloudflare tunnel token.
+# Asks for a Cloudflare tunnel token (checked first) and the panel domain; the database
+# password is made for you (40 random characters).
 # Installs MySQL, Redis, phpMyAdmin, Node.js, PM2, PHP-FPM, nginx,
 # cloudflared, and a firewall that allows only SSH, 80, and 443.
 #
@@ -54,8 +54,8 @@ Options:
   --phpmyadmin-domain=HOST    or on a domain of its own instead
   -h, --help                  show this help
 
-The database password and the Cloudflare tunnel token are always asked on the server,
-so they never end up in a shell history or a copied command.
+The Cloudflare tunnel token is always asked on the server,
+so it never ends up in a shell history or a copied command.
 USAGE
 }
 
