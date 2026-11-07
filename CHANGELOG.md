@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.85] - 2026-11-07
+
+- **Changed: phpMyAdmin opens at /phpmyadmin of the panel address.** Servers installed when phpMyAdmin had a domain of its own (https://phpmyadmin.example.com) move to https://panel.example.com/phpmyadmin on update. The sidebar link follows.
+- **Fixed: long values in database grids** stop at the cell's edge with an ellipsis instead of spilling over.
+
 ## [0.3.0-beta.84] - 2026-11-06
 
 - **Fixed: the installer did not see that the tunnel connected.** Its check always waited the full 30 seconds and then said the tunnel had not connected, even when it had. It now shows "Cloudflare tunnel connected" as soon as Cloudflare registers it.
