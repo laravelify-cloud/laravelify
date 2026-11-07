@@ -118,6 +118,8 @@ export COMPOSER_ALLOW_SUPERUSER=1
 "${PHP_BIN}" artisan laravelify:glitchtip-connect --no-ansi || true
 "${PHP_BIN}" artisan laravelify:node-env --no-ansi || true
 bash "${APP_ROOT}/scripts/host-apply.sh" phpmyadmin-hide all || true
+# Old installs had phpMyAdmin on a domain of its own: it moves to /phpmyadmin of the panel.
+"${PHP_BIN}" artisan laravelify:phpmyadmin-path --no-ansi || true
 bash "${APP_ROOT}/scripts/host-apply.sh" glitchtip-nginx all || true
 
 # The panel runs as its own user (laravelify), websites as www-data. The first update with this
