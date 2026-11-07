@@ -18,6 +18,7 @@
 #   LARAVELIFY_PACK           full (default) or minimal: no phpMyAdmin, no VS Code
 #   LARAVELIFY_TOOLS          exactly which tools: phpmyadmin,vscode,glitchtip (default: vscode), or --tools=
 #   CLOUDFLARE_TUNNEL_TOKEN   skip the tunnel token prompt (asked first and checked)
+#   CLOUDFLARE_API_TOKEN      skip the optional API token prompt (empty: none); it adds the panel route and DNS
 #   LARAVELIFY_VERSION        release to install, like 1.2.0 (default: latest)
 #   LARAVELIFY_REPO           GitHub owner/name to download releases from
 #   LARAVELIFY_SOURCE         directory to copy into /opt/laravelify instead
@@ -400,6 +401,22 @@ if [[ -z "$TUNNEL_ID" ]]; then
 fi
 printf '%s│%s  %s✓ Tunnel token accepted%s (tunnel %s…)\n' "$C_DIM" "$C_RESET" "$C_GREEN" "$C_RESET" "${TUNNEL_ID:0:8}" >&3
 
+# A tunnel token only connects; adding the panel's route and DNS record needs a Cloudflare API token
+# (Account → Cloudflare Tunnel → Edit, Zone → DNS → Edit). Optional: Enter skips it, and the route is
+# then added by hand in Cloudflare. It is also saved in the panel (Settings → Cloudflare).
+if [[ -z "${CLOUDFLARE_API_TOKEN+set}" ]]; then
+  read_tty -s -p "Cloudflare API token to add the panel route and DNS (optional, Enter to skip): " CLOUDFLARE_API_TOKEN || CLOUDFLARE_API_TOKEN=""
+  echo
+fi
+CLOUDFLARE_API_TOKEN="$(printf '%s' "${CLOUDFLARE_API_TOKEN:-}" | tr -d '[:space:]')"
+if [[ -n "$CLOUDFLARE_API_TOKEN" && ! "$CLOUDFLARE_API_TOKEN" =~ ^[A-Za-z0-9_-]{20,500}$ ]]; then
+  echo "That is not a Cloudflare API token (letters, numbers, - and _ only). Run again, or press Enter to skip it." >&2
+  exit 1
+fi
+if [[ -n "$CLOUDFLARE_API_TOKEN" ]]; then
+  printf '%s│%s  %s✓ API token given%s: the panel route and DNS record are added for you\n' "$C_DIM" "$C_RESET" "$C_GREEN" "$C_RESET" >&3
+fi
+
 if [[ -z "${PANEL_DOMAIN:-}" ]]; then
   read_tty -p "Laravelify panel domain (example: panel.example.com): " PANEL_DOMAIN
 fi
@@ -464,6 +481,10 @@ install -d -m 700 /tmp/laravelify-install
 printf '%s' "$CLOUDFLARE_TUNNEL_TOKEN" > /tmp/laravelify-install/tunnel-token
 chmod 600 /tmp/laravelify-install/tunnel-token
 unset CLOUDFLARE_TUNNEL_TOKEN
+if [[ -n "$CLOUDFLARE_API_TOKEN" ]]; then
+  ( umask 077; printf '%s' "$CLOUDFLARE_API_TOKEN" > /tmp/laravelify-install/api-token )
+fi
+unset CLOUDFLARE_API_TOKEN
 
 . /etc/os-release
 
@@ -1225,6 +1246,17 @@ else
   printf '%s│%s  %s! The tunnel did not connect to Cloudflare in 30 seconds.%s Check: journalctl -u laravelify-tunnel-%s\n' "$C_DIM" "$C_RESET" "$C_YELLOW" "$C_RESET" "$TUNNEL_SLUG" >&3
 fi
 
+PANEL_ROUTED=""
+if [[ -s /tmp/laravelify-install/api-token ]]; then
+  step "Adding the panel route and DNS record in Cloudflare"
+  if (cd "$APP_ROOT" && "$PHP_BIN" artisan laravelify:panel-route --token-file=/tmp/laravelify-install/api-token --no-ansi); then
+    PANEL_ROUTED=1
+  else
+    printf '%s│%s  %s! Cloudflare did not take the panel route.%s Add it by hand (below); the reason is in %s\n' "$C_DIM" "$C_RESET" "$C_YELLOW" "$C_RESET" "$LOG_FILE" >&3
+  fi
+  rm -f /tmp/laravelify-install/api-token
+fi
+
 step "Turning on the firewall (SSH, 80, 443)"
 ufw default deny incoming
 ufw default allow outgoing
@@ -1241,11 +1273,15 @@ printf '%s└%s  %sLaravelify %s is installed%s %s(%s)%s\n\n' "$C_DIM" "$C_RESET
 printf '  %sNext steps%s\n\n' "$C_BOLD" "$C_RESET"
 printf '  %s1.%s Create the superadmin (only this link opens the setup page):\n' "$C_CYAN" "$C_RESET"
 printf '     %s%shttps://%s/setup?token=%s%s\n\n' "$C_BOLD" "$C_GREEN" "$PANEL_DOMAIN" "$SETUP_TOKEN" "$C_RESET"
-printf '  %s2.%s In Cloudflare (Zero Trust → Networks → Tunnels → Public hostnames), send\n' "$C_CYAN" "$C_RESET"
+if [[ -n "$PANEL_ROUTED" && -z "$PHPMYADMIN_DOMAIN" ]]; then
+  printf '  %s2.%s Cloudflare already sends %s to this server (route and DNS added).\n\n' "$C_CYAN" "$C_RESET" "$PANEL_DOMAIN"
+else
+printf '  %s2.%s In Cloudflare (Zero Trust → Networks → Tunnels → your tunnel → Routes → Add route → Published application), send\n' "$C_CYAN" "$C_RESET"
 if [[ -n "$PHPMYADMIN_DOMAIN" ]]; then
   printf '     %s and %s to %shttp://localhost:80%s.\n\n' "$PANEL_DOMAIN" "$PHPMYADMIN_DOMAIN" "$C_BOLD" "$C_RESET"
 else
   printf '     %s to %shttp://localhost:80%s.\n\n' "$PANEL_DOMAIN" "$C_BOLD" "$C_RESET"
+fi
 fi
 printf '  %s3.%s Add a group and a website, and deploy it from GitHub.\n\n' "$C_CYAN" "$C_RESET"
 if [[ -n "$WITH_PHPMYADMIN" ]]; then

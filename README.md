@@ -60,11 +60,12 @@ On a fresh **Ubuntu 22.04, 24.04, or 26.04** server, as a user that can use `sud
 curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash
 ```
 
-You always get the **latest release**. The installer asks for two things:
+You always get the **latest release**. The installer asks for two things, and one optional one:
 
 | Prompt | Example | Used for |
 | --- | --- | --- |
 | Cloudflare tunnel token | `eyJh…` | Connects the server to Cloudflare (HTTPS, no open ports). Asked first and checked at once. |
+| Cloudflare API token (optional) | `Gq3…` | Adds the panel's route on the tunnel and its DNS record for you, and is saved in **Settings → Cloudflare**. Needs Account → Cloudflare Tunnel → Edit and Zone → DNS → Edit. Press Enter to skip and add the route by hand. |
 | Panel domain | `panel.example.com` | The panel's address |
 
 The database password is not asked: the installer makes a random 40-character one. The panel shows it after your authenticator code (**Server → MySQL**), where you can change it. phpMyAdmin, when you choose it, opens at `https://panel.example.com/phpmyadmin`.

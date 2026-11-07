@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.87] - 2026-11-08
+
+- **New: the installer can add the panel's route in Cloudflare.** A tunnel token only connects the server, so the panel's address had to be added to the tunnel by hand. The installer now asks for an optional Cloudflare API token (Account → Cloudflare Tunnel → Edit, Zone → DNS → Edit) and adds the route and DNS record itself. It also saves the token in Settings → Cloudflare. Press Enter to skip it. `CLOUDFLARE_API_TOKEN` does the same for unattended installs, and `php artisan laravelify:panel-route` runs it again later.
+
 ## [0.3.0-beta.86] - 2026-11-08
 
 - **Changed: the website terminal keeps earlier commands and output.** Each command gets a header and its exit code, the output comes back after a reload, and there are Clear and Download as .log buttons. Ctrl+L and `clear` clear it; the history keeps the unsent draft. Thanks to Mehman Şamilov.
