@@ -390,12 +390,21 @@ window.domainPicker = function () {
 window.liveTerminal = function (config) {
     const token = () => (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
 
+    /** The most of a terminal's transcript kept in the browser, in characters. */
+    const TRANSCRIPT_LIMIT = 300000;
+    const HINT = '\x1b[90mOutput appears here and stays: earlier commands and their output are kept above, scroll up to see them. A command that asks a question can be answered right in this window.\x1b[0m\r\n';
+
     return {
         handle: null,
         running: false,
         exit: null,
         status: null,
         queued: null,
+        transcript: '',
+        decoder: null,
+        saveTimer: null,
+        startedAt: null,
+        showingHint: false,
 
         async init() {
             const { createTerminal } = await import('./terminal');
@@ -404,6 +413,7 @@ window.liveTerminal = function (config) {
                 interactive: config.mode === 'terminal',
                 eol: config.mode === 'log',
                 csrf: token(),
+                onWrite: config.storageKey ? (data) => this.record(data) : null,
                 onResize: (columns, rows) => {
                     if (config.mode === 'terminal' && this.$wire) {
                         this.$wire.columns = columns;
@@ -415,8 +425,101 @@ window.liveTerminal = function (config) {
             if (config.mode === 'log') {
                 this.handle.attachLog(config.url, (state) => this.state(state));
             } else if (config.mode === 'terminal') {
-                this.handle.term.write('\x1b[90mOutput appears here. A command that asks a question can be answered right in this window.\x1b[0m\r\n');
+                this.restore();
+                window.addEventListener('pagehide', () => this.saveTimer && this.save());
             }
+        },
+
+        /** Bring back what this terminal showed before the page was reloaded. */
+        restore() {
+            let saved = '';
+
+            try {
+                saved = config.storageKey ? localStorage.getItem(config.storageKey) || '' : '';
+            } catch (e) {}
+
+            if (saved === '') {
+                this.showingHint = true;
+                this.handle.term.write(HINT);
+
+                return;
+            }
+
+            this.transcript = saved;
+            this.handle.term.write(saved);
+            this.handle.term.write('\x1b[0m');
+
+            if (this.handle.term.buffer.active.cursorX !== 0) {
+                this.handle.term.write('\r\n');
+            }
+
+            this.handle.term.write('\x1b[90m── restored ' + new Date().toLocaleTimeString() + ' ──\x1b[0m\r\n');
+        },
+
+        /** Keep what was shown, so it can be shown again after a reload. */
+        record(data) {
+            if (typeof data !== 'string') {
+                this.decoder = this.decoder || new TextDecoder();
+                data = this.decoder.decode(data, { stream: true });
+            }
+
+            this.transcript += data;
+
+            if (this.transcript.length > TRANSCRIPT_LIMIT) {
+                const cut = this.transcript.indexOf('\n', this.transcript.length - TRANSCRIPT_LIMIT);
+                this.transcript = '\x1b[0m' + this.transcript.slice(cut === -1 ? this.transcript.length - TRANSCRIPT_LIMIT : cut + 1);
+            }
+
+            clearTimeout(this.saveTimer);
+            this.saveTimer = setTimeout(() => this.save(), 400);
+        },
+
+        save() {
+            if (!config.storageKey) {
+                return;
+            }
+
+            try {
+                if (this.transcript === '') {
+                    localStorage.removeItem(config.storageKey);
+                } else {
+                    localStorage.setItem(config.storageKey, this.transcript);
+                }
+            } catch (e) {}
+        },
+
+        /** A header above each command: when, where, and the command itself. Earlier output stays above it. */
+        announce(detail) {
+            if (this.showingHint) {
+                this.showingHint = false;
+                this.handle.term.reset();
+            } else {
+                this.handle.newline();
+                this.handle.write('\r\n');
+            }
+
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const place = detail.directory ? '\x1b[34m' + detail.directory + '\x1b[0m ' : '';
+
+            this.handle.write(place + '\x1b[90m' + time + '\x1b[0m\r\n\x1b[1;36m$\x1b[0m \x1b[1m' + detail.command + '\x1b[0m\r\n');
+            this.handle.term.scrollToBottom();
+            this.startedAt = Date.now();
+        },
+
+        /** A line under a finished command: how it ended and how long it took. */
+        finish(exit) {
+            if (!this.handle) {
+                return;
+            }
+
+            const seconds = this.startedAt ? (Date.now() - this.startedAt) / 1000 : null;
+            const took = seconds === null ? '' : ' · ' + (seconds < 60 ? seconds.toFixed(1) + 's' : Math.floor(seconds / 60) + 'm ' + Math.round(seconds % 60) + 's');
+            const mark = exit === 0 ? '\x1b[32m✓ done' : exit === null || exit === undefined ? '\x1b[33m■ ended' : '\x1b[31m✗ exit ' + exit;
+
+            this.handle.write('\x1b[0m');
+            this.handle.newline();
+            this.handle.write(mark + '\x1b[0m\x1b[90m' + took + '\x1b[0m\r\n');
+            this.startedAt = null;
         },
 
         state(next) {
@@ -437,9 +540,19 @@ window.liveTerminal = function (config) {
                 stop: config.urls.stop.replace('__ID__', detail.id),
             };
 
-            this.handle.reset();
-            this.handle.term.write('\x1b[36m$ ' + detail.command + '\x1b[0m\r\n');
-            this.handle.attachSession(urls, (state) => this.state(state));
+            if (this.handle.busy()) {
+                // A new command takes over the window: the one still running is let go, not stopped.
+                this.finish(null);
+            }
+
+            this.announce(detail);
+            this.handle.attachSession(urls, (state) => {
+                if (!state.running) {
+                    this.finish(state.exit);
+                }
+
+                this.state(state);
+            });
         },
 
         showText(detail) {
@@ -447,8 +560,15 @@ window.liveTerminal = function (config) {
                 return;
             }
 
-            this.handle.reset();
-            this.handle.term.write('\x1b[36m$ ' + detail.command + '\x1b[0m\r\n' + String(detail.text || '').replace(/\r?\n/g, '\r\n') + '\r\n');
+            this.announce(detail);
+
+            const text = String(detail.text || '').replace(/\r?\n/g, '\r\n');
+
+            if (text !== '') {
+                this.handle.write(text);
+            }
+
+            this.finish(detail.exit);
             this.state({ running: false, exit: detail.exit });
         },
 
@@ -458,10 +578,24 @@ window.liveTerminal = function (config) {
             }
         },
 
+        /** Empty the window and forget its transcript. A command still running keeps going. */
         clear() {
-            if (this.handle) {
-                this.handle.term.clear();
+            if (!this.handle) {
+                return;
             }
+
+            if (this.handle.busy()) {
+                this.handle.term.clear();
+            } else {
+                this.handle.term.reset();
+            }
+
+            this.transcript = '';
+            this.decoder = null;
+            this.showingHint = false;
+            clearTimeout(this.saveTimer);
+            this.saveTimer = null;
+            this.save();
         },
 
         stop() {
@@ -483,8 +617,164 @@ window.liveTerminal = function (config) {
         },
 
         destroy() {
+            if (this.saveTimer) {
+                clearTimeout(this.saveTimer);
+                this.save();
+            }
+
             if (this.handle) {
                 this.handle.dispose();
+            }
+        },
+    };
+};
+
+/** A sidebar section that folds away: remembered per browser, always open when it holds the current page. */
+window.navSection = function (key, holdsCurrentPage) {
+    const storageKey = 'laravelify-nav-' + key;
+
+    return {
+        open: true,
+
+        init() {
+            try {
+                const saved = localStorage.getItem(storageKey);
+                if (saved !== null) this.open = saved === '1';
+            } catch (e) {}
+
+            if (holdsCurrentPage) this.open = true;
+        },
+
+        toggle() {
+            this.open = !this.open;
+
+            try {
+                localStorage.setItem(storageKey, this.open ? '1' : '0');
+            } catch (e) {}
+        },
+    };
+};
+
+/** The Ctrl+K palette: every sidebar link (read from the sidebar itself) plus a few quick actions. */
+window.commandPalette = function (actions) {
+    return {
+        open: false,
+        query: '',
+        active: 0,
+        items: [],
+
+        get results() {
+            const terms = this.query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+
+            if (terms.length === 0) return this.items;
+
+            const groups = [...new Set(this.items.map((item) => item.group))];
+
+            return this.items
+                .map((item) => {
+                    const label = item.label.toLowerCase();
+                    const haystack = (label + ' ' + item.group + ' ' + (item.hint || '')).toLowerCase();
+                    if (!terms.every((term) => haystack.includes(term))) return null;
+                    const score = label.startsWith(terms[0]) ? 3 : label.includes(terms[0]) ? 2 : 1;
+                    return { item, score };
+                })
+                .filter(Boolean)
+                .sort((a, b) => groups.indexOf(a.item.group) - groups.indexOf(b.item.group) || b.score - a.score)
+                .map((match) => match.item);
+        },
+
+        icon(name) {
+            return this.$refs.icons.content.querySelector('[data-icon="' + name + '"]')?.innerHTML || '';
+        },
+
+        collect() {
+            const seen = new Set();
+            const pages = [];
+
+            document.querySelectorAll('.sidebar-nav a.menu-item').forEach((link) => {
+                const label = link.querySelector('span')?.textContent.trim();
+                const id = link.getAttribute('href') + '|' + label;
+                if (!label || seen.has(id)) return;
+                seen.add(id);
+
+                pages.push({
+                    id,
+                    label,
+                    group: link.closest('.nav-block')?.querySelector('.nav-section-toggle > span')?.textContent.trim() || 'Workspace',
+                    hint: link.target === '_blank' ? link.hostname : '',
+                    icon: link.querySelector('svg.menu-icon')?.outerHTML || '',
+                    href: link.getAttribute('href'),
+                    external: link.target === '_blank',
+                });
+            });
+
+            const dark = document.documentElement.classList.contains('dark');
+            const quick = actions.map((action) => ({ ...action, id: 'action|' + action.label, group: 'Actions', icon: this.icon(action.icon) }));
+
+            quick.push({
+                id: 'action|theme',
+                label: dark ? 'Switch to light theme' : 'Switch to dark theme',
+                group: 'Actions',
+                icon: this.icon('sun'),
+                run: () => {
+                    window.laravelifyTheme(dark ? 'light' : 'dark');
+                },
+            });
+
+            quick.push({
+                id: 'action|logout',
+                label: 'Log out',
+                group: 'Actions',
+                icon: this.icon('logout'),
+                run: () => document.querySelector('form[data-command-logout]')?.submit(),
+            });
+
+            this.items = [...pages, ...quick];
+        },
+
+        show() {
+            this.collect();
+            this.query = '';
+            this.active = 0;
+            this.open = true;
+            this.$nextTick(() => this.$refs.input.focus());
+        },
+
+        close() {
+            this.open = false;
+        },
+
+        shortcut(event) {
+            const typing = event.target.closest('input, textarea, select, [contenteditable="true"], .cm-editor, .xterm');
+
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+                event.preventDefault();
+                this.open ? this.close() : this.show();
+            } else if (event.key === '/' && !typing && !this.open && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                event.preventDefault();
+                this.show();
+            }
+        },
+
+        move(step) {
+            const count = this.results.length;
+            if (count === 0) return;
+            this.active = (this.active + step + count) % count;
+            this.$nextTick(() => document.getElementById('cmdk-item-' + this.active)?.scrollIntoView({ block: 'nearest' }));
+        },
+
+        run(item) {
+            if (!item) return;
+            this.close();
+
+            if (item.run) {
+                item.run();
+            } else if (item.external) {
+                window.open(item.href, '_blank', 'noopener');
+            } else if (window.Livewire?.navigate) {
+                window.Livewire.navigate(item.href);
+            } else {
+                window.location.href = item.href;
             }
         },
     };

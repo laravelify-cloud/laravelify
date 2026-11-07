@@ -12,15 +12,17 @@
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         @livewireStyles
     </head>
-    <body class="shell">
-        <main class="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-4 p-4">
-            <div class="flex items-center gap-2.5 text-[17px] font-semibold tracking-tight">
-                <x-brand-mark :size="32" />
+    <body class="shell guest-shell">
+        <div class="guest-backdrop" aria-hidden="true"></div>
+        <main class="relative mx-auto flex min-h-screen w-full max-w-[440px] flex-col justify-center gap-7 px-4 py-12">
+            <div class="flex items-center justify-center gap-3 text-[20px] font-semibold tracking-tight">
+                <x-brand-mark :size="38" class="guest-mark" />
                 <span>Laravel<span class="text-accent">ify</span></span>
             </div>
-            <section class="card p-4">
+            <section class="guest-card">
                 {{ $slot }}
             </section>
+            <p class="text-center text-[12px] text-muted">Self-hosted server panel</p>
         </main>
         @include('layouts.partials.motion')
         @livewireScripts

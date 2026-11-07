@@ -41,8 +41,9 @@
             <span class="status-badge" x-cloak x-show="termRunning" style="--status-color: var(--color-warning)">Running</span>
             <span class="status-badge" x-cloak x-show="!termRunning && termExit !== null" :style="'--status-color: ' + (termExit === 0 ? 'var(--color-success)' : 'var(--color-danger)')" x-text="'Exit ' + termExit"></span>
             <button class="btn btn-sm btn-danger" type="button" x-cloak x-show="termRunning" @click="$dispatch('terminal-stop')" title="Stop the command (Ctrl+C also works inside the window)"><x-menu-icon name="stop" class="size-3.5" /> Stop</button>
-            <button class="logs-viewer-btn" type="button" title="Copy output" @click="$dispatch('terminal-copy')"><x-menu-icon name="copy" /></button>
-            <button class="logs-viewer-btn" type="button" title="Clear" @click="$dispatch('terminal-clear')"><x-menu-icon name="trash" /></button>
+            <button class="logs-viewer-btn" type="button" title="Copy output (or the selection)" @click="$dispatch('terminal-copy')"><x-menu-icon name="copy" /></button>
+            <button class="logs-viewer-btn" type="button" title="Download output as a .log file" @click="$dispatch('terminal-download')"><x-menu-icon name="download" /></button>
+            <button class="btn btn-sm" type="button" title="Clear the window and its saved output (Ctrl+L, or type clear)" @click="$dispatch('terminal-clear')"><x-menu-icon name="trash" class="size-3.5" /> Clear</button>
         </div>
     </div>
 
@@ -59,19 +60,20 @@
     @endunless
 
     <div
-        class="live-terminal"
+        @class(['live-terminal', 'live-terminal-fill' => ! $website])
         wire:ignore
-        x-data="liveTerminal({ mode: 'terminal', name: 'terminal', urls: { output: @js(route('terminal.sessions.output', ['session' => '__ID__'])), input: @js(route('terminal.sessions.input', ['session' => '__ID__'])), stop: @js(route('terminal.sessions.stop', ['session' => '__ID__'])) } })"
+        x-data="liveTerminal({ mode: 'terminal', name: 'terminal', storageKey: @js('laravelify-terminal-output-'.($website ? 'site-'.$website->id : 'global')), urls: { output: @js(route('terminal.sessions.output', ['session' => '__ID__'])), input: @js(route('terminal.sessions.input', ['session' => '__ID__'])), stop: @js(route('terminal.sessions.stop', ['session' => '__ID__'])) } })"
         @terminal-session.window="startSession($event.detail)"
         @terminal-text.window="showText($event.detail)"
         @terminal-stop.window="stop()"
         @terminal-copy.window="copy()"
         @terminal-clear.window="clear()"
+        @terminal-download.window="download()"
     >
         <div class="live-terminal-screen" x-ref="screen"></div>
     </div>
 
-    <form class="relative flex items-center gap-2 border-t border-line p-2" wire:submit="run" @click.outside="menuOpen && closeMenu()">
+    <form class="relative flex items-center gap-2 border-t border-line p-2" @submit.capture="interceptLocal($event)" wire:submit="run" @click.outside="menuOpen && closeMenu()">
         {{-- "/" command menu --}}
         <div
             class="term-menu"
