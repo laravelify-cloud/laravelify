@@ -942,8 +942,26 @@
                                 <li><x-menu-icon name="check" class="size-4" /> Errors grouped, with how often and for how many visitors, and the stack trace</li>
                                 <li><x-menu-icon name="shield" class="size-4" /> On this server: GlitchTip (open source), nothing is sent to anyone else. About 250 MB of RAM</li>
                             </ul>
-                            <button class="btn btn-primary" type="button" wire:click="enableErrorTracking"><x-menu-icon name="bolt" /> Turn on error tracking</button>
-                            <p class="text-[12.5px] text-muted">Installs GlitchTip for the whole server in a minute or two, at {{ rtrim((string) config('app.url'), '/') }}/glitchtip.</p>
+                            @if ($errorTracking['installing'])
+                                {{-- Refreshes every 2 seconds until the install finishes, on every open tab. --}}
+                                <div class="flex flex-col gap-2" wire:poll.2s role="status" aria-live="polite">
+                                    <div class="flex items-center justify-between gap-3 text-[13px]">
+                                        <span class="flex items-center gap-2 font-medium">
+                                            <span class="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                                            {{ $errorTracking['installing']['step'] }}
+                                        </span>
+                                        <span class="tabular-nums text-muted">{{ $errorTracking['installing']['progress'] }}%</span>
+                                    </div>
+                                    <div class="h-2 overflow-hidden rounded-full bg-recessed">
+                                        <div class="h-full rounded-full bg-accent transition-all duration-700" style="width: {{ max(3, $errorTracking['installing']['progress']) }}%"></div>
+                                    </div>
+                                    <p class="text-[12.5px] text-muted">Installing GlitchTip for the whole server: PostgreSQL, GlitchTip, its Python packages, and its database. This takes a few minutes; you can leave this page.</p>
+                                </div>
+                                <button class="btn btn-primary" type="button" disabled><x-menu-icon name="bolt" /> Installing…</button>
+                            @else
+                                <button class="btn btn-primary" type="button" wire:click="enableErrorTracking" wire:loading.attr="disabled" wire:target="enableErrorTracking"><x-menu-icon name="bolt" /> Turn on error tracking</button>
+                                <p class="text-[12.5px] text-muted">Installs GlitchTip for the whole server in a few minutes, at {{ rtrim((string) config('app.url'), '/') }}/glitchtip.</p>
+                            @endif
                         </div>
                     </x-layer-card>
                 @elseif (! $errorTracking['connected'])

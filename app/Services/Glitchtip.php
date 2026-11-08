@@ -114,9 +114,35 @@ class Glitchtip
      * Install (or update) GlitchTip, keep its API token and admin, and make the organization and
      * team the websites' projects go in.
      */
-    public function install(User $user): string
+    /**
+     * The install's steps, with how far along each one starts (the Python packages and the
+     * database take the longest).
+     *
+     * @var array<string, int>
+     */
+    public const INSTALL_STEPS = [
+        'Installing PostgreSQL' => 8,
+        'Downloading GlitchTip' => 20,
+        'Installing its Python packages' => 32,
+        'Preparing its database' => 62,
+        'Starting GlitchTip' => 82,
+        'Making its admin and API key' => 90,
+    ];
+
+    /**
+     * @param  (callable(int, string): void)|null  $progress  percent and the step's name, as they happen
+     */
+    public function install(User $user, ?callable $progress = null): string
     {
-        $result = $this->host->glitchtipInstall((string) config('app.url'), self::VERSION, (string) $user->email);
+        $progress && $progress(3, 'Starting the install...');
+        $result = $this->host->glitchtipInstall((string) config('app.url'), self::VERSION, (string) $user->email, $progress === null ? null : function (string $line) use ($progress): void {
+            foreach (self::INSTALL_STEPS as $step => $percent) {
+                if (str_starts_with($line, $step)) {
+                    $progress($percent, $line);
+                }
+            }
+        });
+        $progress && $progress(95, 'Connecting your websites...');
         Setting::putValue('glitchtip.token', $result['token']);
         Setting::putValue('glitchtip.email', $result['email'] ?? $user->email);
 

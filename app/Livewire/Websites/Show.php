@@ -7,6 +7,7 @@ use App\Livewire\PanelComponent;
 use App\Models\CloudflareTunnel;
 use App\Models\Deployment;
 use App\Models\GithubApp;
+use App\Models\PanelTask;
 use App\Models\Website;
 use App\Services\ConfigRenderer;
 use App\Services\DatabaseProvisioner;
@@ -740,6 +741,13 @@ class Show extends PanelComponent
     /** Install GlitchTip for the whole server, in the background (a minute or two). */
     public function enableErrorTracking(): void
     {
+        // One install at a time: a second click (or another admin tab) waits for the running one.
+        if ($this->glitchtipInstall() !== null) {
+            $this->toast('GlitchTip is already being installed. Its progress shows here.', 'warning');
+
+            return;
+        }
+
         $this->runInBackground('glitchtip.install', 'glitchtip', 'Turning on error tracking (GlitchTip)', ['user_id' => Auth::id()]);
     }
 
@@ -801,6 +809,24 @@ class Show extends PanelComponent
      *
      * @return array<string, mixed>
      */
+    /**
+     * @return array{progress: int, step: string, queued: bool}|null
+     */
+    private function glitchtipInstall(): ?array
+    {
+        $task = PanelTask::query()
+            ->where('kind', 'glitchtip.install')
+            ->whereIn('status', [PanelTask::QUEUED, PanelTask::RUNNING])
+            ->latest('id')
+            ->first();
+
+        return $task === null ? null : [
+            'progress' => (int) $task->progress,
+            'step' => $task->status === PanelTask::QUEUED ? 'Waiting for the background worker...' : ($task->message ?: 'Starting the install...'),
+            'queued' => $task->status === PanelTask::QUEUED,
+        ];
+    }
+
     private function errorTracking(): array
     {
         $glitchtip = app(Glitchtip::class);
@@ -861,6 +887,8 @@ class Show extends PanelComponent
 
         return [
             'checks' => $checks,
+            // The install running now (from any page or tab), with its percent and step.
+            'installing' => $this->glitchtipInstall(),
             // One click adds the SDK to the code, once GlitchTip is on and the site has a repository.
             'canSetUp' => $glitchtip->installed() && ($sdk !== true || $keyInCode === false) && filled($this->website->repository),
             'installed' => $glitchtip->installed(),

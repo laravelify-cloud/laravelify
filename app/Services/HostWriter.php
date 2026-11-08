@@ -359,9 +359,24 @@ UNIT;
      *
      * @return array{token: string, email: ?string, password: ?string}
      */
-    public function glitchtipInstall(string $panelUrl, string $version, string $email): array
+    public function glitchtipInstall(string $panelUrl, string $version, string $email, ?callable $onStep = null): array
     {
-        preg_match_all('/^(TOKEN|EMAIL|PASSWORD)=(.+)$/m', $this->apply(['glitchtip-install', rtrim($panelUrl, '/'), $version, $email]), $matches, PREG_SET_ORDER);
+        // Each step the script starts ("Installing PostgreSQL...") goes to $onStep as it happens.
+        $buffer = '';
+        $onOutput = $onStep === null ? null : function (string $chunk) use (&$buffer, $onStep): void {
+            $buffer .= $chunk;
+
+            while (($end = strpos($buffer, "\n")) !== false) {
+                $line = trim(substr($buffer, 0, $end));
+                $buffer = substr($buffer, $end + 1);
+
+                if (str_ends_with($line, '...')) {
+                    $onStep($line);
+                }
+            }
+        };
+
+        preg_match_all('/^(TOKEN|EMAIL|PASSWORD)=(.+)$/m', $this->apply(['glitchtip-install', rtrim($panelUrl, '/'), $version, $email], $onOutput), $matches, PREG_SET_ORDER);
         $values = [];
 
         foreach ($matches as [, $key, $value]) {
@@ -459,7 +474,7 @@ UNIT;
         return $this->apply(['nginx-global-log', 'error', (string) max(1, min($lines, 2000))]);
     }
 
-    private function apply(array $arguments): string
+    private function apply(array $arguments, ?callable $onOutput = null): string
     {
         $runner = app(CommandRunner::class);
 
@@ -474,7 +489,7 @@ UNIT;
             $command = ['sudo', '-n', $script, ...$arguments];
         }
 
-        $result = $runner->run($command);
+        $result = $runner->run($command, null, [], $onOutput);
 
         if (! $result->ok) {
             throw new RuntimeException(trim($result->output) ?: 'host-apply.sh failed');

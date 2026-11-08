@@ -56,7 +56,7 @@ class GlitchtipTest extends TestCase
     {
         $user = User::factory()->create(['email' => 'admin@example.com']);
         $host = Mockery::mock(HostWriter::class);
-        $host->shouldReceive('glitchtipInstall')->once()->with(Mockery::type('string'), Glitchtip::VERSION, 'admin@example.com')
+        $host->shouldReceive('glitchtipInstall')->once()->with(Mockery::type('string'), Glitchtip::VERSION, 'admin@example.com', null)
             ->andReturn(['token' => 'tok', 'email' => 'admin@example.com', 'password' => 'secret']);
         $this->app->instance(HostWriter::class, $host);
         $this->fakeGlitchtip();
@@ -260,6 +260,46 @@ class GlitchtipTest extends TestCase
             ->call('enableErrorTracking');
 
         $this->assertSame('glitchtip.install', PanelTask::query()->sole()->kind);
+    }
+
+    public function test_a_running_install_shows_its_step_and_percent_and_is_not_started_twice(): void
+    {
+        $this->signIn();
+        $website = Website::factory()->create();
+        PanelTask::query()->create(['kind' => 'glitchtip.install', 'scope' => 'glitchtip', 'label' => 'Turning on error tracking (GlitchTip)', 'status' => PanelTask::RUNNING, 'progress' => 32, 'message' => 'Installing its Python packages...']);
+
+        Livewire::test(Show::class, ['website' => $website])
+            ->assertSee('Installing its Python packages...')
+            ->assertSee('32%')
+            ->assertSee('Installing…')
+            ->assertDontSee('Turn on error tracking')
+            ->call('enableErrorTracking');
+
+        $this->assertSame(1, PanelTask::query()->count());
+    }
+
+    public function test_each_install_step_moves_the_progress_forward(): void
+    {
+        $user = User::factory()->create(['email' => 'admin@example.com']);
+        $host = Mockery::mock(HostWriter::class);
+        $host->shouldReceive('glitchtipInstall')->once()->andReturnUsing(function (string $url, string $version, string $email, callable $onStep): array {
+            foreach (['Installing PostgreSQL...', 'Downloading GlitchTip v6.2.6...', 'Installing its Python packages...', 'Preparing its database...', 'Starting GlitchTip...', 'Making its admin and API key...'] as $line) {
+                $onStep($line);
+            }
+
+            throw new \RuntimeException('stop here');
+        });
+        $this->app->instance(HostWriter::class, $host);
+        $seen = [];
+
+        try {
+            app(Glitchtip::class)->install($user, function (int $percent, string $step) use (&$seen): void {
+                $seen[] = $percent;
+            });
+        } catch (\RuntimeException) {
+        }
+
+        $this->assertSame([3, 8, 20, 32, 62, 82, 90], $seen);
     }
 
     public function test_the_glitchtip_tab_shows_what_is_set_up_and_what_is_left(): void

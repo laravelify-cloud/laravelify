@@ -151,7 +151,10 @@ class PanelTaskRunner
                 $progress,
             ),
             'databases.install' => ['message' => app(DatabaseServers::class)->install((string) ($task->payload['engine'] ?? ''), Website::query()->find((int) ($task->payload['website_id'] ?? 0)))],
-            'glitchtip.install' => ['message' => app(Glitchtip::class)->install(User::query()->findOrFail((int) ($task->payload['user_id'] ?? 0)))],
+            'glitchtip.install' => ['message' => app(Glitchtip::class)->install(
+                User::query()->findOrFail((int) ($task->payload['user_id'] ?? 0)),
+                fn (int $percent, string $step) => $task->report($percent, $step, force: true),
+            )],
             'glitchtip.remove' => ['message' => app(Glitchtip::class)->uninstall()],
             'glitchtip.sdk' => app(GlitchtipSdk::class)->setUp(Website::query()->findOrFail((int) ($task->payload['website_id'] ?? 0))),
             default => throw new RuntimeException('Unknown task.'),

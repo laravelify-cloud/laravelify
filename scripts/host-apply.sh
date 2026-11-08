@@ -1692,6 +1692,7 @@ stdout_logfile=/var/log/laravelify-glitchtip.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=2
 CONF
+    echo "Starting GlitchTip..." >&2
     supervisorctl reread >/dev/null && supervisorctl update >/dev/null
     supervisorctl restart laravelify-glitchtip >/dev/null
     write_glitchtip_nginx
@@ -1700,6 +1701,7 @@ CONF
       sleep 2
     done
     # The panel's admin in GlitchTip, and an API token with every scope (it makes a project per website).
+    echo "Making its admin and API key..." >&2
     password="$(openssl rand -base64 18 | tr -d '/+=')"
     cat > "${gt_root}/bootstrap.py" <<'PY'
 import os
