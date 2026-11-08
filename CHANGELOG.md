@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.96] - 2026-11-08
+
+- **Fixed: the phpMyAdmin menu button gave a 404** when phpMyAdmin is at `/phpmyadmin` and its saved domain had no path. The button now opens the panel's own address plus the path. A phpMyAdmin on a domain of its own still opens on that domain.
+
 ## [0.3.0-beta.95] - 2026-11-08
 
 - **Fixed: phpMyAdmin at /phpmyadmin did not open.** Its one-click sign-in sent you to `/laravelify-signon.php` at the root of the panel, which only exists when phpMyAdmin has a domain of its own, so you got a 404. The sign-in address is now relative, so it works in both setups. Existing servers write it again the next time you click phpMyAdmin in the panel.
