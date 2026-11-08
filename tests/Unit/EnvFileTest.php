@@ -44,4 +44,16 @@ class EnvFileTest extends TestCase
 
         EnvFile::set('', ['KEY' => "one\ntwo"]);
     }
+
+    public function test_a_value_already_written_in_env_style_is_not_quoted_again(): void
+    {
+        $content = EnvFile::set('', ['MAIL_FROM_ADDRESS' => '"hello@loya.cc"', 'VITE_APP_NAME' => '"${APP_NAME}"', 'NOTE' => "'kept'", 'HALF' => '"open']);
+
+        $this->assertSame(implode("\n", [
+            'MAIL_FROM_ADDRESS="hello@loya.cc"',
+            'VITE_APP_NAME="${APP_NAME}"',
+            "NOTE='kept'",
+            'HALF=\'"open\'',
+        ])."\n", $content);
+    }
 }

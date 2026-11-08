@@ -95,6 +95,12 @@ class EnvFile
             throw new InvalidArgumentException('A .env value cannot span several lines.');
         }
 
+        // Already written in .env style ("${APP_NAME}", 'text'): kept as it is. Quoting it again
+        // made the quotes part of the value and stopped ${...} from being filled in.
+        if (preg_match('/^"(?:[^"\\\\]|\\\\.)*"$/', $value) === 1 || preg_match("/^'[^']*'$/", $value) === 1) {
+            return $value;
+        }
+
         // Plain values stay unquoted, like Laravel writes them (APP_KEY=base64:…=).
         if ($value === '' || preg_match('/^[A-Za-z0-9_.,:\/@+=-]*$/', $value) === 1) {
             return $value;
