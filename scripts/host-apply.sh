@@ -1664,10 +1664,11 @@ ENV
       [[ -x "${gt_root}/bin/uv" ]] || die "uv (the Python package manager GlitchTip needs) could not be downloaded from astral.sh"
       echo "Installing its Python packages..." >&2
       # uwsgi is one of two servers it can use and needs a compiler; it runs on granian here.
+      # Python 3.13: uv would take the newest one (3.15), which GlitchTip's glitchtip-rust has no wheel for.
       # The output is kept: when it fails, its last lines say why (no Python download, no disk, no memory…).
       gt_log="${gt_root}/install.log"
       if ! (cd "${gt_app}" && sudo -u glitchtip env HOME="${gt_root}" UV_CACHE_DIR="${gt_root}/.cache/uv" UV_PYTHON_INSTALL_DIR="${gt_root}/python" \
-        "${gt_root}/bin/uv" sync --frozen --no-dev --no-install-project --no-install-package uwsgi) >"${gt_log}" 2>&1; then
+        "${gt_root}/bin/uv" sync --python 3.13 --frozen --no-dev --no-install-project --no-install-package uwsgi) >"${gt_log}" 2>&1; then
         tail -n 15 "${gt_log}" >&2
         rm -rf "${gt_app}/.venv"
         die "GlitchTip's Python packages could not be installed (full output: ${gt_log})"
