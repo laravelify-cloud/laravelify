@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.93] - 2026-11-08
+
+- **New: GlitchTip shows its install progress.** Turn on error tracking now shows each step (PostgreSQL, download, Python packages, database, start, admin) with its percent and a progress bar. It updates in every open tab, and you can leave the page.
+- **Fixed: GlitchTip could be installed twice at once.** While an install is queued or running, the button is disabled, and a second click (from any tab) waits for the running install.
+
 ## [0.3.0-beta.92] - 2026-11-08
 
 - **Fixed: GlitchTip did not install.** uv picked the newest Python (3.15), and GlitchTip's `glitchtip-rust` package has no build for it. GlitchTip now installs on Python 3.13.
