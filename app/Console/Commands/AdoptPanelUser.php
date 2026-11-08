@@ -33,6 +33,16 @@ class AdoptPanelUser extends Command
                 $service->update(['config' => $config]);
             }
 
+            // Written to nginx too: the sign-in script runs in the panel's pool, and phpMyAdmin must
+            // run in the same one to read the session it leaves.
+            try {
+                if (! in_array(trim((string) $service->domain), ['', 'phpmyadmin.internal'], true)) {
+                    $hostWriter->writeService($service);
+                }
+            } catch (Throwable $exception) {
+                $this->warn('phpMyAdmin nginx: '.$exception->getMessage());
+            }
+
             $this->line('phpMyAdmin uses '.$socket.'.');
         }
 
