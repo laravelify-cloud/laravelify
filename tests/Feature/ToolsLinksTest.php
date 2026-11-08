@@ -82,6 +82,21 @@ class ToolsLinksTest extends TestCase
             ->assertDispatched('terminal-text', command: 'pm2 list', text: 'No PM2 apps are running.', exit: 0);
     }
 
+    public function test_phpmyadmin_at_a_path_opens_on_the_panel_address_whatever_the_saved_domain(): void
+    {
+        $this->app->useStoragePath(base_path('storage'));
+        config(['app.url' => 'https://panel.example.com']);
+        Setting::putValue('phpmyadmin_sso', '2');
+        $service = ServerService::query()->firstOrCreate(['kind' => 'phpmyadmin'], ['name' => 'phpMyAdmin', 'key' => 'phpmyadmin', 'config' => '']);
+        // A server whose saved domain lost its path: the button still goes to /phpmyadmin.
+        $service->update(['domain' => 'panel.example.com', 'settings' => ['path' => '/phpmyadmin'], 'config' => ServerCatalog::phpMyAdminPathNginx('/phpmyadmin')]);
+
+        $location = (string) $this->get(route('tools.phpmyadmin'))->headers->get('Location');
+
+        $this->assertMatchesRegularExpression('#^https://panel\.example\.com/phpmyadmin/laravelify-signon\.php\?token=[A-Za-z0-9]{64}$#', $location);
+        @unlink(storage_path('app/pma-sso/'.hash('sha256', substr($location, strpos($location, 'token=') + 6)).'.json'));
+    }
+
     public function test_phpmyadmin_opens_with_a_one_time_token_and_sets_up_sign_in(): void
     {
         // The sign-on script runs on its own and reads the real storage folder.

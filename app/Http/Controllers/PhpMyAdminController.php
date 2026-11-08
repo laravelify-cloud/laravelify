@@ -55,6 +55,14 @@ class PhpMyAdminController extends Controller
         File::put($path, json_encode(['expires' => time() + 60, 'user_id' => auth()->id()]));
         @chmod($path, 0600);
 
+        // At a path of the panel (the default): the panel's own address and that path, whatever the
+        // saved domain says. On a domain of its own: that domain.
+        $path = trim((string) ($service->settings['path'] ?? ''), '/');
+
+        if ($path !== '' && ServerCatalog::isPathConfig((string) $service->config)) {
+            return redirect()->away(rtrim((string) config('app.url'), '/').'/'.$path.'/laravelify-signon.php?token='.$token);
+        }
+
         $scheme = filter_var($domain, FILTER_VALIDATE_IP) || ! str_contains($domain, '.') ? 'http' : 'https';
 
         return redirect()->away($scheme.'://'.$domain.'/laravelify-signon.php?token='.$token);
