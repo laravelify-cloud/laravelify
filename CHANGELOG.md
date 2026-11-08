@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.95] - 2026-11-08
+
+- **Fixed: phpMyAdmin at /phpmyadmin did not open.** Its one-click sign-in sent you to `/laravelify-signon.php` at the root of the panel, which only exists when phpMyAdmin has a domain of its own, so you got a 404. The sign-in address is now relative, so it works in both setups. Existing servers write it again the next time you click phpMyAdmin in the panel.
+
 ## [0.3.0-beta.94] - 2026-11-08
 
 - **Fixed: phpMyAdmin added later had no address.** On a server that got phpMyAdmin through a repair run (`--tools=phpmyadmin`), it had no domain and no path. It did not open, and the sidebar had no phpMyAdmin button. Updating now moves it to `/phpmyadmin` of the panel address.
