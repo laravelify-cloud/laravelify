@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.90] - 2026-11-08
+
+- **New: a free laravelify.cloud address from the installer.** The installer first asks: a free `https://<name>.laravelify.cloud` address, or your own domain. The free address needs only the install key from app.laravelify.cloud → Dashboard → Install from a terminal (or `LARAVELIFY_CLOUD_KEY`). Laravelify Cloud makes the tunnel and DNS record, so no Cloudflare question is asked, and the panel is connected for free website domains too. The server keeps an id in `/etc/laravelify/cloud-server-id`, so installing it again gives the same address.
+- **Fixed: a repair run no longer asks for the Cloudflare API token** when it reuses the saved settings. It also no longer shows an empty "phpMyAdmin domain" line.
+
 ## [0.3.0-beta.89] - 2026-11-08
 
 - **Fixed: phpMyAdmin is installed by default again** (with MySQL or MariaDB), at `/phpmyadmin` of the panel, next to VS Code. Since it became optional, a plain install left it out, but the installer still listed it under "Also". That line now shows phpMyAdmin only when it is installed. To add it to a server without it: `curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo LARAVELIFY_REINSTALL=1 bash -s -- --tools=phpmyadmin,vscode`.

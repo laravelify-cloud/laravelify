@@ -60,7 +60,10 @@ On a fresh **Ubuntu 22.04, 24.04, or 26.04** server, as a user that can use `sud
 curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash
 ```
 
-You always get the **latest release**. The installer asks for two things, and one optional one:
+You always get the **latest release**. The installer first asks where the panel lives:
+
+1. **A free `https://<name>.laravelify.cloud` address.** Paste the install key from [app.laravelify.cloud](https://app.laravelify.cloud) → Dashboard → **Install from a terminal**. Laravelify Cloud makes the tunnel and the DNS record, so there are no Cloudflare questions, and installing the same server again gives the same address. Or run it with `LARAVELIFY_CLOUD_KEY=lfy_…`.
+2. **Your own domain.** It then asks for two things, and one optional one:
 
 | Prompt | Example | Used for |
 | --- | --- | --- |

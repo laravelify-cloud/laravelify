@@ -18,6 +18,7 @@
 #   LARAVELIFY_PACK           full (default) or minimal: no phpMyAdmin, no VS Code
 #   LARAVELIFY_TOOLS          exactly which tools: phpmyadmin,vscode,glitchtip (default: phpmyadmin,vscode), or --tools=
 #   CLOUDFLARE_TUNNEL_TOKEN   skip the tunnel token prompt (asked first and checked)
+#   LARAVELIFY_CLOUD_KEY      an install key from app.laravelify.cloud: a free <name>.laravelify.cloud address, no Cloudflare questions
 #   CLOUDFLARE_API_TOKEN      skip the optional API token prompt (empty: none); it adds the panel route and DNS
 #   LARAVELIFY_VERSION        release to install, like 1.2.0 (default: latest)
 #   LARAVELIFY_REPO           GitHub owner/name to download releases from
@@ -345,7 +346,9 @@ if [[ ( -n "$DATABASES" && -z "${MYSQL_ROOT_PASSWORD:-}" ) || -z "${PANEL_DOMAIN
   echo
   echo "Found the settings from a previous install:"
   echo "  Panel domain:            ${PREV_PANEL_DOMAIN}"
-  echo "  phpMyAdmin domain:       ${PREV_PHPMYADMIN_DOMAIN:-(not found, you will be asked)}"
+  if [[ -n "${PREV_PHPMYADMIN_DOMAIN:-}" ]]; then
+    echo "  phpMyAdmin domain:       ${PREV_PHPMYADMIN_DOMAIN}"
+  fi
   echo "  Database password:       $(masked "${PREV_MYSQL_ROOT_PASSWORD:-}")"
   echo "  Cloudflare tunnel token: $(masked "${PREV_CLOUDFLARE_TUNNEL_TOKEN:-}")"
   REUSE_ANSWER=""
@@ -357,6 +360,7 @@ if [[ ( -n "$DATABASES" && -z "${MYSQL_ROOT_PASSWORD:-}" ) || -z "${PANEL_DOMAIN
     PANEL_DOMAIN="${PANEL_DOMAIN:-${PREV_PANEL_DOMAIN:-}}"
     PHPMYADMIN_DOMAIN="${PHPMYADMIN_DOMAIN:-${PREV_PHPMYADMIN_DOMAIN:-}}"
     CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-${PREV_CLOUDFLARE_TUNNEL_TOKEN:-}}"
+    CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN-}"
   fi
 fi
 
@@ -375,6 +379,67 @@ if [[ -n "$DATABASES" ]]; then
   fi
 else
   MYSQL_ROOT_PASSWORD=""
+fi
+
+# The panel's address comes first: a free https://<name>.laravelify.cloud one (Laravelify Cloud makes
+# its tunnel and DNS, with the account's install key from app.laravelify.cloud → Dashboard), or the
+# user's own domain on their own Cloudflare tunnel. The server keeps a secret of its own in
+# /etc/laravelify/cloud-server-id, so installing again gives the same free address.
+CLOUD_URL="${LARAVELIFY_CLOUD_URL:-https://app.laravelify.cloud}"
+FREE_ADDRESS=""
+CLOUD_TOKEN=""
+if [[ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then
+  if [[ -n "${LARAVELIFY_CLOUD_KEY:-}" ]]; then
+    FREE_ADDRESS=1
+  else
+    printf '%s│%s  Panel address:\n' "$C_DIM" "$C_RESET" >&3
+    printf '%s│%s    1) a free https://<name>.laravelify.cloud address (needs your install key from app.laravelify.cloud)\n' "$C_DIM" "$C_RESET" >&3
+    printf '%s│%s    2) your own domain (needs a Cloudflare tunnel token)\n' "$C_DIM" "$C_RESET" >&3
+    ADDRESS_CHOICE=""
+    read_tty -p "Choose 1 or 2: " ADDRESS_CHOICE || ADDRESS_CHOICE="2"
+    [[ "$ADDRESS_CHOICE" == "1" ]] && FREE_ADDRESS=1
+  fi
+fi
+
+if [[ -n "$FREE_ADDRESS" ]]; then
+  if [[ -z "${LARAVELIFY_CLOUD_KEY:-}" ]]; then
+    read_tty -s -p "Laravelify Cloud install key (app.laravelify.cloud → Dashboard → Install from a terminal): " LARAVELIFY_CLOUD_KEY || LARAVELIFY_CLOUD_KEY=""
+    echo
+  fi
+  LARAVELIFY_CLOUD_KEY="$(printf '%s' "${LARAVELIFY_CLOUD_KEY:-}" | tr -d '[:space:]')"
+  if [[ ! "$LARAVELIFY_CLOUD_KEY" =~ ^lfy_[A-Za-z0-9]{20,80}$ ]]; then
+    echo "That is not a Laravelify Cloud install key. Copy it from app.laravelify.cloud → Dashboard → Install from a terminal." >&2
+    exit 1
+  fi
+  install -d -m 700 /etc/laravelify
+  if [[ ! -s /etc/laravelify/cloud-server-id ]]; then
+    ( umask 077; tr -dc 'A-Za-z0-9' </dev/urandom | head -c 48 > /etc/laravelify/cloud-server-id || true )
+  fi
+  CLOUD_RESPONSE="$(curl -sS --max-time 60 -X POST -H 'Accept: application/json' \
+    --data-urlencode "key=${LARAVELIFY_CLOUD_KEY}" \
+    --data-urlencode "server_id=$(cat /etc/laravelify/cloud-server-id)" \
+    --data-urlencode "name=$(hostname)" \
+    -w '\n%{http_code}' "${CLOUD_URL}/api/install/panel" 2>&1 || true)"
+  unset LARAVELIFY_CLOUD_KEY
+  CLOUD_STATUS="${CLOUD_RESPONSE##*$'\n'}"
+  CLOUD_BODY="${CLOUD_RESPONSE%$'\n'*}"
+  cloud_field() { printf '%s' "$CLOUD_BODY" | python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1]) or "")' "$1" 2>/dev/null || true; }
+  if [[ "$CLOUD_STATUS" != "200" ]]; then
+    CLOUD_MESSAGE="$(cloud_field message)"
+    echo "Laravelify Cloud did not give a free address: ${CLOUD_MESSAGE:-${CLOUD_STATUS}}" >&2
+    exit 1
+  fi
+  PANEL_DOMAIN="$(cloud_field panel_domain)"
+  CLOUDFLARE_TUNNEL_TOKEN="$(cloud_field tunnel_token)"
+  CLOUD_API="$(cloud_field cloud_api)"
+  CLOUD_TOKEN="$(cloud_field cloud_token)"
+  CLOUD_PREFIX="$(cloud_field prefix)"
+  CLOUD_DOMAIN="$(cloud_field domain)"
+  unset CLOUD_RESPONSE CLOUD_BODY
+  # Cloud already routes the address and made its DNS record: no Cloudflare API token needed.
+  CLOUDFLARE_API_TOKEN=""
+  PANEL_ROUTED=1
+  printf '%s│%s  %s✓ Free address%s https://%s\n' "$C_DIM" "$C_RESET" "$C_GREEN" "$C_RESET" "$PANEL_DOMAIN" >&3
 fi
 
 # The tunnel token comes first and is checked before anything else is asked: a token is base64 JSON
@@ -1246,7 +1311,12 @@ else
   printf '%s│%s  %s! The tunnel did not connect to Cloudflare in 30 seconds.%s Check: journalctl -u laravelify-tunnel-%s\n' "$C_DIM" "$C_RESET" "$C_YELLOW" "$C_RESET" "$TUNNEL_SLUG" >&3
 fi
 
-PANEL_ROUTED=""
+PANEL_ROUTED="${PANEL_ROUTED:-}"
+if [[ -n "$CLOUD_TOKEN" ]]; then
+  # Websites on this panel can then use free <client>-<name>.laravelify.cloud domains too.
+  (cd "$APP_ROOT" && LARAVELIFY_CLOUD_TOKEN="$CLOUD_TOKEN" "$PHP_BIN" artisan laravelify:cloud-connect "$CLOUD_API" --prefix="$CLOUD_PREFIX" --domain="$CLOUD_DOMAIN" --no-ansi) || true
+  CLOUD_TOKEN=""
+fi
 if [[ -s /tmp/laravelify-install/api-token ]]; then
   step "Adding the panel route and DNS record in Cloudflare"
   if (cd "$APP_ROOT" && "$PHP_BIN" artisan laravelify:panel-route --token-file=/tmp/laravelify-install/api-token --no-ansi); then
