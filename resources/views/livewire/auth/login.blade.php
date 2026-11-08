@@ -4,6 +4,10 @@
         <p class="mt-1.5 text-muted">Superadmin password and authenticator code.</p>
     </div>
 
+    @if (session('status'))
+        <p class="callout text-sm" role="status">{{ session('status') }}</p>
+    @endif
+
     <label class="field">
         <span>Email</span>
         <input class="input" type="email" wire:model="email" autocomplete="username" required>

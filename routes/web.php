@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CloudLoginController;
 use App\Http\Controllers\CodeWorkspaceDownloadController;
 use App\Http\Controllers\DatabaseExportController;
 use App\Http\Controllers\DeploymentLogController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\TerminalSessionController;
 use App\Http\Controllers\WebsiteFileController;
 use App\Livewire\Account\Security as AccountSecurity;
 use App\Livewire\Ai\Chat as AiChat;
+use App\Livewire\Auth\CloudLogin;
 use App\Livewire\Auth\Login;
 use App\Livewire\Backups\Index as BackupsIndex;
 use App\Livewire\Backups\ScheduleForm as BackupScheduleForm;
@@ -69,6 +71,9 @@ use Illuminate\Support\Facades\Storage;
 Route::get('/setup', CreateAdmin::class)->name('setup');
 Route::get('/setup/two-factor', EnableTwoFactor::class)->name('setup.two-factor');
 Route::get('/login', Login::class)->name('login');
+// Open panel from Laravelify Cloud: a one-time code checked with Cloud, then the authenticator code.
+Route::get('/cloud-login', CloudLoginController::class)->middleware('throttle:20,1')->name('cloud-login');
+Route::get('/cloud-login/confirm', CloudLogin::class)->name('cloud-login.confirm');
 
 Route::post('/logout', function () {
     Auth::logout();

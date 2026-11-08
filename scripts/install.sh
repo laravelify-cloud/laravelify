@@ -24,8 +24,8 @@
 #   LARAVELIFY_REPO           GitHub owner/name to download releases from
 #   LARAVELIFY_SOURCE         directory to copy into /opt/laravelify instead
 #   LARAVELIFY_ARCHIVE_URL    tar.gz of the panel to download instead
-#   LARAVELIFY_PHP_VERSIONS   PHP-FPM versions to install, like "8.3 8.4" (default: 8.0 to 8.5)
-#   LARAVELIFY_NODE_VERSIONS  Node.js majors to install, like "22 24" (default: 20 22 24)
+#   LARAVELIFY_PHP_VERSIONS   PHP-FPM versions to install, like "8.3 8.4" (default: 8.4; the panel adds others when a website needs them)
+#   LARAVELIFY_NODE_VERSIONS  Node.js majors to install, like "22 24" (default: 24; the panel adds others when a website needs them)
 #   LARAVELIFY_DATABASES      database servers to install, like "mysql postgresql" (default: mysql)
 #
 # The same choices as options (the install command builder on laravelify.cloud writes these):
@@ -42,9 +42,9 @@ Laravelify installer
   curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- [options]
 
 Options:
-  --php=8.3,8.4               PHP-FPM versions to install (7.4, 8.0 to 8.5; default: 8.0 to 8.5).
+  --php=8.3,8.4               PHP-FPM versions to install (7.4, 8.0 to 8.5; default: 8.4).
                               Websites can pick another later: the panel installs it.
-  --node=22,24                Node.js majors to install (18, 20, 22, 24; default: 20, 22, 24)
+  --node=22,24                Node.js majors to install (18, 20, 22, 24; default: 24)
   --databases=mysql,postgresql
                               database servers for the websites: mysql or mariadb (one of
                               the two), postgresql, mongodb, or none (default: mysql).
@@ -198,7 +198,7 @@ trap on_exit EXIT
 # The versions to install. Websites may use 7.4 to 8.5. The panel's Composer
 # lock needs PHP 8.4.1 or newer (Symfony 8.1), so 8.4 is added unless 8.4 or
 # 8.5 was already chosen.
-PHP_VERSIONS="${LARAVELIFY_PHP_VERSIONS:-8.0 8.1 8.2 8.3 8.4 8.5}"
+PHP_VERSIONS="${LARAVELIFY_PHP_VERSIONS:-8.4}"
 PHP_VERSIONS="$(tr ',' ' ' <<<"$PHP_VERSIONS" | xargs -n1 | sort -uV | xargs)"
 for version in $PHP_VERSIONS; do
   if [[ ! "$version" =~ ^(7\.4|8\.[0-5])$ ]]; then
@@ -211,7 +211,7 @@ if [[ ! " $PHP_VERSIONS " =~ \ 8\.[45]\  ]]; then
   PHP_ADDED_NOTE="PHP 8.4 added: the panel itself needs PHP 8.4 or newer."
 fi
 
-NODE_VERSIONS="${LARAVELIFY_NODE_VERSIONS:-20 22 24}"
+NODE_VERSIONS="${LARAVELIFY_NODE_VERSIONS:-24}"
 NODE_VERSIONS="$(tr ',' ' ' <<<"$NODE_VERSIONS" | xargs -n1 | sort -un | xargs)"
 for version in $NODE_VERSIONS; do
   if [[ ! "$version" =~ ^(18|20|22|24)$ ]]; then
@@ -423,7 +423,14 @@ if [[ -n "$FREE_ADDRESS" ]]; then
   unset LARAVELIFY_CLOUD_KEY
   CLOUD_STATUS="${CLOUD_RESPONSE##*$'\n'}"
   CLOUD_BODY="${CLOUD_RESPONSE%$'\n'*}"
-  cloud_field() { printf '%s' "$CLOUD_BODY" | python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1]) or "")' "$1" 2>/dev/null || true; }
+  cloud_field() {
+    printf '%s' "$CLOUD_BODY" | python3 -c '
+import json, sys
+value = json.load(sys.stdin)
+for key in sys.argv[1].split("."):
+    value = value.get(key) if isinstance(value, dict) else None
+print("" if value is None or value is False else value)' "$1" 2>/dev/null || true
+  }
   if [[ "$CLOUD_STATUS" != "200" ]]; then
     CLOUD_MESSAGE="$(cloud_field message)"
     echo "Laravelify Cloud did not give a free address: ${CLOUD_MESSAGE:-${CLOUD_STATUS}}" >&2
@@ -435,6 +442,11 @@ if [[ -n "$FREE_ADDRESS" ]]; then
   CLOUD_TOKEN="$(cloud_field cloud_token)"
   CLOUD_PREFIX="$(cloud_field prefix)"
   CLOUD_DOMAIN="$(cloud_field domain)"
+  # Telegram alerts go out through Cloud's bot to the Telegram linked to the account.
+  CLOUD_TELEGRAM_TOKEN="$(cloud_field telegram.token)"
+  CLOUD_TELEGRAM_API="$(cloud_field telegram.api)"
+  CLOUD_TELEGRAM_CHAT="$(cloud_field telegram.chat_id)"
+  CLOUD_TELEGRAM_LINKED="$(cloud_field telegram.linked)"
   unset CLOUD_RESPONSE CLOUD_BODY
   # Cloud already routes the address and made its DNS record: no Cloudflare API token needed.
   CLOUDFLARE_API_TOKEN=""
@@ -1316,6 +1328,10 @@ if [[ -n "$CLOUD_TOKEN" ]]; then
   # Websites on this panel can then use free <client>-<name>.laravelify.cloud domains too.
   (cd "$APP_ROOT" && LARAVELIFY_CLOUD_TOKEN="$CLOUD_TOKEN" "$PHP_BIN" artisan laravelify:cloud-connect "$CLOUD_API" --prefix="$CLOUD_PREFIX" --domain="$CLOUD_DOMAIN" --no-ansi) || true
   CLOUD_TOKEN=""
+  if [[ -n "${CLOUD_TELEGRAM_TOKEN:-}" ]]; then
+    (cd "$APP_ROOT" && LARAVELIFY_TELEGRAM_TOKEN="$CLOUD_TELEGRAM_TOKEN" "$PHP_BIN" artisan laravelify:telegram-connect "${CLOUD_TELEGRAM_CHAT:-0}" --api="$CLOUD_TELEGRAM_API" --no-ansi) || true
+    CLOUD_TELEGRAM_TOKEN=""
+  fi
 fi
 if [[ -s /tmp/laravelify-install/api-token ]]; then
   step "Adding the panel route and DNS record in Cloudflare"
@@ -1358,6 +1374,13 @@ if [[ -n "$WITH_PHPMYADMIN" ]]; then
   printf '  %sphpMyAdmin%s  %s  (user root; the password is on Server → MySQL in the panel)\n' "$C_DIM" "$C_RESET" "$PHPMYADMIN_URL"
 fi
 printf '  %sDatabases%s   %s\n' "$C_DIM" "$C_RESET" "${DATABASE_LABELS:+${DATABASE_LABELS}, }SQLite: each website picks one when you add it"
+if [[ -n "$FREE_ADDRESS" ]]; then
+  if [[ -n "${CLOUD_TELEGRAM_LINKED:-}" ]]; then
+    printf '  %sTelegram%s    alerts go to your Telegram through Laravelify Cloud\n' "$C_DIM" "$C_RESET"
+  else
+    printf '  %sTelegram%s    link Telegram on app.laravelify.cloud → Notifications to get alerts\n' "$C_DIM" "$C_RESET"
+  fi
+fi
 printf '  %sRedis%s       no password yet: set one in the panel under Server → Redis\n' "$C_DIM" "$C_RESET"
 printf '  %sFirewall%s    open: SSH (22), HTTP (80), HTTPS (443)\n' "$C_DIM" "$C_RESET"
 printf '  %sUpdates%s     sudo bash /opt/laravelify/scripts/update.sh\n' "$C_DIM" "$C_RESET"

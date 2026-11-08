@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.91] - 2026-11-08
+
+- **Changed: a faster default install.** The installer now adds PHP-FPM 8.4 and Node.js 24 only. The panel installs any other PHP (7.4 to 8.5) or Node.js version the first time a website needs it. `--php` and `--node` still pick more up front.
+- **New: Telegram alerts through Laravelify Cloud for panels installed with an install key.** The panel gets a relay token for its own server, never the bot's token. Settings → Telegram bot shows where the messages go and how to use your own bot instead.
+- **New: Open panel from Laravelify Cloud.** A one-time code (one use, 60 seconds, this server only) replaces the password. The panel checks it with Cloud using its own token, and still asks for the authenticator code (`/cloud-login`).
+
 ## [0.3.0-beta.90] - 2026-11-08
 
 - **New: a free laravelify.cloud address from the installer.** The installer first asks: a free `https://<name>.laravelify.cloud` address, or your own domain. The free address needs only the install key from app.laravelify.cloud → Dashboard → Install from a terminal (or `LARAVELIFY_CLOUD_KEY`). Laravelify Cloud makes the tunnel and DNS record, so no Cloudflare question is asked, and the panel is connected for free website domains too. The server keeps an id in `/etc/laravelify/cloud-server-id`, so installing it again gives the same address.

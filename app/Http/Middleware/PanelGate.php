@@ -30,7 +30,8 @@ class PanelGate
         }
 
         if (! auth()->check()) {
-            if ($request->routeIs('login')) {
+            // The password form, and Open panel from Laravelify Cloud (its own checks, then the authenticator code).
+            if ($request->routeIs('login', 'cloud-login', 'cloud-login.confirm')) {
                 return $next($request);
             }
 
@@ -47,7 +48,7 @@ class PanelGate
             return $next($request);
         }
 
-        if ($request->routeIs('setup', 'setup.two-factor', 'login')) {
+        if ($request->routeIs('setup', 'setup.two-factor', 'login', 'cloud-login', 'cloud-login.confirm')) {
             return redirect()->route('dashboard');
         }
 

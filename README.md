@@ -100,7 +100,7 @@ It ends with your setup link (`https://panel.example.com/setup?token=…`): open
 
 ### Choose what to install
 
-By default you get PHP-FPM 8.0 to 8.5 and Node.js 20, 22, and 24. Install only what your sites use with the **[install command builder](https://laravelify.cloud/#install)**, or pass the options yourself:
+By default you get PHP-FPM 8.4 and Node.js 24, so the install is quick. Any other version (PHP 7.4 to 8.5, Node 18 to 24) is installed by the panel the first time a website needs it. Pick more up front with the **[install command builder](https://laravelify.cloud/#install)**, or pass the options yourself:
 
 ```bash
 curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- --php=8.3,8.4 --node=22,24 --panel-domain=panel.example.com

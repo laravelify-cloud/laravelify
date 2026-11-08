@@ -141,8 +141,15 @@ class Telegram extends PanelComponent
 
     public function render()
     {
+        $api = (string) Setting::getValue('telegram_api_url');
+        $chat = (string) Setting::getValue('telegram_chat_id');
+
         return view('livewire.settings.telegram', [
             'eventGroups' => TelegramClient::EVENT_GROUPS,
+            // Sent through Laravelify Cloud's bot (the panel holds only a relay token for its own server).
+            'viaCloud' => $api !== '' && $api !== 'https://api.telegram.org',
+            'cloudHost' => (string) parse_url($api, PHP_URL_HOST),
+            'cloudChat' => $chat !== '' && $chat !== '0' ? $chat : null,
         ])->layout('layouts.app')->title('Telegram bot');
     }
 

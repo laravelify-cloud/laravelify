@@ -10,6 +10,18 @@
         </x-slot:actions>
     </x-page-header>
 
+    @if ($viaCloud)
+        <div class="callout flex-col items-start gap-1.5" role="status">
+            <p class="font-medium">Notifications go through Laravelify Cloud</p>
+            <p class="text-muted">
+                This panel was connected with your Laravelify Cloud install key, so its messages go out from the Laravelify Cloud bot ({{ $cloudHost }}) to the Telegram linked to your Cloud account{{ $cloudChat ? ' (chat id '.$cloudChat.')' : '' }}.
+                The panel holds only a token for its own server, never the bot's token, and its messages reach only you.
+                See every message, and link Telegram if you have not yet, on app.laravelify.cloud → Notifications.
+            </p>
+            <p class="text-muted">To use your own bot instead, paste its token below and save.</p>
+        </div>
+    @endif
+
     <form id="telegram-settings" class="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]" wire:submit="save">
         <div class="flex min-w-0 flex-col gap-6">
             <x-layer-card title="Bot" helper="Create a bot with @BotFather and paste its token. It is stored encrypted.">
