@@ -72,6 +72,15 @@ if (isset($_GET['logout'])) {
 $token = (string) ($_GET['token'] ?? '');
 
 if ($token === '') {
+    // phpMyAdmin sends the browser back here when the MySQL login it was given did not work, and
+    // leaves its reason in the session: show it instead of starting over.
+    $problem = (string) ($_SESSION['PMA_single_signon_error_message'] ?? '');
+
+    if ($problem !== '') {
+        unset($_SESSION['PMA_single_signon_error_message']);
+        page('phpMyAdmin could not sign in', 'MySQL said: '.strip_tags($problem).' Check the database login of the panel (Server → MySQL), or sign in with a password.', 502);
+    }
+
     page('Open phpMyAdmin from Laravelify', 'One-click sign-in starts in the Laravelify panel: use the phpMyAdmin link in its sidebar.');
 }
 
