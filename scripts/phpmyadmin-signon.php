@@ -109,5 +109,7 @@ $_SESSION['PMA_single_signon_host'] = $env['DB_HOST'] ?? '127.0.0.1';
 $_SESSION['PMA_single_signon_port'] = $env['DB_PORT'] ?? '3306';
 session_write_close();
 
-header('Location: index.php');
+// A new address each time: a browser that kept an old redirect of index.php (phpMyAdmin pages
+// are cached for hours) would otherwise replay it without asking the server.
+header('Location: index.php?signon='.time());
 exit;
