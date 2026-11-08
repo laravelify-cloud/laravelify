@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.98] - 2026-11-08
+
+- **Fixed: phpMyAdmin one-click sign-in still gave a 404 in some browsers.** A browser could keep an old redirect of `/phpmyadmin/index.php` (phpMyAdmin pages are cached for hours) and replay it without asking the server. The sign-in now goes to a fresh address each time.
+
 ## [0.3.0-beta.97] - 2026-11-08
 
 - **Fixed: phpMyAdmin one-click sign-in went back to the sign-in page.** Updates moved phpMyAdmin to the panel's PHP pool only in the panel's database, not in nginx. phpMyAdmin then ran in another pool and could not read the session the sign-in left. Updates now write it to nginx too.
