@@ -36,3 +36,6 @@ Schedule::command('laravelify:run-backups')->everyMinute()->withoutOverlapping(5
 Schedule::command('laravelify:collect')->everyMinute()->withoutOverlapping(10);
 Schedule::command('laravelify:sample-server')->everyMinute()->withoutOverlapping(5);
 Schedule::command('laravelify:prune-monitoring')->dailyAt('03:30')->withoutOverlapping(60);
+
+// Laravelify Cloud shows each linked panel's version and offers updates.
+Schedule::command('laravelify:cloud-report')->hourly()->withoutOverlapping(10);

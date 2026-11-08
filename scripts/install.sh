@@ -1327,6 +1327,7 @@ PANEL_ROUTED="${PANEL_ROUTED:-}"
 if [[ -n "$CLOUD_TOKEN" ]]; then
   # Websites on this panel can then use free <client>-<name>.laravelify.cloud domains too.
   (cd "$APP_ROOT" && LARAVELIFY_CLOUD_TOKEN="$CLOUD_TOKEN" "$PHP_BIN" artisan laravelify:cloud-connect "$CLOUD_API" --prefix="$CLOUD_PREFIX" --domain="$CLOUD_DOMAIN" --no-ansi) || true
+  (cd "$APP_ROOT" && "$PHP_BIN" artisan laravelify:cloud-report --no-ansi) || true
   CLOUD_TOKEN=""
   if [[ -n "${CLOUD_TELEGRAM_TOKEN:-}" ]]; then
     (cd "$APP_ROOT" && LARAVELIFY_TELEGRAM_TOKEN="$CLOUD_TELEGRAM_TOKEN" "$PHP_BIN" artisan laravelify:telegram-connect "${CLOUD_TELEGRAM_CHAT:-0}" --api="$CLOUD_TELEGRAM_API" --no-ansi) || true
