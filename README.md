@@ -48,6 +48,7 @@ Inspired by [Coolify](https://coolify.io), built with Laravel 13, Livewire 4, Al
 - [Update, repair, uninstall](#update-repair-uninstall)
 - [Security model](#security-model)
 - [Use it from an AI assistant (MCP)](#use-it-from-an-ai-assistant-mcp)
+- [Laravelify Cloud](#laravelify-cloud)
 - [Development](#development)
 - [Repositories](#repositories)
 - [Support and sponsors](#support-and-sponsors)
@@ -146,7 +147,7 @@ The panel lives in `/opt/laravelify`, websites in `/var/www/<slug>`, and the ins
 - **VS Code for every website**: a full VS Code ([code-server](https://github.com/coder/code-server)) in the browser, running as the website's own user on its own copy of the repository, with extensions, a terminal, Git, and the debugger. Commit and push to deploy. It is installed with the panel and stops by itself after 30 minutes idle.
 - **AI Agents chat** with Claude Code, Cursor Agent, and GitHub Copilot CLI: sign in from a dialog, switch agents in the middle of a task (the next one continues from a recap and a [graphify](https://github.com/Graphify-Labs/graphify) project map), effort levels, restore checkpoints, Add to Chat and Quick Edit on selected code, pasted text and images.
 - **Live Server**: Go Live runs the dev server (Next.js, Vite, Nuxt, Node, Laravel, plain PHP) and shows it on a random HTTPS address through the Cloudflare tunnel; saving a file refreshes the page, and stopping removes the address and its DNS record.
-- **Environments and previews**: production and development side by side, each with its own branch, domain, database, and Redis prefix, and previews on a random subdomain.
+- **Environments and previews**: production and development (or staging) of one website side by side, each with its own branch, domain or port, folder, processes, `.env`, database, and Redis prefix. A push deploys only the environment of that branch. Previews on a random subdomain.
 
 ### 🗄️ Database tool
 
@@ -156,6 +157,9 @@ The panel lives in `/opt/laravelify`, websites in `/var/www/<slug>`, and the ins
 - **Edit rows** in a form made for each column type (date and time pickers, enum lists, NULL), add and delete rows. Every change goes to a **change log you can undo**.
 - **Foreign keys** both ways: click a value to open the row it points at, or the rows that point at it.
 - **SQL editor** with syntax colors and autocomplete of tables and columns, results in the same filterable grid, and a **history per database** that keeps the rows each UPDATE and DELETE changed, before and after. Structure view, export to SQL, triggers, procedures, functions, and events.
+- **Import SQL** of any size (up to 20 GB, `.sql` or `.sql.gz`): uploaded in 8 MB pieces, then streamed into MySQL with checks off and one commit, with live progress and time left. A 666 MB dump loads in about 30 seconds.
+- **Tick tables** to empty or drop several at once.
+- **phpMyAdmin** at `/phpmyadmin` of the panel, opened signed in from the sidebar.
 - **Encrypted columns**: add your site's own encryption method (PHP code that runs inside your site, with its own keys), mark a column, and it is shown, searched, filtered, and edited decrypted. Only the setting is saved; the data never leaves your site decrypted.
 
 ### 💾 Backups to S3
@@ -170,7 +174,8 @@ The panel lives in `/opt/laravelify`, websites in `/var/www/<slug>`, and the ins
 - **Uptime checks**, **issues** (Laravel errors grouped by exception and line, with stack traces), **heartbeats** for cron jobs.
 - **Attack detection**: SQL injection, XSS, path traversal, scanners, and attack tools, with one-click IP blocking.
 - **Server monitoring**: live CPU, memory, load, disk, network, services, and the busiest processes.
-- **Telegram alerts** for deploys, downtime, crashed workers, error spikes, slow responses, attacks, a full disk, and pending security patches.
+- **Telegram alerts** for deploys, downtime, crashed workers, error spikes, slow responses, attacks, a full disk, and pending security patches. With your own bot, or through the Laravelify Cloud bot with no setup.
+- **GlitchTip error tracking** on the server (open source, nothing leaves it): one click installs it with a live progress bar, every website gets its project and key, and **Install SDK in the code** adds Sentry to the app and deploys.
 
 ### 🧰 Tools
 
@@ -250,6 +255,7 @@ Updates download the newest release, run the migrations, restart the panel's wor
 - **Least privilege for root**: the panel may only run `scripts/host-apply.sh` as root, and that script validates everything it is given.
 - **Firewall** with only SSH, 80, and 443 open, and HTTPS through Cloudflare.
 - **An extra sign-in prompt** in front of the panel and phpMyAdmin (Security → Access), with an allowlist of IPs that skip it.
+- **Per website**: hide from search engines, refuse crawlers, block IPs, and **basic auth** with a username and password, or with your 6-digit authenticator code (the browser is let in for a day, from that IP, for that site only). Paths like `/api/` and webhooks can stay open.
 
 Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
@@ -259,7 +265,22 @@ Laravelify has a built-in [MCP](https://modelcontextprotocol.io) server. Create 
 
 > Deploy acme/shop on shop.example.com with a MySQL database, then show me the log.
 
-The assistant can create and deploy websites, read deploy logs and site logs, set environment variables, change domains and redirects, run a command in a site folder, upload files, import a database dump, and run backups. It is told to ask you before deleting anything.
+The assistant can create and deploy websites, add **environments** (development, staging) to a website, read deploy logs and site logs, set environment variables, change domains and redirects, run a command in a site folder, upload files, import a database dump, fix errors GlitchTip caught with a commit, and run backups. Every per-site tool takes `environment` to work on one of a website's environments. It is told to ask you before deleting anything. All tools: [docs.laravelify.cloud/tools/mcp](https://docs.laravelify.cloud/tools/mcp).
+
+## Laravelify Cloud
+
+[Laravelify Cloud](https://app.laravelify.cloud) is an optional, free companion. It never runs your websites: they stay on your server.
+
+| | |
+| --- | --- |
+| **Install from the browser** | Connect a server over SSH, pick what to install, and watch the install live. |
+| **Free address** | Install from a terminal with your install key (Dashboard → Install from a terminal) and get `https://<name>.laravelify.cloud`: no Cloudflare account. The same server keeps the same address when installed again. |
+| **Telegram alerts** | Panels installed this way send their alerts through the Laravelify Cloud bot to your Telegram. Notifications shows every message of the last 30 days. |
+| **Open panel** | One click from a server's card: a one-time code (60 seconds, that server only) replaces the password; the panel still asks for your authenticator code. |
+| **Versions** | Each server's card shows its Laravelify version and offers newer releases. |
+| **Monitoring** | Each panel is checked every minute; Telegram tells you when one goes down and when it is back. |
+
+More: [docs.laravelify.cloud/installation/laravelify-cloud](https://docs.laravelify.cloud/installation/laravelify-cloud).
 
 ## Development
 
