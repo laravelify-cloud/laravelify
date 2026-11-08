@@ -109,7 +109,7 @@ curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- --php=8.3,8
 | `--node=22,24` | Node.js majors (20, 22, 24). The newest is the system Node.js. |
 | `--panel-domain=HOST` | The panel's domain (otherwise asked) |
 | `--databases=mysql,postgresql` | Database servers: `mysql` or `mariadb`, `postgresql`, `mongodb`, or `none` (default `mysql`) |
-| `--tools=phpmyadmin,vscode` | Optional tools: `phpmyadmin`, `vscode`, `glitchtip`, or `none` (default `vscode`) |
+| `--tools=phpmyadmin,vscode` | Optional tools: `phpmyadmin`, `vscode`, `glitchtip`, or `none` (default `phpmyadmin,vscode`; phpMyAdmin only with MySQL or MariaDB) |
 | `--phpmyadmin-path=PATH` | phpMyAdmin's path on the panel's address (default `/phpmyadmin`) |
 | `--help` | All options |
 

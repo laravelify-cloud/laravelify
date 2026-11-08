@@ -16,7 +16,7 @@
 #   PHPMYADMIN_DOMAIN         phpMyAdmin on a domain of its own (old style)
 #   PHPMYADMIN_PATH           phpMyAdmin at this path of the panel's address (default /phpmyadmin)
 #   LARAVELIFY_PACK           full (default) or minimal: no phpMyAdmin, no VS Code
-#   LARAVELIFY_TOOLS          exactly which tools: phpmyadmin,vscode,glitchtip (default: vscode), or --tools=
+#   LARAVELIFY_TOOLS          exactly which tools: phpmyadmin,vscode,glitchtip (default: phpmyadmin,vscode), or --tools=
 #   CLOUDFLARE_TUNNEL_TOKEN   skip the tunnel token prompt (asked first and checked)
 #   CLOUDFLARE_API_TOKEN      skip the optional API token prompt (empty: none); it adds the panel route and DNS
 #   LARAVELIFY_VERSION        release to install, like 1.2.0 (default: latest)
@@ -50,7 +50,7 @@ Options:
                               SQLite needs no server and always works.
   --panel-domain=HOST         the panel's domain, like panel.example.com
   --tools=phpmyadmin,vscode   optional tools: phpmyadmin, vscode, glitchtip, or none
-                              (default: vscode)
+                              (default: phpmyadmin,vscode)
   --phpmyadmin-path=PATH      phpMyAdmin at this path of the panel's address (default /phpmyadmin)
   --phpmyadmin-domain=HOST    or on a domain of its own instead
   -h, --help                  show this help
@@ -245,12 +245,12 @@ MYSQL_FAMILY=""
 has_database mysql && MYSQL_FAMILY="mysql"
 has_database mariadb && MYSQL_FAMILY="mariadb"
 
-# Optional tools. LARAVELIFY_PACK sets their defaults: full (default) has VS Code, minimal has
-# none. phpMyAdmin is only installed when asked for. LARAVELIFY_TOOLS (like "phpmyadmin,vscode,glitchtip") picks them exactly.
+# Optional tools. LARAVELIFY_PACK sets their defaults: full (default) has phpMyAdmin (with MySQL or
+# MariaDB) and VS Code, minimal has none. LARAVELIFY_TOOLS (like "phpmyadmin,vscode,glitchtip") picks them exactly.
 # GlitchTip needs the panel's admin, so the panel installs it right after the setup link is used.
 LARAVELIFY_PACK="${LARAVELIFY_PACK:-full}"
 if [[ -z "${LARAVELIFY_TOOLS+x}" ]]; then
-  LARAVELIFY_TOOLS="$([[ "$LARAVELIFY_PACK" == "minimal" ]] && echo "" || echo "vscode")"
+  LARAVELIFY_TOOLS="$([[ "$LARAVELIFY_PACK" == "minimal" ]] && echo "" || echo "phpmyadmin,vscode")"
 fi
 has_tool() { [[ ",${LARAVELIFY_TOOLS// /,}," == *",$1,"* ]]; }
 WITH_PHPMYADMIN=""
@@ -499,7 +499,7 @@ printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "PHP-FPM" "${PHP_VERSIONS}" >&3
 printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Node.js" "${NODE_VERSIONS} (system: ${NODE_BASE})" >&3
 DATABASE_LABELS="$(sed 's/ /, /g' <<<"$DATABASES" | sed -e 's/mysql/MySQL 8.4/' -e 's/mariadb/MariaDB/' -e 's/postgresql/PostgreSQL/' -e 's/mongodb/MongoDB/')"
 printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Databases" "${DATABASE_LABELS:+${DATABASE_LABELS}, }SQLite" >&3
-printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Also" "Redis, nginx,${MYSQL_FAMILY:+ phpMyAdmin,} PM2, Composer, cloudflared" >&3
+printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Also" "Redis, nginx,${WITH_PHPMYADMIN:+ phpMyAdmin,} PM2, Composer, cloudflared" >&3
 printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Log" "${LOG_FILE}" >&3
 if [[ -n "${PHP_ADDED_NOTE:-}" ]]; then
   printf '%s│%s  %s%s%s\n' "$C_DIM" "$C_RESET" "$C_YELLOW" "$PHP_ADDED_NOTE" "$C_RESET" >&3
