@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.89] - 2026-11-08
+
+- **Fixed: phpMyAdmin is installed by default again** (with MySQL or MariaDB), at `/phpmyadmin` of the panel, next to VS Code. Since it became optional, a plain install left it out, but the installer still listed it under "Also". That line now shows phpMyAdmin only when it is installed. To add it to a server without it: `curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo LARAVELIFY_REINSTALL=1 bash -s -- --tools=phpmyadmin,vscode`.
+
 ## [0.3.0-beta.88] - 2026-11-08
 
 - **New: website environments over MCP.** AI assistants can list, add, change, and delete a website's environments (`list-site-environments`, `create-site-environment`, `update-site-environment`, `delete-site-environment`). An environment, like development on the dev branch, gets its own folder, port, processes, nginx, `.env` (copied from production or another environment), Cloudflare route and DNS, and database. Production cannot be deleted.
