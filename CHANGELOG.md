@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.94] - 2026-11-08
+
+- **Fixed: phpMyAdmin added later had no address.** On a server that got phpMyAdmin through a repair run (`--tools=phpmyadmin`), it had no domain and no path. It did not open, and the sidebar had no phpMyAdmin button. Updating now moves it to `/phpmyadmin` of the panel address.
+
 ## [0.3.0-beta.93] - 2026-11-08
 
 - **New: GlitchTip shows its install progress.** Turn on error tracking now shows each step (PostgreSQL, download, Python packages, database, start, admin) with its percent and a progress bar. It updates in every open tab, and you can leave the page.
