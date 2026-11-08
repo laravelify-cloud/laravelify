@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.97] - 2026-11-08
+
+- **Fixed: phpMyAdmin one-click sign-in went back to the sign-in page.** Updates moved phpMyAdmin to the panel's PHP pool only in the panel's database, not in nginx. phpMyAdmin then ran in another pool and could not read the session the sign-in left. Updates now write it to nginx too.
+- **Changed: when MySQL refuses the login phpMyAdmin is given, the sign-in page shows MySQL's reason** instead of starting over.
+
 ## [0.3.0-beta.96] - 2026-11-08
 
 - **Fixed: the phpMyAdmin menu button gave a 404** when phpMyAdmin is at `/phpmyadmin` and its saved domain had no path. The button now opens the panel's own address plus the path. A phpMyAdmin on a domain of its own still opens on that domain.
