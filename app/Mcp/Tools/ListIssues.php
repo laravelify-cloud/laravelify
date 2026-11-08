@@ -21,7 +21,7 @@ class ListIssues extends Tool
 
     public function handle(Request $request, GlitchtipInsights $insights): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
 
         if (! $insights->available()) {
             throw ValidationException::withMessages(['website' => 'GlitchTip is not on this server. Turn it on in a website\'s GlitchTip tab.']);
@@ -67,6 +67,7 @@ class ListIssues extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'details' => $schema->boolean()->description('Add each issue\'s latest stack trace with code lines. Slower: use a small limit.'),
             'limit' => $schema->integer()->description('How many issues, 1 to 25 (default 10).'),
             'period' => $schema->string()->description('1h, 24h, 7d, 14d (default) or 30d.'),

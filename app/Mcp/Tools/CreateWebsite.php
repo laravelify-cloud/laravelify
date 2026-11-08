@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Mcp\Concerns\DescribesWebsites;
+use App\Mcp\Concerns\ReadsEnvValues;
 use App\Models\GithubApp;
 use App\Models\Group;
 use App\Services\CloudflareRoutes;
@@ -14,17 +15,17 @@ use App\Support\EnvFile;
 use App\Support\Slugs;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Validation\ValidationException;
-use InvalidArgumentException;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 use Throwable;
 
-#[Description('Create a website from a Git repository and (by default) deploy it right away: nginx, SSL through the Cloudflare tunnel, the PHP or Node runtime, workers, and an optional MySQL database are set up for you. Give a domain (with a cloudflare_tunnel_id for HTTPS) and optionally include_www and other domains (aliases) for the same site, or leave domain empty for a free HTTP port. Sites from a connected GitHub App deploy again on every push.')]
+#[Description('For production + development of one app, create one website, then create-site-environment: never a second website. Create a website from a Git repository and (by default) deploy it right away: nginx, SSL through the Cloudflare tunnel, the PHP or Node runtime, workers, and an optional MySQL database are set up for you. Give a domain (with a cloudflare_tunnel_id for HTTPS) and optionally include_www and other domains (aliases) for the same site, or leave domain empty for a free HTTP port. Sites from a connected GitHub App deploy again on every push.')]
 class CreateWebsite extends Tool
 {
     use DescribesWebsites;
+    use ReadsEnvValues;
 
     public function handle(Request $request, WebsiteCreator $creator, GithubAppClient $github, HostWriter $host): Response
     {
@@ -173,34 +174,6 @@ class CreateWebsite extends Tool
         }
 
         return '';
-    }
-
-    /**
-     * @param  array<int, mixed>  $lines  "KEY=value" strings
-     * @return array<string, string>
-     */
-    private function envValues(array $lines): array
-    {
-        $values = [];
-
-        foreach ($lines as $line) {
-            [$key, $value] = array_pad(explode('=', (string) $line, 2), 2, null);
-            $key = trim((string) $key);
-
-            if ($value === null || ! EnvFile::validKey($key)) {
-                throw ValidationException::withMessages(['env' => 'Write each variable as KEY=value ("'.$line.'" is not).']);
-            }
-
-            $values[$key] = $value;
-        }
-
-        try {
-            EnvFile::set('', $values);
-        } catch (InvalidArgumentException $exception) {
-            throw ValidationException::withMessages(['env' => $exception->getMessage()]);
-        }
-
-        return $values;
     }
 
     /**

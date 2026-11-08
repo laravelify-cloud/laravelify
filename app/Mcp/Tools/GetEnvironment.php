@@ -21,7 +21,7 @@ class GetEnvironment extends Tool
 
     public function handle(Request $request): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $reveal = (bool) $request->get('reveal', false);
         $wanted = array_filter(array_map('trim', (array) $request->get('keys', [])));
         $content = (string) $website->env_content;
@@ -49,6 +49,7 @@ class GetEnvironment extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'keys' => $schema->array()->items($schema->string())->description('Only these variables.'),
             'reveal' => $schema->boolean()->description('Show secret values too.'),
         ];

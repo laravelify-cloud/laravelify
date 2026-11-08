@@ -23,7 +23,7 @@ class UpdateEnvironment extends Tool
 
     public function handle(Request $request, HostWriter $host): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $values = [];
 
         foreach ((array) $request->get('set', []) as $line) {
@@ -76,6 +76,7 @@ class UpdateEnvironment extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'set' => $schema->array()->items($schema->string())->description('Variables to set, as "KEY=value" strings.'),
             'unset' => $schema->array()->items($schema->string())->description('Variable names to remove.'),
         ];

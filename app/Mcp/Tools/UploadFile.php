@@ -24,7 +24,7 @@ class UploadFile extends Tool
             'content_base64' => ['required', 'string'],
         ]);
 
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $contents = base64_decode(preg_replace('/\s+/', '', (string) $request->get('content_base64')) ?? '', true);
 
         if ($contents === false) {
@@ -61,6 +61,7 @@ class UploadFile extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'path' => $schema->string()->description('Inside the site folder. The file to write, like storage/app/private/firebase-adminsdk.json; or with unpack, the folder to unpack into, like storage/app/private.')->required(),
             'content_base64' => $schema->string()->description('The file (or archive) contents, base64-encoded.')->required(),
             'unpack' => $schema->boolean()->description('Unpack an archive into path instead of writing one file.'),

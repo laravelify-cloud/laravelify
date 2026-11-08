@@ -19,7 +19,7 @@ class RunCommand extends Tool
 
     public function handle(Request $request, SiteCommand $commands): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
 
         try {
             $result = $commands->run($website, (string) $request->get('command'));
@@ -42,6 +42,7 @@ class RunCommand extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'command' => $schema->string()->description('One command, like "php artisan about".')->required(),
         ];
     }

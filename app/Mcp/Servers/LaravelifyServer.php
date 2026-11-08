@@ -7,9 +7,11 @@ use App\Mcp\Tools\CancelDeployment;
 use App\Mcp\Tools\CheckWebsite;
 use App\Mcp\Tools\CommitFiles;
 use App\Mcp\Tools\CreateGroup;
+use App\Mcp\Tools\CreateSiteEnvironment;
 use App\Mcp\Tools\CreateWebsite;
 use App\Mcp\Tools\DeleteFile;
 use App\Mcp\Tools\DeleteGroup;
+use App\Mcp\Tools\DeleteSiteEnvironment;
 use App\Mcp\Tools\DeleteWebsite;
 use App\Mcp\Tools\DeployWebsite;
 use App\Mcp\Tools\GetDeployment;
@@ -25,6 +27,7 @@ use App\Mcp\Tools\ListFiles;
 use App\Mcp\Tools\ListGroups;
 use App\Mcp\Tools\ListIssues;
 use App\Mcp\Tools\ListPorts;
+use App\Mcp\Tools\ListSiteEnvironments;
 use App\Mcp\Tools\ListSiteTypes;
 use App\Mcp\Tools\ListSources;
 use App\Mcp\Tools\ListWebsites;
@@ -40,6 +43,7 @@ use App\Mcp\Tools\SyncCloudflare;
 use App\Mcp\Tools\UpdateEnvironment;
 use App\Mcp\Tools\UpdateGroup;
 use App\Mcp\Tools\UpdateNginx;
+use App\Mcp\Tools\UpdateSiteEnvironment;
 use App\Mcp\Tools\UpdateWebsite;
 use App\Mcp\Tools\UploadFile;
 use Laravel\Mcp\Server;
@@ -87,6 +91,13 @@ use Laravel\Mcp\Server\Attributes\Version;
     6. Special nginx rules from an old server (OAuth, webhook, or payment callback paths sent to the Laravel API): get-nginx, then update-nginx with location blocks added.
     7. check-website, then tell the user the URL.
 
+    Production and development (or staging) of the same app are ONE website with environments, never a second website:
+    create-website for production, then create-site-environment with the website, a name (development), its branch (dev),
+    and its own domain or a free port. It gets its own folder, port, process, nginx, .env, Cloudflare route, and (create_database) database.
+    list-site-environments shows them. Every per-site tool (deploy-website, get-deployment, get-environment, update-environment,
+    run-command, get-logs, set-domains, …) takes environment (id or name; default production) to work on one of them.
+    A push deploys only the environment whose branch it is.
+
     To deploy a project folder on the user's computer: the server cannot read local files. Push it to GitHub first, from the user's
     machine: `gh repo create <name> --private --source . --push` (or add a remote and push). Make sure the Laravelify GitHub App
     can read that repository (GitHub → Settings → Applications → the App → Repository access), then create-website with owner/repo.
@@ -111,6 +122,10 @@ class LaravelifyServer extends Server
         SetRedirects::class,
         SyncCloudflare::class,
         DeleteWebsite::class,
+        ListSiteEnvironments::class,
+        CreateSiteEnvironment::class,
+        UpdateSiteEnvironment::class,
+        DeleteSiteEnvironment::class,
         SetWebsiteEnabled::class,
         DeployWebsite::class,
         ListDeployments::class,

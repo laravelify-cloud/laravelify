@@ -21,7 +21,7 @@ class GetLogs extends Tool
 
     public function handle(Request $request, SiteLogs $logs): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $sources = $logs->sources($website);
         $source = trim((string) $request->get('source', ''));
 
@@ -53,6 +53,7 @@ class GetLogs extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'source' => $schema->string()->description('A log key from the list, like laravel, pm2, nginx-error.'),
             'lines' => $schema->integer()->description('Lines from the end (10 to 500, default 100).'),
         ];

@@ -20,7 +20,7 @@ class SetWebsiteEnabled extends Tool
     public function handle(Request $request, WebsiteSwitch $switch): Response
     {
         $request->validate(['enabled' => ['required', 'boolean']]);
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $enabled = (bool) $request->get('enabled');
 
         if ($website->enabled !== $enabled) {
@@ -37,6 +37,7 @@ class SetWebsiteEnabled extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'enabled' => $schema->boolean()->description('true to turn it on, false to turn it off.')->required(),
         ];
     }

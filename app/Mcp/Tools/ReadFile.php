@@ -21,7 +21,7 @@ class ReadFile extends Tool
 
     public function handle(Request $request, SitePaths $paths): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $relative = trim((string) $request->get('path'));
 
         if (preg_match('/(^|\/)\.env[^\/]*$/', $relative) === 1) {
@@ -63,6 +63,7 @@ class ReadFile extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'path' => $schema->string()->description('The file inside the site, like composer.json or storage/logs/laravel.log.')->required(),
             'offset' => $schema->integer()->description('Start at this byte, for files over 200 KB.'),
         ];

@@ -19,7 +19,7 @@ class RestartWebsite extends Tool
 
     public function handle(Request $request, ServerProcesses $processes, SiteLogs $logs): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $results = [];
 
         try {
@@ -48,6 +48,7 @@ class RestartWebsite extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
         ];
     }
 }

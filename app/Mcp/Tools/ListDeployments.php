@@ -19,7 +19,7 @@ class ListDeployments extends Tool
 
     public function handle(Request $request): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $limit = max(1, min(50, (int) $request->get('limit', 10)));
 
         return Response::json([
@@ -36,6 +36,7 @@ class ListDeployments extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'limit' => $schema->integer()->description('How many (1 to 50, default 10).'),
         ];
     }

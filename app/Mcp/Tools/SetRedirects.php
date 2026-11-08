@@ -21,7 +21,7 @@ class SetRedirects extends Tool
 
     public function handle(Request $request, WebsiteRedirects $redirects): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $report = $redirects->apply($website, (array) $request->get('redirects', []));
         $website->refresh();
 
@@ -40,6 +40,7 @@ class SetRedirects extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'redirects' => $schema->array()->items($schema->object([
                 'from' => $schema->string()->description('A domain like apply.coupons, or a path like /old-page.')->required(),
                 'to' => $schema->string()->description('A URL like https://supercell.apply.coupons, or for a path rule a path like /new-page. Blank on a domain rule: this website\'s own address.'),

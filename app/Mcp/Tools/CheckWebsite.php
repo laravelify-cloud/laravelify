@@ -19,7 +19,7 @@ class CheckWebsite extends Tool
 
     public function handle(Request $request, SiteHealth $health): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $checks = array_map(fn (array $check) => ['check' => $check['title'], 'status' => $check['status'], 'detail' => $check['detail'], 'log' => $check['log'] ?? null], $health->check($website));
         $statuses = array_column($checks, 'status');
 
@@ -37,6 +37,7 @@ class CheckWebsite extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
         ];
     }
 }

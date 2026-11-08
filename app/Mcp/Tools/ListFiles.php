@@ -23,7 +23,7 @@ class ListFiles extends Tool
 
     public function handle(Request $request, SitePaths $paths): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
 
         try {
             $root = $paths->root($website);
@@ -71,6 +71,7 @@ class ListFiles extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'path' => $schema->string()->description('A folder inside the site, like storage/app. Empty: the site folder.'),
         ];
     }

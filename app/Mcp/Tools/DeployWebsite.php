@@ -17,7 +17,7 @@ class DeployWebsite extends Tool
 
     public function handle(Request $request): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
 
         if (! $website->enabled) {
             throw ValidationException::withMessages(['website' => 'This website is turned off. Turn it on first (set-website-enabled).']);
@@ -47,6 +47,7 @@ class DeployWebsite extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
         ];
     }
 }

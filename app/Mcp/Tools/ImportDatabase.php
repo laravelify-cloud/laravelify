@@ -22,7 +22,7 @@ class ImportDatabase extends Tool
 
     public function handle(Request $request, DatabaseImporter $importer, PanelTaskRunner $tasks): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
 
         try {
             $input = $importer->prepare($website, (string) $request->get('path'));
@@ -52,6 +52,7 @@ class ImportDatabase extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'path' => $schema->string()->description('The dump inside the site folder, like dump.sql or backups/shop.sql.gz.')->required(),
             'reset' => $schema->boolean()->description('Empty the database first (drops all its tables).'),
         ];

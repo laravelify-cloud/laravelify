@@ -17,7 +17,7 @@ class CancelDeployment extends Tool
 
     public function handle(Request $request): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $active = $website->deployments()->whereIn('status', ['queued', 'running'])->latest('id')->first()
             ?? throw ValidationException::withMessages(['website' => $website->name.' has no deployment running.']);
 
@@ -37,6 +37,7 @@ class CancelDeployment extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
         ];
     }
 }

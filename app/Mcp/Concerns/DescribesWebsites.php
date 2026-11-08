@@ -4,13 +4,50 @@ namespace App\Mcp\Concerns;
 
 use App\Models\Deployment;
 use App\Models\Website;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Validation\ValidationException;
+use Laravel\Mcp\Request;
 
 /**
  * Finding a website by id, slug, or domain, and the short description the MCP tools return.
  */
 trait DescribesWebsites
 {
+    /**
+     * The website a per-site tool works on: the one given, or with `environment` one of its
+     * environments (by id or name; "production" is the main website).
+     */
+    protected function findSite(Request $request): Website
+    {
+        $website = $this->findWebsite($request->get('website'));
+        $environment = trim((string) $request->get('environment', ''));
+
+        return $environment === '' ? $website : $this->findEnvironment($website, $environment);
+    }
+
+    protected function findEnvironment(Website $website, string $reference): Website
+    {
+        $main = $website->parent ?? $website;
+        $name = strtolower(trim($reference));
+
+        if ($name === '' || in_array($name, ['production', 'prod', 'main'], true) || $name === (string) $main->id) {
+            return $main;
+        }
+
+        return $main->environments()
+            ->where(fn ($query) => ctype_digit($name) ? $query->whereKey((int) $name) : $query->where('environment', $name))
+            ->first()
+            ?? throw ValidationException::withMessages(['environment' => $main->name.' has no "'.$reference.'" environment. list-site-environments shows them.']);
+    }
+
+    /**
+     * The optional `environment` parameter of the per-site tools.
+     */
+    protected function environmentSchema(JsonSchema $schema): mixed
+    {
+        return $schema->string()->description('An environment of the website, by id or name like development (list-site-environments). Default: production, the main website.');
+    }
+
     protected function findWebsite(mixed $reference): Website
     {
         $reference = trim((string) $reference);
@@ -50,6 +87,8 @@ trait DescribesWebsites
             'http_port' => $website->http_port,
             'repository' => $website->repository,
             'branch' => $website->branch,
+            'environment' => $website->environmentName(),
+            'environment_of' => $website->parent?->slug,
             'enabled' => (bool) $website->enabled,
             'auto_deploy' => (bool) $website->auto_deploy,
             'deploys_on_push_via' => match (true) {
@@ -59,6 +98,30 @@ trait DescribesWebsites
             },
             'last_deployment' => $last ? $this->deploymentSummary($last) : null,
             'panel_url' => route('websites.show', $website),
+        ];
+    }
+
+    /**
+     * One environment for list-site-environments: production is the main website.
+     *
+     * @return array<string, mixed>
+     */
+    protected function environmentSummary(Website $website): array
+    {
+        $last = $website->deployments()->latest('id')->first();
+
+        return [
+            'id' => $website->id,
+            'name' => $website->environmentName(),
+            'primary' => $website->parent_id === null,
+            'slug' => $website->slug,
+            'branch' => $website->branch,
+            'domains' => $website->domains(),
+            'url' => $website->publicUrl(),
+            'http_port' => $website->http_port,
+            'status' => ! $website->enabled ? 'turned off' : ($last?->status ?? 'never deployed'),
+            'last_deployment' => $last ? $this->deploymentSummary($last) : null,
+            'database' => $website->provision_database ? $website->db_name : null,
         ];
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Deployment;
 use App\Models\Website;
 use App\Support\EnvFile;
 use App\Support\ServerAddress;
@@ -19,9 +20,14 @@ class WebsiteEnvironments
     public function __construct(private WebsiteCreator $creator, private GithubAppClient $github) {}
 
     /**
-     * @param  array{environment: string, branch: string, from?: ?string, domain?: ?string, http_port?: ?string}  $input
-     *                                                                                                                    from: make the branch from this one first.
-     * @return array{website: Website, error: ?string}
+     * The UI's "Add environment" and the MCP create-site-environment tool both come here. Settings
+     * left out are taken from the main website.
+     *
+     * from: make the branch from this one first. env_source: copy its .env instead of the main
+     * website's; env: variables written on top. deploy false: do not deploy yet.
+     *
+     * @param  array{environment: string, branch: string, from?: ?string, domain?: ?string, http_port?: ?string, aliases?: list<string>, include_www?: bool, cloudflare_tunnel_id?: int|string|null, provision_database?: ?bool, db_engine?: ?string, enable_reverb?: ?bool, env?: array<string, string>, env_source?: ?Website, deploy?: bool}  $input
+     * @return array{website: Website, error: ?string, cloudflare: array<string, mixed>, deployment: ?Deployment}
      *
      * @throws ValidationException
      */
@@ -47,10 +53,17 @@ class WebsiteEnvironments
             $this->makeBranch($main, $branch, $from);
         }
 
+        $domain = trim((string) ($input['domain'] ?? ''));
+        $tunnel = array_key_exists('cloudflare_tunnel_id', $input) && filled($input['cloudflare_tunnel_id'])
+            ? (string) $input['cloudflare_tunnel_id']
+            : ($domain !== '' ? (string) $main->cloudflare_tunnel_id : '');
+
         $result = $this->creator->create($main->group, [
             'name' => $main->name.' ('.$environment.')',
             'type' => $main->type,
-            'domain' => (string) ($input['domain'] ?? ''),
+            'domain' => $domain,
+            'aliases' => (array) ($input['aliases'] ?? []),
+            'include_www' => (bool) ($input['include_www'] ?? false),
             'http_port' => (string) ($input['http_port'] ?? ''),
             'repository' => (string) $main->repository,
             'branch' => $branch,
@@ -61,20 +74,28 @@ class WebsiteEnvironments
             'build_command' => (string) $main->build_command,
             'start_command' => (string) $main->start_command,
             'public_dir' => (string) $main->public_dir,
-            'enable_reverb' => (bool) $main->enable_reverb,
-            'provision_database' => (bool) $main->provision_database,
-            'cloudflare_tunnel_id' => trim((string) ($input['domain'] ?? '')) !== '' ? (string) $main->cloudflare_tunnel_id : '',
+            'enable_reverb' => (bool) ($input['enable_reverb'] ?? $main->enable_reverb),
+            'provision_database' => (bool) ($input['provision_database'] ?? $main->provision_database),
+            'db_engine' => (string) ($input['db_engine'] ?? $main->db_engine ?? ''),
+            'cloudflare_tunnel_id' => $tunnel,
         ]);
 
         $website = $result['website'];
         // The same settings to start from; the database lines are the environment's own (see Deployer).
-        $website->update(['parent_id' => $main->id, 'environment' => $environment, 'env_content' => $this->environmentEnv($main, $website)]);
+        $env = $this->environmentEnv($input['env_source'] ?? $main, $website);
 
-        if ($result['error'] === null) {
-            $website->refresh()->queueDeployment('environment');
+        if (($input['env'] ?? []) !== []) {
+            $env = EnvFile::set($env, $input['env']);
         }
 
-        return ['website' => $website, 'error' => $result['error']];
+        $website->update(['parent_id' => $main->id, 'environment' => $environment, 'env_content' => $env]);
+        $deployment = null;
+
+        if ($result['error'] === null && ($input['deploy'] ?? true) && $website->repository) {
+            $deployment = $website->refresh()->queueDeployment('environment');
+        }
+
+        return ['website' => $website, 'error' => $result['error'], 'cloudflare' => $result['cloudflare'] ?? ['configured' => false, 'lines' => [], 'note' => null], 'deployment' => $deployment ?: null];
     }
 
     /**

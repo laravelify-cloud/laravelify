@@ -21,7 +21,7 @@ class SetDomains extends Tool
 
     public function handle(Request $request, WebsiteDomains $domains): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $domain = $request->get('domain') !== null ? (WebsiteDomains::normalize((string) $request->get('domain'))[0] ?? null) : $website->domain;
         $aliases = $request->get('aliases') !== null ? WebsiteDomains::normalize((array) $request->get('aliases')) : (array) ($website->aliases ?? []);
 
@@ -53,6 +53,7 @@ class SetDomains extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'domain' => $schema->string()->description('The main domain, like example.com. Left out: unchanged.'),
             'aliases' => $schema->array()->items($schema->string())->description('All extra domains, like ["www.example.com", "other.com"]. Left out: unchanged; [] removes them all.'),
             'include_www' => $schema->boolean()->description('Also add www.<main domain> to the extra domains.'),

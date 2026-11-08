@@ -18,7 +18,7 @@ class GetNginx extends Tool
 
     public function handle(Request $request): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
 
         return Response::text((string) $website->nginx_config);
     }
@@ -30,6 +30,7 @@ class GetNginx extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
         ];
     }
 }

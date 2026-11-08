@@ -22,7 +22,7 @@ class DeleteFile extends Tool
 
     public function handle(Request $request, FileTrash $trash, SitePaths $paths): Response
     {
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $relative = trim((string) $request->get('path'), '/');
 
         if ($relative === '') {
@@ -45,6 +45,7 @@ class DeleteFile extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'path' => $schema->string()->description('The file or folder inside the site.')->required(),
         ];
     }

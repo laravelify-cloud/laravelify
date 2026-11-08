@@ -23,7 +23,7 @@ class GetDeployment extends Tool
         $lines = max(10, min(400, (int) $request->get('log_lines', 80)));
         $deployment = $request->get('deployment_id')
             ? Deployment::query()->find((int) $request->get('deployment_id'))
-            : $this->findWebsite($request->get('website'))->deployments()->latest('id')->first();
+            : $this->findSite($request)->deployments()->latest('id')->first();
 
         if (! $deployment) {
             throw ValidationException::withMessages(['website' => 'No such deployment.']);
@@ -46,6 +46,7 @@ class GetDeployment extends Tool
         return [
             'deployment_id' => $schema->integer()->description('The deployment id (from deploy-website or create-website).'),
             'website' => $schema->string()->description('Or a website id, slug, or domain: its latest deployment.'),
+            'environment' => $this->environmentSchema($schema),
             'log_lines' => $schema->integer()->description('How many log lines from the end (10 to 400, default 80).'),
         ];
     }

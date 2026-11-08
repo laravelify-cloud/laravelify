@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.88] - 2026-11-08
+
+- **New: website environments over MCP.** AI assistants can list, add, change, and delete a website's environments (`list-site-environments`, `create-site-environment`, `update-site-environment`, `delete-site-environment`). An environment, like development on the dev branch, gets its own folder, port, processes, nginx, `.env` (copied from production or another environment), Cloudflare route and DNS, and database. Production cannot be deleted.
+- **New: `environment` on every per-site MCP tool** (deploy, deployments, `.env`, nginx, logs, commands, files, domains, redirects, issues…), by id or name. Without it the tool works on production, as before.
+- **Changed: production and development of one app are one website.** The MCP instructions tell assistants to add an environment instead of creating a second website. A push deploys only the environment whose branch it is.
+
 ## [0.3.0-beta.87] - 2026-11-08
 
 - **New: the installer can add the panel's route in Cloudflare.** A tunnel token only connects the server, so the panel's address had to be added to the tunnel by hand. The installer now asks for an optional Cloudflare API token (Account → Cloudflare Tunnel → Edit, Zone → DNS → Edit) and adds the route and DNS record itself. It also saves the token in Settings → Cloudflare. Press Enter to skip it. `CLOUDFLARE_API_TOKEN` does the same for unattended installs, and `php artisan laravelify:panel-route` runs it again later.

@@ -25,7 +25,7 @@ class UpdateNginx extends Tool
     public function handle(Request $request, HostWriter $host): Response
     {
         $request->validate(['nginx_config' => ['required', 'string', 'max:100000']]);
-        $website = $this->findWebsite($request->get('website'));
+        $website = $this->findSite($request);
         $config = (string) $request->get('nginx_config');
 
         if (! str_contains($config, 'server_name') || ! str_contains($config, 'listen')) {
@@ -59,6 +59,7 @@ class UpdateNginx extends Tool
     {
         return [
             'website' => $schema->string()->description('The website id, slug, or domain.')->required(),
+            'environment' => $this->environmentSchema($schema),
             'nginx_config' => $schema->string()->description('The whole server block, as get-nginx returns it, with your change.')->required(),
         ];
     }
