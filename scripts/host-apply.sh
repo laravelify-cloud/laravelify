@@ -2049,8 +2049,9 @@ if (isset($cfg['Servers'][1])) {
     $cfg['Servers'][$i]['auth_type'] = 'signon';
     $cfg['Servers'][$i]['host'] = '127.0.0.1';
     $cfg['Servers'][$i]['SignonSession'] = 'LaravelifySignon';
-    $cfg['Servers'][$i]['SignonURL'] = '/laravelify-signon.php';
-    $cfg['Servers'][$i]['LogoutURL'] = '/laravelify-signon.php?logout=1';
+    // Relative: works at /phpmyadmin of the panel and on a domain of its own.
+    $cfg['Servers'][$i]['SignonURL'] = 'laravelify-signon.php';
+    $cfg['Servers'][$i]['LogoutURL'] = 'laravelify-signon.php?logout=1';
     $cfg['ServerDefault'] = $i;
 }
 PHP

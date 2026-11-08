@@ -107,7 +107,7 @@ class ToolsLinksTest extends TestCase
         $file = storage_path('app/pma-sso/'.hash('sha256', $token).'.json');
         $this->assertFileExists($file);
         $this->assertStringNotContainsString($token, (string) file_get_contents($file));
-        $this->assertSame('1', Setting::getValue('phpmyadmin_sso'));
+        $this->assertSame('2', Setting::getValue('phpmyadmin_sso'));
         $this->assertStringContainsString('location = /laravelify-signon.php', $service->fresh()->config);
         $this->assertStringContainsString(base_path('scripts/phpmyadmin-signon.php'), $service->fresh()->config);
 

@@ -19,7 +19,7 @@ use Throwable;
 class PhpMyAdminController extends Controller
 {
     /** Bump when the sign-in setup changes, so it is installed again. */
-    private const SETUP_VERSION = '1';
+    private const SETUP_VERSION = '2';
 
     public function __invoke(HostWriter $hostWriter): RedirectResponse
     {
