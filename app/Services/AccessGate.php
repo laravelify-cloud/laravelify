@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Setting;
 use App\Models\User;
+use App\Models\Website;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
@@ -36,6 +37,9 @@ class AccessGate
 
     public const REMEMBER_HOURS = [1, 4, 12, 24, 72];
 
+    /** A website behind the authenticator code (Security → Basic auth) keeps a browser in for a day. */
+    public const SITE_REMEMBER_HOURS = 24;
+
     public const COOKIE = 'laravelify_access';
 
     public const SESSION_KEY = 'access_gate_until';
@@ -51,6 +55,18 @@ class AccessGate
      */
     public function settings(string $target): array
     {
+        // A website's own basic auth in authenticator-code mode (site-<id>).
+        if (preg_match('/^site-(\d+)$/', $target, $match) === 1) {
+            $website = Website::query()->find((int) $match[1]);
+
+            return [
+                'enabled' => $website !== null && $website->basic_auth_enabled && $website->basic_auth_mode === Website::BASIC_AUTH_CODE,
+                'method' => self::METHOD_CODE,
+                'username' => '',
+                'password_hash' => '',
+            ];
+        }
+
         $saved = json_decode((string) Setting::getValue('access.'.$target), true);
         $saved = is_array($saved) ? $saved : [];
 
@@ -86,8 +102,33 @@ class AccessGate
         Setting::putValue('access.allowlist', implode("\n", $entries));
     }
 
-    public function rememberHours(): int
+    /**
+     * Ask before a website's page (nginx auth_request): its paths without a password and the SSL
+     * renewal path pass, the rest needs the authenticator code once a day.
+     */
+    public function checkSite(Request $request, Website $website): ?Response
     {
+        $path = (string) parse_url((string) $request->headers->get('X-Original-URI', '/'), PHP_URL_PATH);
+
+        if (str_starts_with($path, '/.well-known/acme-challenge/')) {
+            return null;
+        }
+
+        foreach (SiteSecurity::parseExceptions((string) $website->basic_auth_except) as $open) {
+            if (str_starts_with($path, $open)) {
+                return null;
+            }
+        }
+
+        return $this->check($request, 'site-'.$website->id);
+    }
+
+    public function rememberHours(?string $target = null): int
+    {
+        if ($target !== null && str_starts_with($target, 'site-')) {
+            return self::SITE_REMEMBER_HOURS;
+        }
+
         $hours = (int) Setting::getValue('access.remember_hours');
 
         return in_array($hours, self::REMEMBER_HOURS, true) ? $hours : 12;
@@ -194,6 +235,13 @@ class AccessGate
 
         $answer = hash('sha256', $target.'|'.$username.'|'.$password);
 
+        // A website: the browser sends the login it was given with every request while it is open,
+        // so the code accepted earlier keeps working for a day, from the same IP, for this site only.
+        // (The cookie does the same, but nginx drops it on pages whose own location adds headers.)
+        if (str_starts_with($target, 'site-') && Cache::has('access-gate:pass:'.$target.':'.$ip.':'.$answer)) {
+            return null;
+        }
+
         if (! $this->accepts($settings, (string) $username, (string) $password)) {
             // Not a new wrong try: the last accepted answer (an old code the browser repeats after
             // the pass ran out), or the same wrong answer again within seconds (the browser loads
@@ -209,7 +257,11 @@ class AccessGate
         }
 
         RateLimiter::clear($limiter);
-        Cache::put('access-gate:last:'.$target.':'.$ip, $answer, now()->addHours($this->rememberHours() + 24));
+        Cache::put('access-gate:last:'.$target.':'.$ip, $answer, now()->addHours($this->rememberHours($target) + 24));
+
+        if (str_starts_with($target, 'site-')) {
+            Cache::put('access-gate:pass:'.$target.':'.$ip.':'.$answer, true, now()->addHours($this->rememberHours($target)));
+        }
 
         return $this->grant($request, $target);
     }
@@ -274,7 +326,7 @@ class AccessGate
 
     private function grant(Request $request, string $target): ?Response
     {
-        $until = now()->addHours($this->rememberHours());
+        $until = now()->addHours($this->rememberHours($target));
 
         if ($target === 'panel') {
             if ($request->hasSession()) {
@@ -296,7 +348,9 @@ class AccessGate
         $realm = match ($method) {
             self::METHOD_PASSWORD => 'Laravelify '.$target.': username and password',
             self::METHOD_PASSWORD_CODE => 'Laravelify '.$target.': username, then password followed by your 6-digit code',
-            default => 'Laravelify '.$target.': your 6-digit authenticator code',
+            default => str_starts_with($target, 'site-')
+                ? 'Protected site: your 6-digit authenticator code (in the username or password field)'
+                : 'Laravelify '.$target.': your 6-digit authenticator code',
         };
 
         return response('Sign-in required.', 401)

@@ -104,7 +104,7 @@ class SiteSecurity
         $suffix = $this->suffix($website);
         $lines = ['# Laravelify security for '.$website->slug.'. Managed by the panel; edit in the Security tab.'];
 
-        if ($website->basic_auth_enabled) {
+        if ($website->basic_auth_enabled && $website->basic_auth_mode !== Website::BASIC_AUTH_CODE) {
             $lines[] = 'map $uri $laravelify_auth_'.$suffix.' {';
             $lines[] = '    default "Protected site";';
             $lines[] = '    ~^/\.well-known/acme-challenge/ off;';
@@ -177,7 +177,31 @@ class SiteSecurity
             }
         }
 
-        if ($website->basic_auth_enabled && $this->htpasswd($website) !== '') {
+        if ($website->basic_auth_enabled && $website->basic_auth_mode === Website::BASIC_AUTH_CODE) {
+            // The authenticator code: nginx asks the panel first (AccessGate::checkSite), which also
+            // lets the paths without a password through, and passes its day-long cookie on. A site
+            // may not run code in the panel's PHP pool, so it asks the panel over HTTP on this server.
+            $panelHost = (string) (parse_url((string) config('app.url'), PHP_URL_HOST) ?: 'localhost');
+            array_push($lines,
+                'auth_request /__laravelify_site_access;',
+                'auth_request_set $laravelify_pass $upstream_http_set_cookie;',
+                'add_header Set-Cookie $laravelify_pass always;',
+                'location = /__laravelify_site_access {',
+                '    internal;',
+                '    auth_request off;',
+                '    proxy_pass http://127.0.0.1/_access/site/'.$website->id.';',
+                '    proxy_pass_request_body off;',
+                '    proxy_set_header Content-Length "";',
+                '    proxy_set_header Host '.$panelHost.';',
+                '    proxy_set_header X-Original-URI $request_uri;',
+                // The visitor's address (also behind the tunnel); headers a visitor could fake are dropped.
+                '    proxy_set_header CF-Connecting-IP "";',
+                '    proxy_set_header True-Client-IP "";',
+                '    proxy_set_header X-Forwarded-For "";',
+                '    proxy_set_header X-Real-IP $laravelify_client_ip;',
+                '}',
+            );
+        } elseif ($website->basic_auth_enabled && $this->htpasswd($website) !== '') {
             $lines[] = 'auth_basic $laravelify_auth_'.$suffix.';';
             $lines[] = 'auth_basic_user_file '.self::SNIPPET_DIRECTORY.'/'.$website->slug.'.htpasswd;';
         }
@@ -187,7 +211,7 @@ class SiteSecurity
 
     public function htpasswd(Website $website): string
     {
-        if (! $website->basic_auth_enabled || blank($website->basic_auth_user) || blank($website->basic_auth_hash)) {
+        if (! $website->basic_auth_enabled || $website->basic_auth_mode === Website::BASIC_AUTH_CODE || blank($website->basic_auth_user) || blank($website->basic_auth_hash)) {
             return '';
         }
 

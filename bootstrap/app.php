@@ -20,6 +20,8 @@ return Application::configure(basePath: dirname(__DIR__))
         then: function (): void {
             // nginx asks here before phpMyAdmin pages. No web middleware: no session, no panel login.
             Route::get('/_access/phpmyadmin', AccessGateController::class)->name('access.phpmyadmin');
+            // nginx asks here before a website's pages when its basic auth wants the authenticator code.
+            Route::get('/_access/site/{website}', [AccessGateController::class, 'site'])->whereNumber('website')->name('access.site');
             // nginx asks here before VS Code pages: the panel session says who is signed in. It
             // answers 204 or 401 itself, so the panel's login redirects are left out.
             Route::get('/_access/code', CodeEditorGateController::class)

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Livewire\Security\Access;
 use App\Models\ServerService;
 use App\Models\User;
+use App\Models\Website;
 use App\Services\AccessGate;
 use App\Services\CommandResult;
 use App\Services\CommandRunner;
@@ -166,6 +167,40 @@ class AccessGateTest extends TestCase
 
         $forPanel = Crypt::encryptString(json_encode(['target' => 'panel', 'until' => now()->addHour()->getTimestamp()]));
         $this->withUnencryptedCookie(AccessGate::COOKIE, $forPanel)->get('/_access/phpmyadmin')->assertUnauthorized();
+    }
+
+    public function test_a_website_asking_for_the_code_lets_a_browser_in_for_a_day_and_keeps_open_paths_open(): void
+    {
+        $website = Website::factory()->create(['basic_auth_enabled' => true, 'basic_auth_mode' => Website::BASIC_AUTH_CODE, 'basic_auth_except' => "/api/\n/hooks/"]);
+        $other = Website::factory()->create(['basic_auth_enabled' => true, 'basic_auth_mode' => Website::BASIC_AUTH_CODE]);
+        $url = '/_access/site/'.$website->id;
+
+        $this->withHeaders(['X-Original-URI' => '/dashboard'])->get($url)->assertUnauthorized()->assertHeader('WWW-Authenticate');
+        $this->withHeaders(['X-Original-URI' => '/api/v1/orders?x=1'])->get($url)->assertNoContent();
+        $this->withHeaders(['X-Original-URI' => '/.well-known/acme-challenge/abc'])->get($url)->assertNoContent();
+        $this->flushHeaders()->withHeaders(['X-Original-URI' => '/dashboard'] + $this->basic('team', '000000'))->get($url)->assertUnauthorized();
+
+        // The code in the password field (or the username field) gives a pass for 24 hours, for this website only.
+        $login = $this->basic('x', $this->code());
+        $response = $this->flushHeaders()->withHeaders(['X-Original-URI' => '/dashboard'] + $login)->get($url)->assertNoContent();
+
+        // The browser sends the same login again on later pages: still in once that code is no
+        // longer valid (a new authenticator secret makes sure of it), until a day is over.
+        $this->admin->forceFill(['two_factor_secret' => app(TwoFactor::class)->generateSecret()])->save();
+        $this->travel(2)->hours();
+        $this->flushHeaders()->withHeaders(['X-Original-URI' => '/page-2'] + $login)->get($url)->assertNoContent();
+        $this->travel(23)->hours();
+        $this->flushHeaders()->withHeaders(['X-Original-URI' => '/page-3'] + $login)->get($url)->assertUnauthorized();
+        $this->travelBack();
+        $cookie = collect($response->headers->getCookies())->firstWhere(fn ($cookie) => $cookie->getName() === AccessGate::COOKIE);
+        $this->assertEqualsWithDelta(now()->addDay()->getTimestamp(), $cookie->getExpiresTime(), 5);
+
+        $this->flushHeaders()->withUnencryptedCookie(AccessGate::COOKIE, $cookie->getValue())->withHeaders(['X-Original-URI' => '/dashboard'])->get($url)->assertNoContent();
+        $this->withUnencryptedCookie(AccessGate::COOKIE, $cookie->getValue())->withHeaders(['X-Original-URI' => '/'])->get('/_access/site/'.$other->id)->assertUnauthorized();
+
+        // A website in password mode (or off) never asks here.
+        $website->update(['basic_auth_mode' => Website::BASIC_AUTH_PASSWORD]);
+        $this->flushHeaders()->withHeaders(['X-Original-URI' => '/dashboard'])->get($url)->assertNoContent();
     }
 
     public function test_phpmyadmin_nginx_gets_the_check_block_and_loses_it_again(): void

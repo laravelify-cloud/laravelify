@@ -122,6 +122,30 @@ class SiteSecurityTest extends TestCase
         $this->assertStringNotContainsString('auth_basic', $security->serverConfig($website->fresh()));
     }
 
+    public function test_basic_auth_by_authenticator_code_needs_no_password_and_asks_the_panel(): void
+    {
+        $website = Website::factory()->create(['slug' => 'staging-app', 'nginx_config' => self::NGINX]);
+
+        Livewire::test(Show::class, ['website' => $website])
+            ->set('basic_auth_enabled', true)
+            ->set('basic_auth_mode', Website::BASIC_AUTH_CODE)
+            ->assertDontSee('At least 8 characters')
+            ->call('saveSecurity')
+            ->assertHasNoErrors();
+
+        $website->refresh();
+        $security = app(SiteSecurity::class);
+        $server = $security->serverConfig($website);
+
+        $this->assertSame(Website::BASIC_AUTH_CODE, $website->basic_auth_mode);
+        $this->assertStringContainsString('auth_request /__laravelify_site_access;', $server);
+        $this->assertStringContainsString('proxy_pass http://127.0.0.1/_access/site/'.$website->id.';', $server);
+        $this->assertStringContainsString('proxy_set_header X-Real-IP $laravelify_client_ip;', $server);
+        $this->assertStringNotContainsString('auth_basic', $server);
+        $this->assertSame('', $security->htpasswd($website));
+        $this->assertStringNotContainsString('laravelify_auth_', $security->httpConfig($website));
+    }
+
     public function test_every_server_block_gets_the_include(): void
     {
         $config = "server {\n    listen 80;\n    server_name a.example.com;\n    return 301 https://a.example.com\$request_uri;\n}\n\nserver {\n    listen 443 ssl;\n    server_name a.example.com;\n}\n";

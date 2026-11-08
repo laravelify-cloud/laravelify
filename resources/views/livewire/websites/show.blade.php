@@ -622,13 +622,24 @@
                     </div>
                 </x-layer-card>
 
-                <x-layer-card title="Basic auth" helper="Ask for a username and password before anyone can open the site.">
+                <x-layer-card title="Basic auth" helper="Ask before anyone can open the site: a username and password, or your 6-digit authenticator code.">
                     <x-slot:actions>
                         <label class="flex items-center gap-2 text-[13px] font-medium text-ink">
                             <input type="checkbox" wire:model.live="basic_auth_enabled"> Require a password
                         </label>
                     </x-slot:actions>
                     <div @class(['grid gap-4 md:grid-cols-2 transition-opacity', 'opacity-50' => ! $basic_auth_enabled])>
+                        <div class="grid gap-2 md:col-span-2" role="radiogroup" aria-label="How visitors sign in">
+                            <label class="flex items-start gap-2.5 rounded-lg border border-line bg-recessed px-3 py-2.5">
+                                <input type="radio" class="mt-0.5" wire:model.live="basic_auth_mode" value="{{ \App\Models\Website::BASIC_AUTH_PASSWORD }}" @disabled(! $basic_auth_enabled)>
+                                <span><span class="block text-[13.5px] font-medium">Username and password</span><span class="block text-[12px] text-muted">The same login for everyone you share it with.</span></span>
+                            </label>
+                            <label class="flex items-start gap-2.5 rounded-lg border border-line bg-recessed px-3 py-2.5">
+                                <input type="radio" class="mt-0.5" wire:model.live="basic_auth_mode" value="{{ \App\Models\Website::BASIC_AUTH_CODE }}" @disabled(! $basic_auth_enabled)>
+                                <span><span class="block text-[13.5px] font-medium">Authenticator code (2FA)</span><span class="block text-[12px] text-muted">The browser asks once a day: type the 6-digit code from your authenticator app in the username or password field. The same code as for the panel; wrong tries are limited.</span></span>
+                            </label>
+                        </div>
+                        @if ($basic_auth_mode !== \App\Models\Website::BASIC_AUTH_CODE)
                         <label class="field">
                             <span>Username</span>
                             <input class="input font-mono" wire:model="basic_auth_user" autocomplete="off" placeholder="team" @disabled(! $basic_auth_enabled)>
@@ -642,6 +653,7 @@
                             :placeholder="$website->basic_auth_hash ? null : 'At least 8 characters'"
                             :disabled="! $basic_auth_enabled"
                         />
+                        @endif
                         <label class="field md:col-span-2">
                             <span>Paths without a password <span class="font-normal text-muted">(optional, one per line)</span></span>
                             <textarea class="textarea font-mono" style="min-height: 6.5rem" wire:model="basic_auth_except" placeholder="/api/&#10;/hooks/&#10;/socket.io/" spellcheck="false" @disabled(! $basic_auth_enabled)></textarea>
@@ -649,7 +661,12 @@
                             @error('basic_auth_except') <small class="error">{{ $message }}</small> @enderror
                         </label>
                     </div>
-                    @if ($website->basic_auth_enabled && $website->basic_auth_hash)
+                    @if ($website->basic_auth_enabled && $website->basic_auth_mode === \App\Models\Website::BASIC_AUTH_CODE)
+                        <p class="mt-4 flex items-center gap-2 text-[12.5px] text-muted">
+                            <span class="status-badge" style="--status-color: var(--color-success)">Active</span>
+                            Visitors are asked for your 6-digit authenticator code, then let in for a day.
+                        </p>
+                    @elseif ($website->basic_auth_enabled && $website->basic_auth_hash)
                         <p class="mt-4 flex items-center gap-2 text-[12.5px] text-muted">
                             <span class="status-badge" style="--status-color: var(--color-success)">Active</span>
                             Visitors are asked to sign in as <code>{{ $website->basic_auth_user }}</code>.

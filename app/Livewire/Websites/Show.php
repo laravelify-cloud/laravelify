@@ -107,6 +107,9 @@ class Show extends PanelComponent
 
     public bool $basic_auth_enabled = false;
 
+    /** password: a username and password; code: the admin's 6-digit authenticator code, for a day. */
+    public string $basic_auth_mode = Website::BASIC_AUTH_PASSWORD;
+
     public string $basic_auth_user = '';
 
     /** Only sent when changing it; the saved password is never loaded back. */
@@ -455,10 +458,12 @@ class Show extends PanelComponent
      */
     public function saveSecurity(HostWriter $hostWriter, SiteSecurity $security): void
     {
-        $needsPassword = $this->basic_auth_enabled && blank($this->website->basic_auth_hash);
+        $byPassword = $this->basic_auth_enabled && $this->basic_auth_mode !== Website::BASIC_AUTH_CODE;
+        $needsPassword = $byPassword && blank($this->website->basic_auth_hash);
 
         $this->validate([
-            'basic_auth_user' => [$this->basic_auth_enabled ? 'required' : 'nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9._@-]+$/'],
+            'basic_auth_mode' => ['required', 'in:'.Website::BASIC_AUTH_PASSWORD.','.Website::BASIC_AUTH_CODE],
+            'basic_auth_user' => [$byPassword ? 'required' : 'nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9._@-]+$/'],
             'basic_auth_password' => [$needsPassword ? 'required' : 'nullable', 'string', 'min:8', 'max:128', 'regex:/^[^\r\n]+$/'],
             'basic_auth_except' => ['nullable', 'string', 'max:2000'],
         ], [
@@ -490,6 +495,7 @@ class Show extends PanelComponent
             'hide_from_search' => $this->hide_from_search,
             'block_crawlers' => $this->block_crawlers,
             'basic_auth_enabled' => $this->basic_auth_enabled,
+            'basic_auth_mode' => $this->basic_auth_mode,
             'basic_auth_user' => $this->basic_auth_user !== '' ? $this->basic_auth_user : null,
             'basic_auth_except' => implode("\n", SiteSecurity::parseExceptions($this->basic_auth_except)) ?: null,
             'blocked_ips' => implode("\n", SiteSecurity::parseIps($this->blocked_ips)) ?: null,
@@ -937,6 +943,7 @@ class Show extends PanelComponent
         $this->hide_from_search = (bool) $this->website->hide_from_search;
         $this->block_crawlers = (bool) $this->website->block_crawlers;
         $this->basic_auth_enabled = (bool) $this->website->basic_auth_enabled;
+        $this->basic_auth_mode = $this->website->basic_auth_mode === Website::BASIC_AUTH_CODE ? Website::BASIC_AUTH_CODE : Website::BASIC_AUTH_PASSWORD;
         $this->basic_auth_user = (string) ($this->website->basic_auth_user ?? '');
         $this->basic_auth_except = (string) ($this->website->basic_auth_except ?? '');
         $this->blocked_ips = (string) ($this->website->blocked_ips ?? '');

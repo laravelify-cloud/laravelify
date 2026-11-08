@@ -14,6 +14,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Website extends Model
 {
+    /** Basic auth asks for a username and password. */
+    public const BASIC_AUTH_PASSWORD = 'password';
+
+    /** Basic auth asks for the panel admin's 6-digit authenticator code, remembered for a day. */
+    public const BASIC_AUTH_CODE = 'code';
+
     /** @use HasFactory<WebsiteFactory> */
     use HasFactory;
 
@@ -73,6 +79,7 @@ class Website extends Model
         'basic_auth_hash',
         'basic_auth_password',
         'basic_auth_except',
+        'basic_auth_mode',
         'monitor_retention_days',
         'monitor_slow_ms',
         'monitor_error_threshold',
