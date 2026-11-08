@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.92] - 2026-11-08
+
+- **Fixed: GlitchTip did not install.** uv picked the newest Python (3.15), and GlitchTip's `glitchtip-rust` package has no build for it. GlitchTip now installs on Python 3.13.
+- **Fixed: a failed GlitchTip install could not be retried.** The half-made Python environment counted as installed, so the next try stopped with "No module named 'django'". Only a finished install counts now. A failure shows the last lines of the package install, and the whole output is kept in `/opt/glitchtip/install.log`.
+- **New: panels linked to Laravelify Cloud report their Laravelify version** (hourly and after every update), so the server card in Cloud shows it and offers newer releases.
+
 ## [0.3.0-beta.91] - 2026-11-08
 
 - **Changed: a faster default install.** The installer now adds PHP-FPM 8.4 and Node.js 24 only. The panel installs any other PHP (7.4 to 8.5) or Node.js version the first time a website needs it. `--php` and `--node` still pick more up front.
