@@ -15,7 +15,7 @@ use Throwable;
  */
 class PhpMyAdminPath extends Command
 {
-    protected $signature = 'laravelify:phpmyadmin-path {--path=/phpmyadmin}';
+    protected $signature = 'laravelify:phpmyadmin-path {--path=/phpmyadmin} {--files=/usr/share/phpmyadmin : Where phpMyAdmin is installed}';
 
     protected $description = 'Serve phpMyAdmin at /phpmyadmin of the panel address instead of a domain of its own';
 
@@ -23,7 +23,10 @@ class PhpMyAdminPath extends Command
     {
         $service = ServerService::query()->where('kind', 'phpmyadmin')->first();
 
-        if (! $service || in_array(trim((string) $service->domain), ['', 'phpmyadmin.internal'], true)) {
+        // Installed when it has an address, or (added later with a repair run) when its files are there.
+        $unset = in_array(trim((string) $service?->domain), ['', 'phpmyadmin.internal'], true);
+
+        if (! $service || ($unset && ! is_dir((string) $this->option('files')))) {
             $this->line('phpMyAdmin is not installed.');
 
             return self::SUCCESS;

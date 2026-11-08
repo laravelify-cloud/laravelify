@@ -38,6 +38,20 @@ class PhpMyAdminPathTest extends TestCase
         $this->artisan('laravelify:phpmyadmin-path')->expectsOutput('phpMyAdmin is already at /phpmyadmin.')->assertSuccessful();
     }
 
+    public function test_phpmyadmin_added_later_without_an_address_gets_the_path_and_a_missing_one_is_left_alone(): void
+    {
+        config(['app.url' => 'https://panel.example.com']);
+        $service = $this->service();
+        $service->update(['domain' => '', 'config' => ServerCatalog::phpMyAdminNginx()]);
+        $this->mock(HostWriter::class, fn (MockInterface $mock) => $mock->shouldReceive('writeService')->once()->andReturn(''));
+
+        $this->artisan('laravelify:phpmyadmin-path', ['--files' => storage_path('framework/no-phpmyadmin-here')])->expectsOutput('phpMyAdmin is not installed.')->assertSuccessful();
+        $this->assertSame('', (string) $service->fresh()->domain);
+
+        $this->artisan('laravelify:phpmyadmin-path', ['--files' => base_path()])->assertSuccessful();
+        $this->assertSame('panel.example.com/phpmyadmin', $service->fresh()->domain);
+    }
+
     public function test_a_rejected_config_keeps_the_old_domain(): void
     {
         config(['app.url' => 'https://panel.example.com']);
