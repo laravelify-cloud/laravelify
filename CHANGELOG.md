@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.99] - 2026-11-08
+
+- **New: Import SQL in the Database tool.** Import a .sql or .sql.gz dump of any size (up to 20 GB) into a database. It goes up in 8 MB pieces, so it passes any upload limit, and a dropped piece is sent again. It is then streamed into MySQL with foreign key and unique checks off and one commit at the end: a 666 MB dump took 33 seconds. Live progress shows how much is done and the time left. You can empty the database first.
+- **New: tick tables to empty or drop them together** on a database's Tables tab.
+- **Fixed: .env values already in quotes were quoted again** (`'"hello@loya.cc"'`), so the quotes became part of the value and `${APP_NAME}` was not filled in. They are now kept as they are.
+
 ## [0.3.0-beta.98] - 2026-11-08
 
 - **Fixed: phpMyAdmin one-click sign-in still gave a 404 in some browsers.** A browser could keep an old redirect of `/phpmyadmin/index.php` (phpMyAdmin pages are cached for hours) and replay it without asking the server. The sign-in now goes to a fresh address each time.
