@@ -197,6 +197,41 @@ class DatabaseBrowser
         return $schema;
     }
 
+    /**
+     * Drop or empty (TRUNCATE) several tables of a database at once, with foreign key checks off so
+     * tables that point at each other go together. Only tables the database has are touched.
+     *
+     * @param  list<string>  $tables
+     * @return list<string> The tables done.
+     */
+    public function bulkTables(string $database, array $tables, string $action): array
+    {
+        if (! self::validDatabase($database) || ! in_array($action, ['drop', 'empty'], true)) {
+            throw new RuntimeException('That cannot be done here.');
+        }
+
+        $known = array_column($this->tables($database), 'name');
+        $chosen = array_values(array_intersect($known, array_filter($tables, fn ($table) => is_string($table) && self::validTable($table))));
+
+        if ($chosen === []) {
+            throw new RuntimeException('Choose one or more tables first.');
+        }
+
+        $connection = $this->connection();
+        $connection->statement('SET FOREIGN_KEY_CHECKS = 0');
+
+        try {
+            foreach ($chosen as $table) {
+                $name = '`'.$database.'`.`'.$table.'`';
+                $connection->statement($action === 'drop' ? 'DROP TABLE IF EXISTS '.$name : 'TRUNCATE TABLE '.$name);
+            }
+        } finally {
+            $connection->statement('SET FOREIGN_KEY_CHECKS = 1');
+        }
+
+        return $chosen;
+    }
+
     public function tables(string $database): array
     {
         $this->assertDatabase($database);

@@ -56,6 +56,115 @@ window.localGrid = function (spec) {
     };
 };
 
+/**
+ * Import a .sql or .sql.gz dump into a database: the file goes up in 8 MB pieces (so files of many
+ * GB pass any upload limit, and a dropped piece is sent again), then the panel imports it in the
+ * background and the page shows its progress.
+ */
+window.sqlImport = function (config) {
+    const piece = 8 * 1024 * 1024;
+
+    return {
+        open: false,
+        file: null,
+        reset: false,
+        sent: 0,
+        uploading: false,
+        error: '',
+
+        get percent() {
+            return this.file ? Math.floor((this.sent / this.file.size) * 100) : 0;
+        },
+
+        get sizeLabel() {
+            const size = (bytes) => (bytes >= 1073741824 ? (bytes / 1073741824).toFixed(2) + ' GB' : (bytes / 1048576).toFixed(1) + ' MB');
+
+            return this.file ? size(this.sent) + ' of ' + size(this.file.size) : '';
+        },
+
+        pick(event) {
+            const file = event.target.files[0] || null;
+            this.error = '';
+
+            if (file && !/\.(sql|sql\.gz|gz)$/i.test(file.name)) {
+                this.error = 'Choose a .sql or .sql.gz file.';
+                this.file = null;
+
+                return;
+            }
+
+            this.file = file;
+        },
+
+        async post(url, body) {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '', Accept: 'application/json' },
+                body,
+                credentials: 'same-origin',
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw Object.assign(new Error(data.message || 'The server answered ' + response.status + '.'), { data, status: response.status });
+            }
+
+            return data;
+        },
+
+        async start() {
+            if (!this.file || this.uploading) return;
+
+            if (this.reset && !window.confirm('Empty ' + config.database + ' first? Every table in it is deleted before the import.')) return;
+
+            const upload = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('');
+            this.uploading = true;
+            this.error = '';
+            this.sent = 0;
+
+            try {
+                while (this.sent < this.file.size) {
+                    const form = new FormData();
+                    form.append('upload', upload);
+                    form.append('name', this.file.name);
+                    form.append('total', this.file.size);
+                    form.append('offset', this.sent);
+                    form.append('chunk', this.file.slice(this.sent, this.sent + piece), 'piece');
+
+                    let tries = 0;
+
+                    for (;;) {
+                        try {
+                            this.sent = (await this.post(config.chunkUrl, form)).received;
+                            break;
+                        } catch (error) {
+                            // A dropped connection: try the same piece again a few times.
+                            if (error.status || ++tries >= 4) throw error;
+                            await new Promise((resolve) => setTimeout(resolve, 1500 * tries));
+                        }
+                    }
+                }
+
+                const form = new FormData();
+                form.append('upload', upload);
+                form.append('name', this.file.name);
+                form.append('total', this.file.size);
+                form.append('reset', this.reset ? '1' : '0');
+                await this.post(config.startUrl, form);
+
+                this.open = false;
+                this.file = null;
+                this.$refs.file && (this.$refs.file.value = '');
+                this.$wire.$refresh();
+            } catch (error) {
+                this.error = error.message;
+            } finally {
+                this.uploading = false;
+            }
+        },
+    };
+};
+
 window.dbGrid = function () {
     return {
         update: null,

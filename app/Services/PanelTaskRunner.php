@@ -31,6 +31,17 @@ class PanelTaskRunner
      *
      * @param  array<string, mixed>  $payload
      */
+    /** The task of this kind and scope that is queued or running now, if any. */
+    public static function running(string $kind, string $scope): ?PanelTask
+    {
+        return PanelTask::query()
+            ->where('kind', $kind)
+            ->where('scope', $scope)
+            ->whereIn('status', [PanelTask::QUEUED, PanelTask::RUNNING])
+            ->latest('id')
+            ->first();
+    }
+
     public function start(string $kind, string $scope, string $label, array $payload): PanelTask
     {
         $task = PanelTask::query()->create([
@@ -109,6 +120,25 @@ class PanelTaskRunner
     private function handle(PanelTask $task, callable $progress): array
     {
         $payload = $task->payload ?? [];
+
+        if ($task->kind === 'database.sql-import') {
+            $file = (string) ($payload['path'] ?? '');
+
+            try {
+                return ['message' => app(SqlImporter::class)->import(
+                    (string) ($payload['database'] ?? ''),
+                    $file,
+                    (bool) ($payload['reset'] ?? false),
+                    fn (int $percent, string $message) => $task->report($percent, $message, true),
+                    (string) ($payload['name'] ?? basename($file)),
+                )];
+            } finally {
+                // Only uploads the panel keeps for this are removed.
+                if (str_starts_with($file, storage_path('app/db-imports/'))) {
+                    @unlink($file);
+                }
+            }
+        }
 
         if ($task->kind === 'database.import') {
             $website = Website::query()->find((int) ($payload['website_id'] ?? 0)) ?? throw new RuntimeException('That website no longer exists.');

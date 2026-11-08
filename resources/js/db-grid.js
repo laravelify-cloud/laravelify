@@ -877,6 +877,17 @@ export function mountLocalGrid(element, spec, wire, search) {
         onFilterChanged: (params) => params.api.refreshCells({ columns: ['__row'], force: true }),
         onSortChanged: (params) => params.api.refreshCells({ columns: ['__row'], force: true }),
         onPaginationChanged: (params) => params.api.refreshCells({ columns: ['__row'], force: true }),
+        // spec.select: tick rows (the header ticks every shown one); the values of that column go to
+        // the Livewire property spec.selectModel, and a grid-selection event tells the page how many.
+        ...(spec.select ? {
+            rowSelection: { mode: 'multiRow', checkboxes: true, headerCheckbox: true, selectAll: 'filtered', enableClickSelection: false },
+            selectionColumnDef: { pinned: 'left', width: 44 },
+            onSelectionChanged: (params) => {
+                const values = params.api.getSelectedRows().map((row) => row[spec.select]);
+                if (spec.selectModel) wire.$set(spec.selectModel, values, false);
+                element.dispatchEvent(new CustomEvent('grid-selection', { detail: { count: values.length, values }, bubbles: true }));
+            },
+        } : {}),
     });
 
     if (search) {

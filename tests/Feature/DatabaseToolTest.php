@@ -81,6 +81,21 @@ class DatabaseToolTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_ticked_tables_are_emptied_or_dropped_together_and_unknown_ones_are_left_alone(): void
+    {
+        $this->assertSame(['people'], $this->browser->bulkTables(self::DB, ['people', 'nope', '../x'], 'empty'));
+        $this->assertSame(0, $this->browser->rows(self::DB, 'people', [])['total']);
+
+        Livewire::test(DatabaseShow::class, ['database' => self::DB])
+            ->set('selectedTables', ['logs', 'people'])
+            ->call('bulkTables', 'drop')
+            ->assertSet('selectedTables', []);
+        $this->assertSame([], $this->browser->tables(self::DB));
+
+        $this->expectException(RuntimeException::class);
+        $this->browser->bulkTables(self::DB, ['people'], 'rename');
+    }
+
     public function test_databases_tables_columns_and_keys_are_listed(): void
     {
         $this->assertContains(self::DB, array_column($this->browser->databases(), 'name'));

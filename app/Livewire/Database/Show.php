@@ -7,9 +7,11 @@ use App\Livewire\Concerns\RunsSql;
 use App\Livewire\PanelComponent;
 use App\Models\CryptoMethod;
 use App\Models\DatabaseChange;
+use App\Models\PanelTask;
 use App\Services\BackupManager;
 use App\Services\CryptoMethods;
 use App\Services\DatabaseBrowser;
+use App\Services\PanelTaskRunner;
 use Livewire\Attributes\Url;
 use Throwable;
 
@@ -76,6 +78,40 @@ class Show extends PanelComponent
     public string $editorSql = '';
 
     public bool $editorReadOnly = false;
+
+    /** @var list<string> Tables ticked in the tables grid, for Drop or Empty. */
+    public array $selectedTables = [];
+
+    /** Drop or empty the ticked tables. */
+    public function bulkTables(DatabaseBrowser $browser, string $action): void
+    {
+        try {
+            $done = $browser->bulkTables($this->database, $this->selectedTables, $action);
+        } catch (Throwable $exception) {
+            $this->toast($exception->getMessage(), 'error');
+
+            return;
+        }
+
+        $this->selectedTables = [];
+        $this->toast(($action === 'drop' ? 'Dropped ' : 'Emptied ').count($done).' '.str('table')->plural(count($done)).': '.implode(', ', array_slice($done, 0, 8)).(count($done) > 8 ? '…' : '').'.');
+    }
+
+    /**
+     * The import into this database that is queued or running now, with its percent and step.
+     *
+     * @return array{progress: int, step: string, label: string}|null
+     */
+    private function importing(): ?array
+    {
+        $task = PanelTaskRunner::running('database.sql-import', 'db-import:'.$this->database);
+
+        return $task === null ? null : [
+            'progress' => (int) $task->progress,
+            'step' => $task->status === PanelTask::QUEUED ? 'Waiting for the background worker...' : ($task->message ?: 'Starting...'),
+            'label' => $task->label,
+        ];
+    }
 
     public function mount(string $database): void
     {
@@ -229,6 +265,7 @@ class Show extends PanelComponent
             ->values();
 
         return view('livewire.database.show', [
+            'importing' => $this->importing(),
             'tables' => $shown,
             'tableCount' => count($tables),
             'totalSize' => array_sum(array_column($tables, 'size')),

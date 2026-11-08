@@ -1,4 +1,4 @@
-<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-6" x-data="sqlImport({ database: @js($database), chunkUrl: @js(route('database.import.chunk', $database)), startUrl: @js(route('database.import.start', $database)) })">
     <div class="page-header">
         <div class="min-w-0">
             <p class="flex flex-wrap items-center gap-1.5 text-[13px] text-muted">
@@ -8,12 +8,64 @@
             <p class="page-summary">{{ $tableCount }} tables · {{ \Illuminate\Support\Number::fileSize($totalSize, precision: 1) }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-1.5">
+            <button class="btn" type="button" @click="open = true" @disabled($importing)><x-menu-icon name="upload" /> Import SQL</button>
             <button class="btn" type="button" wire:click="openExport"><x-menu-icon name="download" /> Export SQL</button>
             <button class="btn" type="button" wire:click="backup" wire:confirm="Back up {{ $database }} now to your backup storage?"><x-menu-icon name="backup" /> Back up</button>
         </div>
     </div>
 
     @include('livewire.database.partials.export')
+
+    {{-- Import a dump: upload in pieces, then the background import with its progress. --}}
+    <x-modal-frame class="modal-medium" open="open" close="if (! uploading) open = false">
+        <div class="grid gap-4">
+            <div class="modal-head">
+                <div class="min-w-0">
+                    <p class="text-[12px] text-muted">Import SQL</p>
+                    <h2 class="mt-1 truncate font-mono">{{ $database }}</h2>
+                </div>
+                <button class="icon-btn" type="button" @click="if (! uploading) open = false" aria-label="Close"><x-menu-icon name="close" /></button>
+            </div>
+            <label class="grid gap-2">
+                <span class="text-[13px] font-medium">Dump file</span>
+                <input class="input" type="file" accept=".sql,.gz,.sql.gz" x-ref="file" @change="pick($event)" :disabled="uploading">
+                <span class="text-[12px] text-muted">A .sql or .sql.gz file from mysqldump, phpMyAdmin, DataGrip, or a Laravelify backup. Any size: it is sent in 8 MB pieces.</span>
+            </label>
+            <label class="flex items-start gap-2.5 text-[13px]">
+                <input type="checkbox" class="mt-0.5" x-model="reset" :disabled="uploading">
+                <span><span class="font-medium">Empty the database first</span><span class="block text-[12px] text-muted">Deletes every table in {{ $database }} before the import. Use it when the dump creates tables that are already there.</span></span>
+            </label>
+            <template x-if="uploading">
+                <div class="grid gap-2" role="status" aria-live="polite">
+                    <div class="flex items-center justify-between text-[13px]">
+                        <span class="flex items-center gap-2 font-medium"><span class="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"></span> Uploading <span x-text="sizeLabel"></span></span>
+                        <span class="tabular-nums text-muted" x-text="percent + '%'"></span>
+                    </div>
+                    <div class="h-2 overflow-hidden rounded-full bg-recessed"><div class="h-full rounded-full bg-accent transition-all duration-300" :style="'width: ' + Math.max(2, percent) + '%'"></div></div>
+                </div>
+            </template>
+            <p class="text-[12.5px] text-danger" x-show="error" x-text="error"></p>
+            <div class="flex justify-end gap-2">
+                <button class="btn" type="button" @click="open = false" :disabled="uploading">Cancel</button>
+                <button class="btn btn-primary" type="button" @click="start()" :disabled="! file || uploading"><x-menu-icon name="upload" /> <span x-text="uploading ? 'Uploading…' : 'Upload and import'"></span></button>
+            </div>
+        </div>
+    </x-modal-frame>
+
+    @if ($importing)
+        {{-- Refreshes every 2 seconds until the import finishes, in every open tab. --}}
+        <div class="layer-card flex flex-col gap-2 p-4" wire:poll.2s role="status" aria-live="polite">
+            <div class="flex items-center justify-between gap-3 text-[13px]">
+                <span class="flex min-w-0 items-center gap-2 font-medium">
+                    <span class="size-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                    <span class="truncate">{{ $importing['label'] }}</span>
+                </span>
+                <span class="tabular-nums text-muted">{{ $importing['progress'] }}%</span>
+            </div>
+            <div class="h-2 overflow-hidden rounded-full bg-recessed"><div class="h-full rounded-full bg-accent transition-all duration-700" style="width: {{ max(2, $importing['progress']) }}%"></div></div>
+            <p class="text-[12.5px] text-muted">{{ $importing['step'] }} You can leave this page: the import goes on in the background.</p>
+        </div>
+    @endif
 
     <div class="segmented self-start" role="tablist">
         <button type="button" wire:click="$set('tab', 'tables')" aria-pressed="{{ $tab === 'tables' ? 'true' : 'false' }}">Tables</button>
@@ -29,9 +81,23 @@
     @endif
 
     @if ($tab === 'tables')
-        <x-layer-card title="Tables" helper="Rows and sizes are MySQL's own figures and can be a little behind." flush>
+        <x-layer-card title="Tables" helper="Rows and sizes are MySQL's own figures and can be a little behind. Tick tables to empty or drop them together." flush>
+            <div x-data="{ count: 0 }" @grid-selection="count = $event.detail.count">
+                <div class="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5" x-show="count > 0" x-cloak>
+                    <span class="text-[13px] font-medium"><span x-text="count"></span> selected</span>
+                    <button class="btn btn-sm" type="button"
+                        @click="if (confirm('Empty ' + count + ' selected table(s) in {{ $database }}? Every row in them is deleted.')) { $wire.bulkTables('empty').then(() => count = 0) }">
+                        <x-menu-icon name="trash" class="size-4" /> Empty selected
+                    </button>
+                    <button class="btn btn-sm btn-danger" type="button"
+                        @click="if (confirm('Drop ' + count + ' selected table(s) from {{ $database }}? The tables and their rows are deleted.')) { $wire.bulkTables('drop').then(() => count = 0) }">
+                        <x-menu-icon name="danger" class="size-4" /> Drop selected
+                    </button>
+                </div>
             @include('livewire.database.partials.local-grid', ['spec' => [
                 'key' => 'tables-mysql',
+                'select' => 'Table',
+                'selectModel' => 'selectedTables',
                 'search' => 'Search tables',
                 'empty' => 'No tables.',
                 'columns' => [
@@ -52,6 +118,7 @@
                     '__href' => route('database.table', [$database, $table['name']]),
                 ])->values()->all(),
             ]])
+            </div>
         </x-layer-card>
     @elseif ($tab === 'objects')
         @foreach (['trigger' => 'Triggers', 'event' => 'Events', 'procedure' => 'Procedures', 'function' => 'Functions'] as $type => $label)

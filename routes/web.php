@@ -3,6 +3,7 @@
 use App\Http\Controllers\CloudLoginController;
 use App\Http\Controllers\CodeWorkspaceDownloadController;
 use App\Http\Controllers\DatabaseExportController;
+use App\Http\Controllers\DatabaseImportController;
 use App\Http\Controllers\DeploymentLogController;
 use App\Http\Controllers\GithubAppHookController;
 use App\Http\Controllers\GithubAppManifestController;
@@ -142,6 +143,8 @@ Route::post('/terminal/sessions/{session}/input', [TerminalSessionController::cl
 Route::post('/terminal/sessions/{session}/stop', [TerminalSessionController::class, 'stop'])->name('terminal.sessions.stop');
 Route::get('/database', DatabaseIndex::class)->name('database.index');
 Route::post('/database/export', DatabaseExportController::class)->name('database.export');
+Route::post('/database/{database}/import/chunk', [DatabaseImportController::class, 'chunk'])->where('database', '[A-Za-z0-9_-]+')->name('database.import.chunk');
+Route::post('/database/{database}/import/start', [DatabaseImportController::class, 'start'])->where('database', '[A-Za-z0-9_-]+')->name('database.import.start');
 Route::get('/databases/{engine}/{database}', Engine::class)->whereIn('engine', ['postgresql', 'sqlite', 'mongodb', 'remote'])->where('database', '[A-Za-z0-9_-]+')->name('database.engine');
 Route::get('/database/{database}', DatabaseShow::class)->where('database', '[A-Za-z0-9_-]+')->name('database.show');
 Route::get('/database/{database}/{table}', DatabaseTable::class)->where(['database' => '[A-Za-z0-9_-]+', 'table' => '[A-Za-z0-9_$-]+'])->name('database.table');
