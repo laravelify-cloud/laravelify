@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.100] - 2026-11-08
+
+- **New: website basic auth by authenticator code.** Security → Basic auth can ask for your 6-digit authenticator code (in the username or the password field) instead of a username and password. After a correct code the browser is let in for a day, from that IP, for that website. Paths without a password and SSL renewals stay open, and wrong codes are limited like the panel's own access prompt.
+
 ## [0.3.0-beta.99] - 2026-11-08
 
 - **New: Import SQL in the Database tool.** Import a .sql or .sql.gz dump of any size (up to 20 GB) into a database. It goes up in 8 MB pieces, so it passes any upload limit, and a dropped piece is sent again. It is then streamed into MySQL with foreign key and unique checks off and one commit at the end: a 666 MB dump took 33 seconds. Live progress shows how much is done and the time left. You can empty the database first.
