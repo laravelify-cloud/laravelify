@@ -85,7 +85,7 @@ Then it works through the install one step at a time, with a spinner, a check ma
 │  Node.js              22 24 (system: 24)
 │  Log                  /var/log/laravelify-install.log
 │
-◆  Downloaded Laravelify 0.3.0-beta.85 4s
+◆  Downloaded Laravelify 0.3.0-beta.101 4s
 ◆  Installing nginx, Redis, Supervisor, Git, and tools 38s
 ◆  Installing PHP 8.3 (FPM, CLI, MySQL, Redis, GD, intl, and more) 51s
 ◆  Installing PHP 8.4 (FPM, CLI, MySQL, Redis, GD, intl, and more) 47s
@@ -94,7 +94,7 @@ Then it works through the install one step at a time, with a spinner, a check ma
    …
 ◆  Turning on the firewall (SSH, 80, 443) 2s
 │
-└  Laravelify 0.3.0-beta.85 is installed (7m 40s)
+└  Laravelify 0.3.0-beta.101 is installed (7m 40s)
 ```
 
 It ends with your setup link (`https://panel.example.com/setup?token=…`): open it to create the admin account with two-factor sign-in. Only that link opens the setup page, so nobody who finds a fresh panel first can claim it.
@@ -232,7 +232,9 @@ flowchart LR
 | CPU | 2 vCPU | 4 vCPU |
 | Memory | 2 GB | 4 GB or more (Next.js and Nuxt builds need memory) |
 | Disk | 30 GB SSD | 60 GB SSD or more |
-| Network | A domain on Cloudflare and a tunnel token | |
+| Network | A free `laravelify.cloud` address (install key), or a domain on Cloudflare and a tunnel token | |
+
+**Need a server?** Get a VPS with Ubuntu 24.04 from [Hostinger](https://www.hostinger.com/in?REFERRALCODE=LARAVELIFY). This is a referral link: Laravelify may earn a commission, which helps fund the project.
 
 ## Update, repair, uninstall
 
