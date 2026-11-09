@@ -329,6 +329,16 @@ Laravelify is free and has no paid plan. If it saves you time:
 - ☕ [Buy me a coffee](https://buymeacoffee.com/arshadarsh01)
 - 💜 [Sponsor Laravelify](https://github.com/sponsors/laravelify-cloud), or see the [sponsor tiers](https://laravelify.cloud/#sponsors)
 
+### Huge Sponsors
+
+*This spot is open. [Become the first Huge Sponsor](https://laravelify.cloud/#sponsors).*
+
+### Big Sponsors
+
+*This spot is open. [Become a Big Sponsor](https://laravelify.cloud/#sponsors).*
+
+Hosting companies, developer tools, and teams that run Laravelify can sponsor it to fund new features, security fixes, and support. Your logo and link appear here and on [laravelify.cloud](https://laravelify.cloud/#sponsors). Write to us from the [sponsor page](https://laravelify.cloud/#sponsors).
+
 ## Maintainer
 
 Built and maintained by **[Arshad Arshadli](https://github.com/ArshadArshadli01)** in Azerbaijan 🇦🇿. Say hi on [X](https://x.com/a_arshadli) or [LinkedIn](https://linkedin.com/in/arshad-arshadli-170991201).
