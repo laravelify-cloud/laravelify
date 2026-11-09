@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.101] - 2026-11-09
+
+- **Changed: PHP extensions show what they are doing.** Saving shows each step (like compiling sqlsrv) with its progress, also after a reload or in another tab. Save is disabled until it is done, the boxes update by themselves, and a failure stays on the page with its reason. Extensions that are compiled now use every CPU core.
+- **New: search and tabs stay in the address** in data tables, Database search, Backups, website Monitoring, PHP extensions, Files, Logs, and Errors, so a reload or a shared link shows the same.
+
 ## [0.3.0-beta.100] - 2026-11-08
 
 - **New: website basic auth by authenticator code.** Security → Basic auth can ask for your 6-digit authenticator code (in the username or the password field) instead of a username and password. After a correct code the browser is let in for a day, from that IP, for that website. Paths without a password and SSL renewals stay open, and wrong codes are limited like the panel's own access prompt.
