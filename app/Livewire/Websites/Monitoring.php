@@ -41,6 +41,7 @@ class Monitoring extends PanelComponent
     #[Url(as: 'filter', except: 'all')]
     public string $filter = 'all';
 
+    #[Url(as: 'q', except: '')]
     public string $search = '';
 
     public string $issueStatus = 'open';

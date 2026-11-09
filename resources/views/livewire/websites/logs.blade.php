@@ -94,7 +94,7 @@
                     <span class="whitespace-nowrap text-[12px] text-muted" x-cloak x-show="query.trim() !== ''" x-text="matches + (matches === 1 ? ' match' : ' matches')"></span>
                     <label class="logs-viewer-search">
                         <x-menu-icon name="search" />
-                        <input type="search" x-model.debounce.200ms="query" placeholder="Find in log" aria-label="Find in log" autocomplete="off" spellcheck="false">
+                        <input type="search" x-model.debounce.200ms="query" x-init="query = urlParam('find') || query; $watch('query', (value) => setUrlParam('find', value))" placeholder="Find in log" aria-label="Find in log" autocomplete="off" spellcheck="false">
                         <button class="clear" type="button" x-cloak x-show="query !== ''" @click="query = ''" aria-label="Clear search"><x-menu-icon name="close" class="size-3" /></button>
                     </label>
                 </div>

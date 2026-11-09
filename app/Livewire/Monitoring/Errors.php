@@ -20,6 +20,7 @@ class Errors extends PanelComponent
 
     public ?Website $website = null;
 
+    #[Url(as: 'section', except: 'issues', history: true)]
     public string $section = 'issues';
 
     #[Url(as: 'errors_status', except: 'unresolved')]

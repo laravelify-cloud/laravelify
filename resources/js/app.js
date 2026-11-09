@@ -764,6 +764,18 @@ window.navSection = function (key, holdsCurrentPage) {
     };
 };
 
+/** Keep a value of the page in its address (search boxes the browser filters by itself), so a reload or a shared link shows the same. */
+window.setUrlParam = function (name, value) {
+    const url = new URL(window.location.href);
+
+    if (value) url.searchParams.set(name, value);
+    else url.searchParams.delete(name);
+
+    window.history.replaceState(window.history.state, '', url);
+};
+
+window.urlParam = (name) => new URLSearchParams(window.location.search).get(name) || '';
+
 /** The Ctrl+K palette: every sidebar link (read from the sidebar itself) plus a few quick actions. */
 window.commandPalette = function (actions) {
     return {

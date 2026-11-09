@@ -169,11 +169,11 @@ class PhpExtensions
     }
 
     /** Turn one on (installing its package first when needed) or off for this PHP version. */
-    public function set(string $version, string $module, bool $on): void
+    public function set(string $version, string $module, bool $on, ?callable $onStep = null): void
     {
         $extension = self::catalog()[$module] ?? throw new RuntimeException("Unknown extension {$module}.");
 
-        app(HostWriter::class)->phpExtension($version, $module, $on, $extension['package']);
+        app(HostWriter::class)->phpExtension($version, $module, $on, $extension['package'], $onStep);
     }
 
     /**
@@ -183,7 +183,7 @@ class PhpExtensions
      * @param  array<string, bool>  $changes
      * @return array{message: string, failed?: bool}
      */
-    public function apply(string $version, array $changes, ?callable $progress = null): array
+    public function apply(string $version, array $changes, ?callable $progress = null, ?callable $onStep = null): array
     {
         $done = [];
         $failed = [];
@@ -194,7 +194,7 @@ class PhpExtensions
 
         foreach ($changes as $module => $on) {
             try {
-                $this->set($version, $module, $on);
+                $this->set($version, $module, $on, $onStep);
                 $done[] = ($on ? '+' : '−').$module;
             } catch (\Throwable $exception) {
                 $failed[] = $module.' ('.trim(strtok($exception->getMessage(), "\n") ?: 'failed').')';

@@ -435,8 +435,9 @@ site_pool_file() {
 # Microsoft's ODBC Driver 18 comes from Microsoft's package repository (its license is accepted by
 # ticking the extension in the panel), then PECL builds both extensions for that PHP version.
 install_sqlsrv() {
-  local version="$1" os_version
-  export DEBIAN_FRONTEND=noninteractive HOME=/root
+  local version="$1" os_version log=/tmp/laravelify-sqlsrv-apt.log
+  # Compiled on every CPU core: on one core, with a slow disk, it takes many minutes.
+  export DEBIAN_FRONTEND=noninteractive HOME=/root MAKEFLAGS="-j$(nproc)"
   if ! dpkg -s msodbcsql18 >/dev/null 2>&1; then
     echo "Installing Microsoft ODBC Driver 18..." >&2
     os_version="$(. /etc/os-release && echo "${VERSION_ID}")"
@@ -446,13 +447,16 @@ install_sqlsrv() {
     echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/${os_version}/prod $(. /etc/os-release && echo "${VERSION_CODENAME}") main" \
       > /etc/apt/sources.list.d/microsoft-prod.list
     apt-get update -q >/dev/null 2>&1 || true
-    ACCEPT_EULA=Y apt-get install -y -q msodbcsql18 unixodbc-dev >/dev/null 2>&1 || die "Microsoft ODBC Driver 18 could not be installed (Ubuntu ${os_version})"
+    ACCEPT_EULA=Y apt-get install -y -q msodbcsql18 unixodbc-dev >"${log}" 2>&1 \
+      || die "Microsoft ODBC Driver 18 could not be installed (Ubuntu ${os_version}): $(tail -n 2 "${log}" | tr '\n' ' ')"
   fi
-  echo "Building sqlsrv and pdo_sqlsrv for PHP ${version}..." >&2
-  apt-get install -y -q "php${version}-dev" php-pear build-essential >/dev/null 2>&1 || die "php${version}-dev could not be installed"
+  echo "Installing the build tools for PHP ${version}..." >&2
+  apt-get install -y -q "php${version}-dev" php-pear build-essential >"${log}" 2>&1 \
+    || die "php${version}-dev could not be installed: $(tail -n 2 "${log}" | tr '\n' ' ')"
   local ext
   for ext in sqlsrv pdo_sqlsrv; do
     if [[ ! -f "$("php-config${version}" --extension-dir)/${ext}.so" ]]; then
+      echo "Compiling ${ext} for PHP ${version}..." >&2
       printf '\n' | pecl -d php_suffix="${version}" install -f "${ext}" >/tmp/laravelify-pecl-${ext}.log 2>&1 \
         || die "PECL could not build ${ext} for PHP ${version}: $(tail -n 3 /tmp/laravelify-pecl-${ext}.log | tr '\n' ' ')"
       # PECL keeps one registry for every PHP version: forget it, keep the built file.

@@ -134,9 +134,9 @@ class PhpConfigTest extends TestCase
     public function test_one_extension_that_fails_does_not_stop_the_others(): void
     {
         $writer = Mockery::mock(HostWriter::class);
-        $writer->shouldReceive('phpExtension')->once()->with('8.4', 'xdebug', false, 'xdebug')->andReturn('ok');
-        $writer->shouldReceive('phpExtension')->once()->with('8.4', 'swoole', true, 'swoole')->andThrow(new RuntimeException('php8.4-swoole could not be installed'));
-        $writer->shouldReceive('phpExtension')->once()->with('8.4', 'redis', true, 'redis')->andReturn('ok');
+        $writer->shouldReceive('phpExtension')->once()->with('8.4', 'xdebug', false, 'xdebug', null)->andReturn('ok');
+        $writer->shouldReceive('phpExtension')->once()->with('8.4', 'swoole', true, 'swoole', null)->andThrow(new RuntimeException('php8.4-swoole could not be installed'));
+        $writer->shouldReceive('phpExtension')->once()->with('8.4', 'redis', true, 'redis', null)->andReturn('ok');
         $this->app->instance(HostWriter::class, $writer);
 
         $result = app(PhpExtensions::class)->apply('8.4', ['swoole' => true, 'xdebug' => false, 'redis' => true]);
@@ -162,6 +162,26 @@ class PhpConfigTest extends TestCase
         $this->assertSame(['session.cookie_httponly' => 'on', 'error_reporting' => '32767'], $this->website->fresh()->php_options);
     }
 
+    public function test_a_running_extension_change_is_shown_after_a_reload_and_not_started_twice(): void
+    {
+        $task = PanelTask::query()->create(['kind' => 'php.extensions', 'scope' => 'php:'.$this->website->php_version, 'label' => 'Changing 2 extensions', 'status' => PanelTask::RUNNING, 'progress' => 0, 'message' => 'Compiling sqlsrv for PHP 8.4...']);
+
+        $page = Livewire::withQueryParams(['php' => 'extensions'])
+            ->test(PhpConfig::class, ['website' => $this->website])
+            ->assertSee('Compiling sqlsrv for PHP 8.4...')
+            ->assertSee('Working…')
+            ->assertSet('extensionsRunning', true);
+
+        $page->set('extensionState.redis', ! ($page->get('extensionState')['redis'] ?? false))->call('saveExtensions');
+        $this->assertSame(1, PanelTask::query()->count());
+
+        $task->update(['status' => PanelTask::FAILED, 'message' => 'PHP 8.4: nothing changed. Not changed: sqlsrv (PECL could not build sqlsrv).']);
+
+        $page->call('$refresh')
+            ->assertSet('extensionsRunning', false)
+            ->assertSee('PECL could not build sqlsrv');
+    }
+
     public function test_the_open_php_section_is_kept_in_the_address(): void
     {
         Livewire::withQueryParams(['php' => 'options'])
@@ -175,7 +195,7 @@ class PhpConfigTest extends TestCase
     public function test_an_extension_is_turned_on_with_its_package(): void
     {
         $writer = Mockery::mock(HostWriter::class);
-        $writer->shouldReceive('phpExtension')->once()->with('8.4', 'pdo_pgsql', true, 'pgsql')->andReturn('ok');
+        $writer->shouldReceive('phpExtension')->once()->with('8.4', 'pdo_pgsql', true, 'pgsql', null)->andReturn('ok');
         $this->app->instance(HostWriter::class, $writer);
 
         Livewire::test(PhpConfig::class, ['website' => $this->website])

@@ -40,9 +40,37 @@ class HostWriter
     }
 
     /** Turn a PHP extension on or off for one PHP version (every website on it). */
-    public function phpExtension(string $version, string $module, bool $on, string $package): string
+    public function phpExtension(string $version, string $module, bool $on, string $package, ?callable $onStep = null): string
     {
-        return $this->apply(['php-extension', $version, $module, $on ? 'on' : 'off', $package]);
+        return $this->apply(['php-extension', $version, $module, $on ? 'on' : 'off', $package], $this->stepsFrom($onStep));
+    }
+
+    /**
+     * The steps a script says it is starting ("Compiling sqlsrv for PHP 8.4..."), one line at a time.
+     *
+     * @param  (callable(string): void)|null  $onStep
+     * @return (callable(string): void)|null
+     */
+    private function stepsFrom(?callable $onStep): ?callable
+    {
+        if ($onStep === null) {
+            return null;
+        }
+
+        $buffer = '';
+
+        return function (string $chunk) use (&$buffer, $onStep): void {
+            $buffer .= $chunk;
+
+            while (($end = strpos($buffer, "\n")) !== false) {
+                $line = trim(substr($buffer, 0, $end));
+                $buffer = substr($buffer, $end + 1);
+
+                if (str_ends_with($line, '...')) {
+                    $onStep($line);
+                }
+            }
+        };
     }
 
     /**
@@ -362,19 +390,7 @@ UNIT;
     public function glitchtipInstall(string $panelUrl, string $version, string $email, ?callable $onStep = null): array
     {
         // Each step the script starts ("Installing PostgreSQL...") goes to $onStep as it happens.
-        $buffer = '';
-        $onOutput = $onStep === null ? null : function (string $chunk) use (&$buffer, $onStep): void {
-            $buffer .= $chunk;
-
-            while (($end = strpos($buffer, "\n")) !== false) {
-                $line = trim(substr($buffer, 0, $end));
-                $buffer = substr($buffer, $end + 1);
-
-                if (str_ends_with($line, '...')) {
-                    $onStep($line);
-                }
-            }
-        };
+        $onOutput = $this->stepsFrom($onStep);
 
         preg_match_all('/^(TOKEN|EMAIL|PASSWORD)=(.+)$/m', $this->apply(['glitchtip-install', rtrim($panelUrl, '/'), $version, $email], $onOutput), $matches, PREG_SET_ORDER);
         $values = [];

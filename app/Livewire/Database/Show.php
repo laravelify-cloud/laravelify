@@ -38,6 +38,7 @@ class Show extends PanelComponent
     public string $filter = '';
 
     // Search in this database (shared search partial).
+    #[Url(as: 'find', except: '')]
     public string $query = '';
 
     public string $mode = 'data';
@@ -119,6 +120,11 @@ class Show extends PanelComponent
         $this->database = $database;
         $this->scope = [$database];
         $this->exportDatabase = $database;
+
+        // Opened from a link or a reload: the search runs again.
+        if ($this->tab === 'search' && trim($this->query) !== '') {
+            app()->call([$this, 'runSearch']);
+        }
     }
 
     public function openExport(DatabaseBrowser $browser): void

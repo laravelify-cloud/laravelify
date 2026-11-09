@@ -891,7 +891,18 @@ export function mountLocalGrid(element, spec, wire, search) {
     });
 
     if (search) {
-        search.addEventListener('input', () => grid.api.setGridOption('quickFilterText', search.value));
+        // The search stays in the address: a reload or a shared link shows the same rows.
+        const saved = new URLSearchParams(window.location.search).get('search') || '';
+
+        if (saved) {
+            search.value = saved;
+            grid.api.setGridOption('quickFilterText', saved);
+        }
+
+        search.addEventListener('input', () => {
+            grid.api.setGridOption('quickFilterText', search.value);
+            window.setUrlParam('search', search.value);
+        });
     }
 
     return grid.api;

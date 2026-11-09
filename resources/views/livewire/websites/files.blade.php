@@ -117,7 +117,7 @@
         <div class="fm-tools">
             <label class="fm-search">
                 <x-menu-icon name="search" class="size-4" />
-                <input type="search" x-ref="search" x-model="query" placeholder="Filter this folder" aria-label="Filter this folder" autocomplete="off">
+                <input type="search" x-ref="search" x-model="query" x-init="query = urlParam('find') || query; $watch('query', (value) => setUrlParam('find', value))" placeholder="Filter this folder" aria-label="Filter this folder" autocomplete="off">
                 <kbd x-show="query === ''">/</kbd>
             </label>
             <div class="segmented" role="group" aria-label="View">

@@ -179,6 +179,7 @@ class PanelTaskRunner
                 in_array($version = (string) ($task->payload['version'] ?? ''), config('laravelify.php_versions'), true) ? $version : throw new RuntimeException('Unknown PHP version.'),
                 array_map('boolval', array_intersect_key((array) ($task->payload['changes'] ?? []), PhpExtensions::catalog())),
                 $progress,
+                fn (string $step) => $task->report((int) $task->progress, $step, true),
             ),
             'databases.install' => ['message' => app(DatabaseServers::class)->install((string) ($task->payload['engine'] ?? ''), Website::query()->find((int) ($task->payload['website_id'] ?? 0)))],
             'glitchtip.install' => ['message' => app(Glitchtip::class)->install(

@@ -16,6 +16,7 @@ use App\Services\PanelTaskRunner;
 use App\Support\BackupCron;
 use App\Support\SkippedTables;
 use Illuminate\Support\Collection;
+use Livewire\Attributes\Url;
 use Livewire\WithPagination;
 use Throwable;
 
@@ -50,6 +51,7 @@ class Index extends PanelComponent
     public string $kind = BackupSchedule::KIND_DATABASE;
 
     /** Show only the backups of one database (or one file schedule). */
+    #[Url(as: 'q', except: '')]
     public string $filter = '';
 
     public function updatedFilter(): void

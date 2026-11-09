@@ -52,6 +52,19 @@
             <x-slot:actions>
                 <input class="input h-8 w-44" type="search" wire:model.live.debounce.200ms="extensionFilter" placeholder="Filter extensions" aria-label="Filter extensions">
             </x-slot:actions>
+            @if ($extensionTask && $extensionTask['running'])
+                {{-- Read from the task itself, so it is still here after a reload or in another tab. --}}
+                <div class="mb-4 flex flex-col gap-2" wire:poll.2s role="status" aria-live="polite">
+                    <div class="flex items-center justify-between gap-3 text-[13px]">
+                        <span class="flex min-w-0 items-center gap-2 font-medium"><span class="size-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"></span><span class="truncate">{{ $extensionTask['step'] }}</span></span>
+                        <span class="tabular-nums text-muted">{{ $extensionTask['progress'] }}%</span>
+                    </div>
+                    <div class="h-2 overflow-hidden rounded-full bg-recessed"><div class="h-full rounded-full bg-accent transition-all duration-700" style="width: {{ max(3, $extensionTask['progress']) }}%"></div></div>
+                    <p class="text-[12.5px] text-muted">The boxes change when this is done. Some extensions are compiled on the server, which can take several minutes on a slow disk. You can leave this page.</p>
+                </div>
+            @elseif ($extensionTask && $extensionTask['failed'])
+                <div class="callout mb-4"><x-menu-icon name="danger" class="size-4 shrink-0 text-warning" /><p class="min-w-0 flex-1 break-words">{{ $extensionTask['step'] }}</p></div>
+            @endif
             <div class="php-checks">
                 @forelse ($extensions as $extension)
                     <label class="php-check" data-tip="{{ $extension['help'] }}{{ $extension['installed'] ? '' : ' Not installed yet: installed when you save.' }}" wire:key="ext-{{ $extension['module'] }}">
@@ -68,7 +81,7 @@
             <div class="php-foot">
                 <span class="text-[12.5px] text-muted">{{ $pendingChanges > 0 ? $pendingChanges.' '.\Illuminate\Support\Str::plural('change', $pendingChanges).' not saved yet. Hover an extension to see what it does.' : 'Hover an extension to see what it does.' }}</span>
                 <button class="btn" type="button" wire:click="resetExtensions" @disabled($pendingChanges === 0)>Reset</button>
-                <button class="btn btn-primary" type="button" wire:click="saveExtensions" wire:loading.attr="disabled" @disabled($pendingChanges === 0)>Save</button>
+                <button class="btn btn-primary" type="button" wire:click="saveExtensions" wire:loading.attr="disabled" @disabled($pendingChanges === 0 || ($extensionTask['running'] ?? false))>{{ ($extensionTask['running'] ?? false) ? 'Working…' : 'Save' }}</button>
             </div>
         </x-layer-card>
     @else

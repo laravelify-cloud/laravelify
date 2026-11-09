@@ -59,6 +59,7 @@ class Index extends PanelComponent
     /** @var list<string> */
     public array $exportTables = [];
 
+    #[Url(as: 'find', except: '')]
     public string $query = '';
 
     public string $mode = 'data';

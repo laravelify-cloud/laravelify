@@ -5,6 +5,7 @@ namespace App\Livewire\Websites;
 use App\Livewire\Concerns\FollowsTasks;
 use App\Livewire\Concerns\LazyPlaceholder;
 use App\Livewire\PanelComponent;
+use App\Models\PanelTask;
 use App\Models\Website;
 use App\Services\HostWriter;
 use App\Services\PanelTaskRunner;
@@ -43,6 +44,10 @@ class PhpConfig extends PanelComponent
     /** @var array<string, bool> The extensions as ticked, saved with saveExtensions(). */
     public array $extensionState = [];
 
+    /** A change is running: when it ends, the boxes are read again from the server. */
+    public bool $extensionsRunning = false;
+
+    #[Url(as: 'find', except: '')]
     public string $extensionFilter = '';
 
     public function mount(Website $website): void
@@ -110,6 +115,13 @@ class PhpConfig extends PanelComponent
             return;
         }
 
+        if (PanelTaskRunner::running('php.extensions', 'php:'.$this->version())) {
+            $this->toast('A change to these extensions is already running. It shows here until it is done.', 'warning');
+
+            return;
+        }
+
+        $this->extensionsRunning = true;
         $this->runInBackground('php.extensions', 'php:'.$this->version(), 'Changing '.count($changes).' PHP '.$this->version().' '.(count($changes) === 1 ? 'extension' : 'extensions'), [
             'version' => $this->version(),
             'changes' => $changes,
@@ -189,12 +201,51 @@ class PhpConfig extends PanelComponent
         $this->loadOptions();
     }
 
+    /**
+     * The extension change running now, or the last one if some of it failed (it stays on the page
+     * for a day, so the reason is not lost with a toast).
+     *
+     * @return array{running: bool, progress: int, step: string, failed: bool}|null
+     */
+    private function extensionTask(): ?array
+    {
+        $task = PanelTask::query()->where('kind', 'php.extensions')->where('scope', 'php:'.$this->version())->latest('id')->first();
+
+        if ($task === null) {
+            return null;
+        }
+
+        $running = in_array($task->status, [PanelTask::QUEUED, PanelTask::RUNNING], true);
+        $failed = ! $running && ($task->status === PanelTask::FAILED || str_contains((string) $task->message, 'Not changed'));
+
+        if (! $running && (! $failed || $task->created_at?->lt(now()->subDay()))) {
+            return null;
+        }
+
+        return [
+            'running' => $running,
+            'progress' => (int) $task->progress,
+            'step' => $task->status === PanelTask::QUEUED ? 'Waiting for the background worker...' : ((string) $task->message ?: 'Starting...'),
+            'failed' => $failed,
+        ];
+    }
+
     public function render(PhpExtensions $extensions): View
     {
+        $extensionTask = $this->extensionTask();
+        $running = (bool) ($extensionTask['running'] ?? false);
+
+        // It just finished: the boxes show what the server really has now.
+        if ($this->extensionsRunning && ! $running) {
+            $this->resetExtensions($extensions);
+        }
+
+        $this->extensionsRunning = $running;
         $all = $extensions->forVersion($this->version());
         $filter = strtolower(trim($this->extensionFilter));
 
         return view('livewire.websites.php-config', [
+            'extensionTask' => $extensionTask,
             'phpVersions' => config('laravelify.php_versions'),
             'installedVersions' => collect(config('laravelify.php_versions'))->filter(fn (string $version) => is_file("/usr/sbin/php-fpm{$version}"))->values()->all(),
             'extensions' => collect($all)->filter(fn (array $extension) => $filter === '' || str_contains($extension['module'], $filter) || str_contains(strtolower($extension['help']), $filter))->values()->all(),
