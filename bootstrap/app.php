@@ -3,6 +3,7 @@
 use App\Http\Controllers\AccessGateController;
 use App\Http\Controllers\CodeEditorGateController;
 use App\Http\Controllers\CodeWorkspaceShareController;
+use App\Http\Controllers\PanelAddressCheckController;
 use App\Http\Middleware\PanelAccess;
 use App\Http\Middleware\PanelGate;
 use App\Http\Middleware\SecurityHeaders;
@@ -18,6 +19,8 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
         then: function (): void {
+            // Settings -> Panel address asks here, through the new domain, to see that it reaches this panel.
+            Route::get('/_laravelify/panel-check', PanelAddressCheckController::class)->name('panel-address.check');
             // nginx asks here before phpMyAdmin pages. No web middleware: no session, no panel login.
             Route::get('/_access/phpmyadmin', AccessGateController::class)->name('access.phpmyadmin');
             // nginx asks here before a website's pages when its basic auth wants the authenticator code.

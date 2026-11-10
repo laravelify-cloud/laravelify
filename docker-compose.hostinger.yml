@@ -1,0 +1,28 @@
+# Install Laravelify on a Hostinger VPS from Docker Manager (or any fresh Ubuntu 24.04 server).
+#
+# This container only starts the normal installer on the server itself and then stops: Laravelify
+# manages nginx, PHP, and databases on the host, so it does not run inside Docker.
+# It needs privileged access to the host for that one run. Use a fresh server.
+#
+# When it finishes, its logs show the setup link: http://<server-ip>:8000/setup?token=...
+services:
+  laravelify-installer:
+    image: ubuntu:24.04
+    container_name: laravelify-installer
+    restart: "no"
+    privileged: true
+    pid: host
+    environment:
+      LARAVELIFY_VERSION: ${LARAVELIFY_VERSION:-latest}
+    command:
+      - nsenter
+      - --target=1
+      - --mount
+      - --uts
+      - --ipc
+      - --net
+      - --pid
+      - --
+      - /bin/bash
+      - -c
+      - curl -fsSL https://cdn.laravelify.cloud/install.sh | bash

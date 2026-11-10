@@ -51,6 +51,24 @@ class HostWriter
      * @param  (callable(string): void)|null  $onStep
      * @return (callable(string): void)|null
      */
+    /** The panel answers on this domain too, next to its current address. */
+    public function panelDomainAdd(string $domain): void
+    {
+        $this->apply(['panel-domain-add', $domain]);
+    }
+
+    /** Take back panelDomainAdd: the domain did not answer. */
+    public function panelDomainRestore(): void
+    {
+        $this->apply(['panel-domain-restore']);
+    }
+
+    /** The domain becomes the panel's address and the old port only redirects to it. */
+    public function panelDomainCommit(string $domain): void
+    {
+        $this->apply(['panel-domain-commit', $domain]);
+    }
+
     private function stepsFrom(?callable $onStep): ?callable
     {
         if ($onStep === null) {

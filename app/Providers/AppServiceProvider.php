@@ -34,7 +34,12 @@ class AppServiceProvider extends ServiceProvider
         // The panel's queue worker says it is alive (see PanelWorker: the watchdog and the banner).
         Queue::looping(fn () => PanelWorker::beat());
 
-        if (str_starts_with((string) request()->header('X-Forwarded-Proto'), 'https')) {
+        // Behind a proxied DNS record Cloudflare is not a trusted proxy, so its header is not used:
+        // a panel whose address is https:// on this host is https all the same.
+        $panel = parse_url((string) config('app.url'));
+
+        if (str_starts_with((string) request()->header('X-Forwarded-Proto'), 'https')
+            || (($panel['scheme'] ?? '') === 'https' && ($panel['host'] ?? '') === request()->getHost())) {
             URL::forceScheme('https');
         }
 

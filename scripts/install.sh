@@ -12,14 +12,15 @@
 #
 # Optional environment variables:
 #   MYSQL_ROOT_PASSWORD       the database password (default: a random 40-character one)
-#   PANEL_DOMAIN              skip the panel domain prompt
+#   PANEL_DOMAIN              the panel on this domain behind Cloudflare (default: none, the panel opens on a port)
+#   PANEL_PORT                the port the panel opens on (default: 8000, or the next free one)
 #   PHPMYADMIN_DOMAIN         phpMyAdmin on a domain of its own (old style)
 #   PHPMYADMIN_PATH           phpMyAdmin at this path of the panel's address (default /phpmyadmin)
 #   LARAVELIFY_PACK           full (default) or minimal: no phpMyAdmin, no VS Code
 #   LARAVELIFY_TOOLS          exactly which tools: phpmyadmin,vscode,glitchtip (default: phpmyadmin,vscode), or --tools=
-#   CLOUDFLARE_TUNNEL_TOKEN   skip the tunnel token prompt (asked first and checked)
-#   LARAVELIFY_CLOUD_KEY      an install key from app.laravelify.cloud: a free <name>.laravelify.cloud address, no Cloudflare questions
-#   CLOUDFLARE_API_TOKEN      skip the optional API token prompt (empty: none); it adds the panel route and DNS
+#   CLOUDFLARE_TUNNEL_TOKEN   connect this Cloudflare tunnel (default: none)
+#   LARAVELIFY_CLOUD_KEY      an install key from app.laravelify.cloud: a free <name>.laravelify.cloud address
+#   CLOUDFLARE_API_TOKEN      optional; it adds the panel route and DNS
 #   LARAVELIFY_VERSION        release to install, like 1.2.0 (default: latest)
 #   LARAVELIFY_REPO           GitHub owner/name to download releases from
 #   LARAVELIFY_SOURCE         directory to copy into /opt/laravelify instead
@@ -30,7 +31,7 @@
 #
 # The same choices as options (the install command builder on laravelify.cloud writes these):
 #   curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- --php=8.3,8.4 --node=22 --databases=postgresql
-#   --php=LIST  --node=LIST  --databases=LIST  --tools=LIST  --panel-domain=HOST  --phpmyadmin-domain=HOST  --help
+#   --php=LIST  --node=LIST  --databases=LIST  --tools=LIST  --panel-domain=HOST  --panel-port=PORT  --phpmyadmin-domain=HOST  --help
 
 set -Eeuo pipefail
 
@@ -49,7 +50,8 @@ Options:
                               database servers for the websites: mysql or mariadb (one of
                               the two), postgresql, mongodb, or none (default: mysql).
                               SQLite needs no server and always works.
-  --panel-domain=HOST         the panel's domain, like panel.example.com
+  --panel-domain=HOST         the panel's domain, on Cloudflare (default: none, the panel opens on a port)
+  --panel-port=PORT           the port the panel opens on (default: 8000, or the next free one)
   --tools=phpmyadmin,vscode   optional tools: phpmyadmin, vscode, glitchtip, or none
                               (default: phpmyadmin,vscode)
   --phpmyadmin-path=PATH      phpMyAdmin at this path of the panel's address (default /phpmyadmin)
@@ -67,6 +69,7 @@ for argument in "$@"; do
     --node=*) LARAVELIFY_NODE_VERSIONS="${argument#*=}" ;;
     --databases=*) LARAVELIFY_DATABASES="${argument#*=}" ;;
     --panel-domain=*) PANEL_DOMAIN="${argument#*=}" ;;
+    --panel-port=*) PANEL_PORT="${argument#*=}" ;;
     --phpmyadmin-domain=*) PHPMYADMIN_DOMAIN="${argument#*=}" ;;
     --phpmyadmin-path=*) PHPMYADMIN_PATH="${argument#*=}" ;;
     --tools=*) LARAVELIFY_TOOLS="${argument#*=}" ;;
@@ -264,14 +267,6 @@ has_tool glitchtip && WITH_GLITCHTIP=1
 printf '\n%s┌%s  %sLaravelify%s %sinstaller · self-hosted deployment panel%s\n' "$C_DIM" "$C_RESET" "$C_BOLD$C_MAGENTA" "$C_RESET" "$C_DIM" "$C_RESET" >&3
 ui_bar
 
-read_tty() {
-  if [[ -r /dev/tty ]]; then
-    read -r "$@" </dev/tty
-  else
-    return 1
-  fi
-}
-
 # Already installed? Update Laravelify only: the new release, migrations, and a restart of
 # its workers. PHP, MySQL, nginx, Node, and the other packages are not touched.
 # LARAVELIFY_REINSTALL=1 skips this and runs the full install (a repair).
@@ -293,13 +288,7 @@ if [[ "${LARAVELIFY_REINSTALL:-}" != "1" && -z "${LARAVELIFY_SOURCE:-}" \
 
   echo "  Installed: ${INSTALLED_VERSION:-unknown}"
   echo "  Release:   $(tr -d '\r\n' < "${UPDATE_DIR}/VERSION" 2>/dev/null || echo unknown)"
-  UPDATE_ANSWER=""
-  # No terminal (automated run): update only.
-  read_tty -p "Update Laravelify only? Packages and settings stay as they are. [Y/n] (n = reinstall everything) " UPDATE_ANSWER || UPDATE_ANSWER="y"
-  echo
-
-  if [[ ! "$UPDATE_ANSWER" =~ ^[Nn] ]]; then
-    RELEASE_VERSION="$(tr -d '\r\n' < "${UPDATE_DIR}/VERSION" 2>/dev/null || echo unknown)"
+  RELEASE_VERSION="$(tr -d '\r\n' < "${UPDATE_DIR}/VERSION" 2>/dev/null || echo unknown)"
     step "Updating Laravelify ${INSTALLED_VERSION:-} → ${RELEASE_VERSION}"
     LARAVELIFY_SOURCE="$UPDATE_DIR" LARAVELIFY_ROOT="$INSTALLED_ROOT" LARAVELIFY_RELEASE=1 bash "${UPDATE_DIR}/scripts/update.sh"
     step_done
@@ -307,9 +296,6 @@ if [[ "${LARAVELIFY_REINSTALL:-}" != "1" && -z "${LARAVELIFY_SOURCE:-}" \
     exec 1>&3 2>&4
     printf '%s└%s  %sLaravelify %s is ready%s %s(%s)%s\n\n' "$C_DIM" "$C_RESET" "$C_GREEN$C_BOLD" "$RELEASE_VERSION" "$C_RESET" "$C_DIM" "$(duration $((SECONDS - INSTALL_START)))" "$C_RESET"
     exit 0
-  fi
-
-  rm -rf "$UPDATE_DIR"
 fi
 
 # Re-running the installer (to repair or finish an install) offers the answers
@@ -326,7 +312,7 @@ previous_settings() {
     # shellcheck disable=SC1090
     . "$STATE_FILE"
   elif [[ -f /opt/laravelify/.env ]]; then
-    PREV_PANEL_DOMAIN="$(env_value APP_URL | sed -e 's#^https\?://##' -e 's#/.*$##')"
+    PREV_PANEL_DOMAIN="$(env_value APP_URL | sed -e 's#^https\?://##' -e 's#/.*$##' -e 's#:.*$##')"
     if [[ "$(env_value DB_USERNAME)" == "root" ]]; then
       PREV_MYSQL_ROOT_PASSWORD="$(env_value DB_PASSWORD)"
     fi
@@ -334,34 +320,28 @@ previous_settings() {
     PREV_CLOUDFLARE_TUNNEL_TOKEN="$(grep -h -oP -- '--token "\K[^"]+' /etc/systemd/system/laravelify-tunnel-*.service 2>/dev/null | head -n 1 || true)"
   fi
 
-  [[ -n "${PREV_PANEL_DOMAIN:-}" ]]
+  [[ -n "${PREV_PANEL_DOMAIN:-}${PREV_MYSQL_ROOT_PASSWORD:-}" ]]
 }
 
 masked() {
-  if [[ -n "$1" ]]; then echo "******** (saved)"; else echo "(not found, you will be asked)"; fi
+  if [[ -n "$1" ]]; then echo "******** (saved)"; else echo "(none)"; fi
 }
 
 # Only what this install asks for: no password without a database server, no phpMyAdmin domain without MySQL or MariaDB.
 if [[ ( -n "$DATABASES" && -z "${MYSQL_ROOT_PASSWORD:-}" ) || -z "${PANEL_DOMAIN:-}" || ( -n "$WITH_PHPMYADMIN" && -z "${PHPMYADMIN_DOMAIN:-}" && -z "${PHPMYADMIN_PATH:-}" && -n "${PREV_PHPMYADMIN_DOMAIN:-}" ) || -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]] && previous_settings; then
   echo
   echo "Found the settings from a previous install:"
-  echo "  Panel domain:            ${PREV_PANEL_DOMAIN}"
+  echo "  Panel domain:            ${PREV_PANEL_DOMAIN:-(none, the panel is on a port)}"
   if [[ -n "${PREV_PHPMYADMIN_DOMAIN:-}" ]]; then
     echo "  phpMyAdmin domain:       ${PREV_PHPMYADMIN_DOMAIN}"
   fi
   echo "  Database password:       $(masked "${PREV_MYSQL_ROOT_PASSWORD:-}")"
   echo "  Cloudflare tunnel token: $(masked "${PREV_CLOUDFLARE_TUNNEL_TOKEN:-}")"
-  REUSE_ANSWER=""
-  # No terminal (automated install): reuse them.
-  read_tty -p "Use these settings? [Y/n] " REUSE_ANSWER || REUSE_ANSWER="y"
-  echo
-  if [[ ! "$REUSE_ANSWER" =~ ^[Nn] ]]; then
     MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-${PREV_MYSQL_ROOT_PASSWORD:-}}"
     PANEL_DOMAIN="${PANEL_DOMAIN:-${PREV_PANEL_DOMAIN:-}}"
     PHPMYADMIN_DOMAIN="${PHPMYADMIN_DOMAIN:-${PREV_PHPMYADMIN_DOMAIN:-}}"
     CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-${PREV_CLOUDFLARE_TUNNEL_TOKEN:-}}"
     CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN-}"
-  fi
 fi
 
 # One password for the database servers chosen: MySQL's or MariaDB's root, PostgreSQL's postgres
@@ -391,21 +371,10 @@ CLOUD_TOKEN=""
 if [[ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then
   if [[ -n "${LARAVELIFY_CLOUD_KEY:-}" ]]; then
     FREE_ADDRESS=1
-  else
-    printf '%s│%s  Panel address:\n' "$C_DIM" "$C_RESET" >&3
-    printf '%s│%s    1) a free https://<name>.laravelify.cloud address (needs your install key from app.laravelify.cloud)\n' "$C_DIM" "$C_RESET" >&3
-    printf '%s│%s    2) your own domain (needs a Cloudflare tunnel token)\n' "$C_DIM" "$C_RESET" >&3
-    ADDRESS_CHOICE=""
-    read_tty -p "Choose 1 or 2: " ADDRESS_CHOICE || ADDRESS_CHOICE="2"
-    [[ "$ADDRESS_CHOICE" == "1" ]] && FREE_ADDRESS=1
   fi
 fi
 
 if [[ -n "$FREE_ADDRESS" ]]; then
-  if [[ -z "${LARAVELIFY_CLOUD_KEY:-}" ]]; then
-    read_tty -s -p "Laravelify Cloud install key (app.laravelify.cloud → Dashboard → Install from a terminal): " LARAVELIFY_CLOUD_KEY || LARAVELIFY_CLOUD_KEY=""
-    echo
-  fi
   LARAVELIFY_CLOUD_KEY="$(printf '%s' "${LARAVELIFY_CLOUD_KEY:-}" | tr -d '[:space:]')"
   if [[ ! "$LARAVELIFY_CLOUD_KEY" =~ ^lfy_[A-Za-z0-9]{20,80}$ ]]; then
     echo "That is not a Laravelify Cloud install key. Copy it from app.laravelify.cloud → Dashboard → Install from a terminal." >&2
@@ -454,53 +423,70 @@ print("" if value is None or value is False else value)' "$1" 2>/dev/null || tru
   printf '%s│%s  %s✓ Free address%s https://%s\n' "$C_DIM" "$C_RESET" "$C_GREEN" "$C_RESET" "$PANEL_DOMAIN" >&3
 fi
 
-# The tunnel token comes first and is checked before anything else is asked: a token is base64 JSON
-# with the account (a), the tunnel (t), and its secret (s). Whether it really connects is shown
-# after the tunnel starts, near the end.
-if [[ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then
-  read_tty -s -p "Cloudflare tunnel token: " CLOUDFLARE_TUNNEL_TOKEN
-  echo
-fi
+# A tunnel is optional: with no token the panel opens on a port and moves to a domain from
+# Settings -> Panel address. A token given here is base64 JSON with the account (a), the tunnel (t),
+# and its secret (s); whether it really connects is shown after the tunnel starts, near the end.
+CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
 CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN#cloudflared service install }"
 CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN#sudo cloudflared service install }"
 
-if [[ -z "$CLOUDFLARE_TUNNEL_TOKEN" || "$CLOUDFLARE_TUNNEL_TOKEN" =~ [[:space:]] ]]; then
-  echo "The Cloudflare tunnel token is required and cannot contain spaces." >&2
-  exit 1
+if [[ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]]; then
+  TUNNEL_TOKEN_JSON="$(printf '%s' "$CLOUDFLARE_TUNNEL_TOKEN" | base64 -d 2>/dev/null || true)"
+  TUNNEL_ID="$(printf '%s' "$TUNNEL_TOKEN_JSON" | grep -oP '"t"\s*:\s*"\K[0-9a-f-]{36}' || true)"
+  unset TUNNEL_TOKEN_JSON
+  if [[ -z "$TUNNEL_ID" ]]; then
+    echo "CLOUDFLARE_TUNNEL_TOKEN is not a Cloudflare tunnel token. Copy it from Zero Trust → Networks → Tunnels → your tunnel → Install connector (the long text after --token or 'service install')." >&2
+    exit 1
+  fi
+  printf '%s│%s  %s✓ Tunnel token accepted%s (tunnel %s…)\n' "$C_DIM" "$C_RESET" "$C_GREEN" "$C_RESET" "${TUNNEL_ID:0:8}" >&3
 fi
-
-TUNNEL_TOKEN_JSON="$(printf '%s' "$CLOUDFLARE_TUNNEL_TOKEN" | base64 -d 2>/dev/null || true)"
-TUNNEL_ID="$(printf '%s' "$TUNNEL_TOKEN_JSON" | grep -oP '"t"\s*:\s*"\K[0-9a-f-]{36}' || true)"
-unset TUNNEL_TOKEN_JSON
-if [[ -z "$TUNNEL_ID" ]]; then
-  echo "That is not a Cloudflare tunnel token. Copy it from Zero Trust → Networks → Tunnels → your tunnel → Install connector (the long text after --token or 'service install')." >&2
-  exit 1
-fi
-printf '%s│%s  %s✓ Tunnel token accepted%s (tunnel %s…)\n' "$C_DIM" "$C_RESET" "$C_GREEN" "$C_RESET" "${TUNNEL_ID:0:8}" >&3
 
 # A tunnel token only connects; adding the panel's route and DNS record needs a Cloudflare API token
 # (Account → Cloudflare Tunnel → Edit, Zone → DNS → Edit). Optional: Enter skips it, and the route is
 # then added by hand in Cloudflare. It is also saved in the panel (Settings → Cloudflare).
-if [[ -z "${CLOUDFLARE_API_TOKEN+set}" ]]; then
-  read_tty -s -p "Cloudflare API token to add the panel route and DNS (optional, Enter to skip): " CLOUDFLARE_API_TOKEN || CLOUDFLARE_API_TOKEN=""
-  echo
-fi
 CLOUDFLARE_API_TOKEN="$(printf '%s' "${CLOUDFLARE_API_TOKEN:-}" | tr -d '[:space:]')"
 if [[ -n "$CLOUDFLARE_API_TOKEN" && ! "$CLOUDFLARE_API_TOKEN" =~ ^[A-Za-z0-9_-]{20,500}$ ]]; then
-  echo "That is not a Cloudflare API token (letters, numbers, - and _ only). Run again, or press Enter to skip it." >&2
+  echo "That is not a Cloudflare API token (letters, numbers, - and _ only). Check CLOUDFLARE_API_TOKEN." >&2
   exit 1
 fi
 if [[ -n "$CLOUDFLARE_API_TOKEN" ]]; then
   printf '%s│%s  %s✓ API token given%s: the panel route and DNS record are added for you\n' "$C_DIM" "$C_RESET" "$C_GREEN" "$C_RESET" >&3
 fi
 
-if [[ -z "${PANEL_DOMAIN:-}" ]]; then
-  read_tty -p "Laravelify panel domain (example: panel.example.com): " PANEL_DOMAIN
-fi
-
-if [[ ! "$PANEL_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
+# With a domain the panel is on port 80 behind Cloudflare. Without one (the default) it opens on a
+# port of this server, and Settings -> Panel address moves it to a domain later.
+PANEL_DOMAIN="${PANEL_DOMAIN:-}"
+if [[ -n "$PANEL_DOMAIN" && ! "$PANEL_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
   echo "The panel domain is not a hostname." >&2
   exit 1
+fi
+
+if [[ -n "$PANEL_DOMAIN" ]]; then
+  PANEL_PORT=""
+  PANEL_ADDRESS="$PANEL_DOMAIN"
+  PANEL_URL="https://${PANEL_DOMAIN}"
+else
+  if [[ -z "${PANEL_PORT:-}" && -n "${PREV_PANEL_PORT:-}" ]]; then
+    PANEL_PORT="$PREV_PANEL_PORT"
+  elif [[ -z "${PANEL_PORT:-}" ]]; then
+    PANEL_PORT=8000
+    while ss -ltnH "( sport = :${PANEL_PORT} )" 2>/dev/null | grep -q .; do
+      PANEL_PORT=$((PANEL_PORT + 1))
+    done
+  fi
+  if [[ ! "$PANEL_PORT" =~ ^[0-9]{4,5}$ ]] || (( PANEL_PORT < 1024 || PANEL_PORT > 65535 )); then
+    echo "The panel port must be a number from 1024 to 65535." >&2
+    exit 1
+  fi
+  PUBLIC_IP="${LARAVELIFY_PUBLIC_IP:-}"
+  if [[ -z "$PUBLIC_IP" ]]; then
+    PUBLIC_IP="$(curl -4 -fsS --max-time 8 https://api.ipify.org 2>/dev/null || true)"
+  fi
+  if [[ ! "$PUBLIC_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+    PUBLIC_IP="$(hostname -I | awk '{print $1}')"
+  fi
+  PANEL_ADDRESS="${PUBLIC_IP}:${PANEL_PORT}"
+  PANEL_URL="http://${PANEL_ADDRESS}"
 fi
 
 # phpMyAdmin comes with MySQL or MariaDB only. By default it is a path of the panel's address
@@ -528,7 +514,7 @@ if [[ -n "$WITH_PHPMYADMIN" ]]; then
       echo "The phpMyAdmin path must look like /phpmyadmin: a slash, then letters, numbers, dashes and underscores." >&2
       exit 1
     fi
-    PHPMYADMIN_URL="https://${PANEL_DOMAIN}${PHPMYADMIN_PATH}/"
+    PHPMYADMIN_URL="${PANEL_URL}${PHPMYADMIN_PATH}/"
   fi
 else
   PHPMYADMIN_DOMAIN=""
@@ -549,8 +535,8 @@ fi
 install -d -m 700 /etc/laravelify
 (
   umask 077
-  printf 'PREV_MYSQL_ROOT_PASSWORD=%q\nPREV_PANEL_DOMAIN=%q\nPREV_PHPMYADMIN_DOMAIN=%q\nPREV_CLOUDFLARE_TUNNEL_TOKEN=%q\nPREV_DATABASES=%q\n' \
-    "$MYSQL_ROOT_PASSWORD" "$PANEL_DOMAIN" "$PHPMYADMIN_DOMAIN" "$CLOUDFLARE_TUNNEL_TOKEN" "$DATABASES" > "$STATE_FILE"
+  printf 'PREV_MYSQL_ROOT_PASSWORD=%q\nPREV_PANEL_DOMAIN=%q\nPREV_PHPMYADMIN_DOMAIN=%q\nPREV_CLOUDFLARE_TUNNEL_TOKEN=%q\nPREV_DATABASES=%q\nPREV_PANEL_PORT=%q\n' \
+    "$MYSQL_ROOT_PASSWORD" "$PANEL_DOMAIN" "$PHPMYADMIN_DOMAIN" "$CLOUDFLARE_TUNNEL_TOKEN" "$DATABASES" "$PANEL_PORT" > "$STATE_FILE"
 )
 chmod 600 "$STATE_FILE"
 
@@ -568,7 +554,7 @@ unset CLOUDFLARE_API_TOKEN
 ui_bar
 printf '%s◇%s  %sSettings%s\n' "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" >&3
 printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Server" "${PRETTY_NAME:-Ubuntu}" >&3
-printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Panel" "https://${PANEL_DOMAIN}" >&3
+printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "Panel" "${PANEL_URL}" >&3
 if [[ -n "$WITH_PHPMYADMIN" ]]; then
   printf '%s│%s  %-20s %s\n' "$C_DIM" "$C_RESET" "phpMyAdmin" "${PHPMYADMIN_URL}" >&3
 fi
@@ -1088,7 +1074,7 @@ if [[ ! -s /tmp/laravelify-install/setup-token ]]; then
 fi
 SETUP_TOKEN="$(cat /tmp/laravelify-install/setup-token)"
 
-PANEL_DOMAIN="$PANEL_DOMAIN" MYSQL_FAMILY="$MYSQL_FAMILY" DATABASES="$DATABASES" WITH_GLITCHTIP="$WITH_GLITCHTIP" "$PHP_BIN" <<'PHP'
+PANEL_URL="$PANEL_URL" MYSQL_FAMILY="$MYSQL_FAMILY" DATABASES="$DATABASES" WITH_GLITCHTIP="$WITH_GLITCHTIP" "$PHP_BIN" <<'PHP'
 <?php
 $path = "/opt/laravelify/.env";
 // The panel's own data: in MySQL or MariaDB when there is one, otherwise in SQLite (a file in
@@ -1104,7 +1090,7 @@ $setupToken = trim((string) @file_get_contents("/tmp/laravelify-install/setup-to
 $values = [
   "APP_ENV" => "production",
   "APP_DEBUG" => "false",
-  "APP_URL" => "https://".getenv("PANEL_DOMAIN"),
+  "APP_URL" => getenv("PANEL_URL"),
   "DB_CONNECTION" => $mysql ? "mysql" : "sqlite",
   "DB_HOST" => "127.0.0.1",
   "DB_PORT" => "3306",
@@ -1153,7 +1139,7 @@ fi
 "$PHP_BIN" artisan migrate --force --no-ansi
 
 step "Saving the server settings and the tunnel"
-PHPMYADMIN_DOMAIN="$PHPMYADMIN_DOMAIN" PHPMYADMIN_PATH="$PHPMYADMIN_PATH" PANEL_DOMAIN="$PANEL_DOMAIN" PANEL_PHP="$PANEL_PHP" MYSQL_FAMILY="$MYSQL_FAMILY" "$PHP_BIN" <<'PHP'
+PHPMYADMIN_DOMAIN="$PHPMYADMIN_DOMAIN" PHPMYADMIN_PATH="$PHPMYADMIN_PATH" PANEL_DOMAIN="$PANEL_DOMAIN" PANEL_ADDRESS="$PANEL_ADDRESS" PANEL_PHP="$PANEL_PHP" MYSQL_FAMILY="$MYSQL_FAMILY" "$PHP_BIN" <<'PHP'
 <?php
 require "vendor/autoload.php";
 $app = require "bootstrap/app.php";
@@ -1170,7 +1156,7 @@ foreach (getenv("MYSQL_FAMILY") !== "" ? ["mysql", "redis", "phpmyadmin"] : ["re
     // At a path of the panel's address, or on a domain of its own.
     $path = (string) getenv("PHPMYADMIN_PATH");
     if ($path !== "") {
-      $service->domain = getenv("PANEL_DOMAIN").$path;
+      $service->domain = getenv("PANEL_ADDRESS").$path;
       $service->settings = ["php_version" => $php, "path" => $path];
       $service->config = App\Services\ServerCatalog::phpMyAdminPathNginx($path, "unix:/run/php/php{$php}-fpm.sock");
       $service->save();
@@ -1197,6 +1183,10 @@ $phpmyadmin = getenv("PHPMYADMIN_DOMAIN");
 $slug = strtolower(str_replace(".", "-", $panel));
 $token = trim(file_get_contents("/tmp/laravelify-install/tunnel-token"));
 $token = str_replace(["\r", "\n", "\""], "", $token);
+// No token: the panel is on a port, and tunnels are added later in the panel.
+if ($token === "") {
+  exit(0);
+}
 $ingress = implode("\n", array_merge(
   ["ingress:", "  - hostname: {$panel}", "    service: http://127.0.0.1:80"],
   // phpMyAdmin's domain only with MySQL or MariaDB.
@@ -1226,18 +1216,19 @@ UNIT;
 file_put_contents("/etc/systemd/system/laravelify-tunnel-{$slug}.service", $unit);
 chmod("/etc/systemd/system/laravelify-tunnel-{$slug}.service", 0600);
 PHP
-if [[ ! -s /tmp/laravelify-install/tunnel-slug ]]; then
+if [[ -s /tmp/laravelify-install/tunnel-token && ! -s /tmp/laravelify-install/tunnel-slug ]]; then
   echo "The server settings and the tunnel were not saved (see the error above)." >&2
   exit 1
 fi
 
 step "Configuring nginx for the panel"
 install -d -m 0755 /etc/nginx/laravelify-panel.d
+PANEL_LISTEN_PORT="${PANEL_PORT:-80}"
 cat > /etc/nginx/sites-available/laravelify-panel.conf <<EOF
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name ${PANEL_DOMAIN};
+    listen ${PANEL_LISTEN_PORT} default_server;
+    listen [::]:${PANEL_LISTEN_PORT} default_server;
+    server_name ${PANEL_DOMAIN:-_};
 
     root ${APP_ROOT}/public;
     index index.php;
@@ -1304,6 +1295,8 @@ if ! command -v cloudflared >/dev/null 2>&1; then
   rm -f /tmp/cloudflared.deb
 fi
 
+PANEL_ROUTED="${PANEL_ROUTED:-}"
+if [[ -s /tmp/laravelify-install/tunnel-slug ]]; then
 TUNNEL_SLUG="$(tr -d '\r\n' < /tmp/laravelify-install/tunnel-slug)"
 install -d /etc/cloudflared
 systemctl daemon-reload
@@ -1322,8 +1315,8 @@ if [[ -n "$TUNNEL_CONNECTED" ]]; then
 else
   printf '%s│%s  %s! The tunnel did not connect to Cloudflare in 30 seconds.%s Check: journalctl -u laravelify-tunnel-%s\n' "$C_DIM" "$C_RESET" "$C_YELLOW" "$C_RESET" "$TUNNEL_SLUG" >&3
 fi
+fi
 
-PANEL_ROUTED="${PANEL_ROUTED:-}"
 if [[ -n "$CLOUD_TOKEN" ]]; then
   # Websites on this panel can then use free <client>-<name>.laravelify.cloud domains too.
   (cd "$APP_ROOT" && LARAVELIFY_CLOUD_TOKEN="$CLOUD_TOKEN" "$PHP_BIN" artisan laravelify:cloud-connect "$CLOUD_API" --prefix="$CLOUD_PREFIX" --domain="$CLOUD_DOMAIN" --no-ansi) || true
@@ -1344,12 +1337,15 @@ if [[ -s /tmp/laravelify-install/api-token ]]; then
   rm -f /tmp/laravelify-install/api-token
 fi
 
-step "Turning on the firewall (SSH, 80, 443)"
+step "Turning on the firewall (SSH, 80, 443${PANEL_PORT:+, $PANEL_PORT})"
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
+if [[ -n "$PANEL_PORT" ]]; then
+  ufw allow "${PANEL_PORT}/tcp"
+fi
 ufw --force enable
 
 step_done
@@ -1359,8 +1355,10 @@ ui_bar
 printf '%s└%s  %sLaravelify %s is installed%s %s(%s)%s\n\n' "$C_DIM" "$C_RESET" "$C_GREEN$C_BOLD" "${PANEL_VERSION}" "$C_RESET" "$C_DIM" "$(duration $((SECONDS - INSTALL_START)))" "$C_RESET"
 printf '  %sNext steps%s\n\n' "$C_BOLD" "$C_RESET"
 printf '  %s1.%s Create the superadmin (only this link opens the setup page):\n' "$C_CYAN" "$C_RESET"
-printf '     %s%shttps://%s/setup?token=%s%s\n\n' "$C_BOLD" "$C_GREEN" "$PANEL_DOMAIN" "$SETUP_TOKEN" "$C_RESET"
-if [[ -n "$PANEL_ROUTED" && -z "$PHPMYADMIN_DOMAIN" ]]; then
+printf '     %s%s%s/setup?token=%s%s\n\n' "$C_BOLD" "$C_GREEN" "$PANEL_URL" "$SETUP_TOKEN" "$C_RESET"
+if [[ -n "$PANEL_PORT" ]]; then
+  printf '  %s2.%s Give the panel a domain: Settings → Panel address. Until then it is plain HTTP, so do this before you use it for real work.\n\n' "$C_CYAN" "$C_RESET"
+elif [[ -n "$PANEL_ROUTED" && -z "$PHPMYADMIN_DOMAIN" ]]; then
   printf '  %s2.%s Cloudflare already sends %s to this server (route and DNS added).\n\n' "$C_CYAN" "$C_RESET" "$PANEL_DOMAIN"
 else
 printf '  %s2.%s In Cloudflare (Zero Trust → Networks → Tunnels → your tunnel → Routes → Add route → Published application), send\n' "$C_CYAN" "$C_RESET"
@@ -1383,7 +1381,7 @@ if [[ -n "$FREE_ADDRESS" ]]; then
   fi
 fi
 printf '  %sRedis%s       no password yet: set one in the panel under Server → Redis\n' "$C_DIM" "$C_RESET"
-printf '  %sFirewall%s    open: SSH (22), HTTP (80), HTTPS (443)\n' "$C_DIM" "$C_RESET"
+printf '  %sFirewall%s    open: SSH (22), HTTP (80), HTTPS (443)%s\n' "$C_DIM" "$C_RESET" "${PANEL_PORT:+, panel ($PANEL_PORT)}"
 printf '  %sUpdates%s     sudo bash /opt/laravelify/scripts/update.sh\n' "$C_DIM" "$C_RESET"
 printf '  %sDocs%s        https://docs.laravelify.cloud\n' "$C_DIM" "$C_RESET"
 printf '  %sLog%s         %s\n\n' "$C_DIM" "$C_RESET" "$LOG_FILE"

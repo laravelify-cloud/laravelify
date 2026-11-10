@@ -172,6 +172,10 @@
                             <x-menu-icon name="globe" />
                             <span>Cloudflare</span>
                         </a>
+                        <a class="menu-item {{ request()->routeIs('settings.panel-address') ? 'menu-item-active' : '' }}" href="{{ route('settings.panel-address') }}" wire:navigate>
+                            <x-menu-icon name="globe" />
+                            <span>Panel address</span>
+                        </a>
                         <a class="menu-item {{ request()->routeIs('settings.mcp') ? 'menu-item-active' : '' }}" href="{{ route('settings.mcp') }}" wire:navigate>
                             <x-menu-icon name="robot" />
                             <span>MCP</span>

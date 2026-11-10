@@ -1144,7 +1144,8 @@ case "${ACTION}" in
   site|site-processes|site-nginx|site-disable|remove-site|mkdir-site|site-user|site-user-drop|\
   panel-preview|panel-preview-remove|code-server-start|code-server-stop|\
   workspace-start|workspace-stop|workspace-drop|cloudflared|remove-tunnel|pm2-boot|\
-  phpmyadmin|phpmyadmin-sso|phpmyadmin-hide|glitchtip-nginx|glitchtip-remove)
+  phpmyadmin|phpmyadmin-sso|phpmyadmin-hide|glitchtip-nginx|glitchtip-remove|\
+  panel-domain-add|panel-domain-restore|panel-domain-commit)
     exec 9>/run/laravelify-host-apply.lock
     flock -w 300 9 || die "another server change has been running for 5 minutes; try again"
     ;;
@@ -1923,6 +1924,63 @@ PY
     age=-1
     [[ -f "${beat}" ]] && age=$(( $(date +%s) - $(stat -c %Y "${beat}") ))
     echo "${state:-inactive} ${age}"
+    ;;
+  panel-domain-add)
+    # Settings -> Panel address: answer on a domain too, next to the port. Nothing else changes
+    # until panel-domain-commit, so a domain that does not work can be taken back.
+    [[ "${TARGET}" =~ ^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$ ]] || die "invalid domain"
+    PANEL_CONF=/etc/nginx/sites-available/laravelify-panel.conf
+    cp -a "${PANEL_CONF}" /var/lib/laravelify-panel.conf.before
+    sed -i "0,/^\s*server_name .*;/s//    server_name ${TARGET};/" "${PANEL_CONF}"
+    if ! grep -qE '^\s*listen 80( |;)' "${PANEL_CONF}"; then
+      sed -i '0,/^\s*listen /s//    listen 80;\n    listen [::]:80;\n&/' "${PANEL_CONF}"
+    fi
+    if ! nginx -t; then
+      cp -a /var/lib/laravelify-panel.conf.before "${PANEL_CONF}"
+      die "nginx refused the panel domain"
+    fi
+    systemctl reload nginx
+    ;;
+  panel-domain-restore)
+    # The domain did not answer: back to how the panel was.
+    [[ -f /var/lib/laravelify-panel.conf.before ]] || die "nothing to restore"
+    cp -a /var/lib/laravelify-panel.conf.before /etc/nginx/sites-available/laravelify-panel.conf
+    nginx -t
+    systemctl reload nginx
+    ;;
+  panel-domain-commit)
+    # The domain answered over HTTPS: it becomes the panel's address. The old port only redirects
+    # to it from now on, so nobody signs in over plain HTTP.
+    [[ "${TARGET}" =~ ^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$ ]] || die "invalid domain"
+    PANEL_CONF=/etc/nginx/sites-available/laravelify-panel.conf
+    PORT_CONF=/etc/nginx/sites-available/laravelify-panel-port.conf
+    OLD_PORT="$(grep -oP '^\s*listen \K[0-9]+(?= default_server)' "${PANEL_CONF}" | grep -vx 80 | head -n 1 || true)"
+    if [[ -n "${OLD_PORT}" ]]; then
+      sed -i -E "/^\s*listen (\[::\]:)?${OLD_PORT} default_server;/d" "${PANEL_CONF}"
+      cat > "${PORT_CONF}" <<EOF
+server {
+    listen ${OLD_PORT} default_server;
+    listen [::]:${OLD_PORT} default_server;
+    server_name _;
+    return 301 https://${TARGET}\$request_uri;
+}
+EOF
+      ln -sfn "${PORT_CONF}" /etc/nginx/sites-enabled/laravelify-panel-port.conf
+    elif [[ -f "${PORT_CONF}" ]]; then
+      sed -i -E "s#return 301 https://[^\$]+#return 301 https://${TARGET}#" "${PORT_CONF}"
+    fi
+    if ! nginx -t; then
+      rm -f /etc/nginx/sites-enabled/laravelify-panel-port.conf
+      cp -a /var/lib/laravelify-panel.conf.before "${PANEL_CONF}"
+      die "nginx refused the panel address"
+    fi
+    sed -i -E "s#^APP_URL=.*#APP_URL=https://${TARGET}#" "${ROOT}/.env"
+    rm -f "${ROOT}/bootstrap/cache/config.php"
+    if [[ -f /etc/laravelify/install.env ]]; then
+      sed -i -E -e "s#^PREV_PANEL_DOMAIN=.*#PREV_PANEL_DOMAIN=${TARGET}#" -e "s#^PREV_PANEL_PORT=.*#PREV_PANEL_PORT=#" /etc/laravelify/install.env
+    fi
+    systemctl reload nginx
+    supervisorctl restart laravelify-queue laravelify-scheduler >/dev/null 2>&1 || true
     ;;
   panel-preview-remove)
     slug_ok "${TARGET}" || die "invalid slug"
