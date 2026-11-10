@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0-beta.102] - 2026-11-10
+
+- **Changed: the installer asks nothing.** `curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash` installs everything and opens the panel at `http://<server-ip>:8000` (the next free port when 8000 is taken; `--panel-port` picks another). A tunnel token, install key, or panel domain given as options or environment variables still work as before, and the Cloud install is unchanged.
+- **New: Settings → Panel address** moves the panel from its port to a domain, with a Cloudflare API token (a tunnel route or a proxied A record) or a DNS record you make. The domain is tested over HTTPS first: if it does not reach this panel, nothing changes. After the move the old port only redirects to the domain.
+- **New: `docker-compose.hostinger.yml`** installs Laravelify on a Hostinger VPS from Docker Manager: it runs the installer on the server once and stops.
+
 ## [0.3.0-beta.101] - 2026-11-09
 
 - **Changed: PHP extensions show what they are doing.** Saving shows each step (like compiling sqlsrv) with its progress, also after a reload or in another tab. Save is disabled until it is done, the boxes update by themselves, and a failure stays on the page with its reason. Extensions that are compiled now use every CPU core.

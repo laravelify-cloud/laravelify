@@ -64,18 +64,16 @@ On a fresh **Ubuntu 22.04, 24.04, or 26.04** server, as a user that can use `sud
 curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash
 ```
 
-You always get the **latest release**. The installer first asks where the panel lives:
+You always get the **latest release**, and **the installer asks nothing**. It installs everything, makes a random 40-character database password, and opens the panel on a port of your server:
 
-1. **A free `https://<name>.laravelify.cloud` address.** Paste the install key from [app.laravelify.cloud](https://app.laravelify.cloud) → Dashboard → **Install from a terminal**. Laravelify Cloud makes the tunnel and the DNS record, so there are no Cloudflare questions, and installing the same server again gives the same address. Or run it with `LARAVELIFY_CLOUD_KEY=lfy_…`.
-2. **Your own domain.** It then asks for two things, and one optional one:
+1. Open the **setup link** it prints, like `http://203.0.113.10:8000/setup?token=…`, and create the admin account with two-factor sign-in. Only that link opens the setup page, so nobody who finds a fresh panel first can claim it.
+2. Go to **Settings → Panel address** and give the panel a domain. Laravelify makes the Cloudflare record for you (with an API token), or you make an A record yourself. The domain is tested over HTTPS before anything changes, and afterwards the old port only redirects to it.
 
-| Prompt | Example | Used for |
-| --- | --- | --- |
-| Cloudflare tunnel token | `eyJh…` | Connects the server to Cloudflare (HTTPS, no open ports). Asked first and checked at once. |
-| Cloudflare API token (optional) | `Gq3…` | Adds the panel's route on the tunnel and its DNS record for you, and is saved in **Settings → Cloudflare**. Needs Account → Cloudflare Tunnel → Edit and Zone → DNS → Edit. Press Enter to skip and add the route by hand. |
-| Panel domain | `panel.example.com` | The panel's address |
+Until the panel has a domain it is plain HTTP, so do step 2 before you use it for real work. The database password is on **Server → MySQL** after your authenticator code. phpMyAdmin, when you choose it, opens at `/phpmyadmin` of the panel's address.
 
-The database password is not asked: the installer makes a random 40-character one. The panel shows it after your authenticator code (**Server → MySQL**), where you can change it. phpMyAdmin, when you choose it, opens at `https://panel.example.com/phpmyadmin`.
+Prefer to skip the port? Give the installer a free `https://<name>.laravelify.cloud` address (`LARAVELIFY_CLOUD_KEY=lfy_…`, from [app.laravelify.cloud](https://app.laravelify.cloud) → Dashboard → **Install from a terminal**) or your own Cloudflare tunnel (`CLOUDFLARE_TUNNEL_TOKEN=… PANEL_DOMAIN=panel.example.com`).
+
+**On Hostinger:** in Docker Manager, create a project from [`docker-compose.hostinger.yml`](docker-compose.hostinger.yml). It runs the same installer on the server once and stops; its logs show the setup link.
 
 Then it works through the install one step at a time, with a spinner, a check mark, and the time of every step:
 
@@ -88,19 +86,19 @@ Then it works through the install one step at a time, with a spinner, a check ma
 │  Node.js              22 24 (system: 24)
 │  Log                  /var/log/laravelify-install.log
 │
-◆  Downloaded Laravelify 0.3.0-beta.101 4s
+◆  Downloaded Laravelify 0.3.0-beta.102 4s
 ◆  Installing nginx, Redis, Supervisor, Git, and tools 38s
 ◆  Installing PHP 8.3 (FPM, CLI, MySQL, Redis, GD, intl, and more) 51s
 ◆  Installing PHP 8.4 (FPM, CLI, MySQL, Redis, GD, intl, and more) 47s
 ◆  Installing MySQL 8.4 1m 12s
 ◆  Installing Node.js 24, npm, and PM2 31s
    …
-◆  Turning on the firewall (SSH, 80, 443) 2s
+◆  Turning on the firewall (SSH, 80, 443, 8000) 2s
 │
-└  Laravelify 0.3.0-beta.101 is installed (7m 40s)
+└  Laravelify 0.3.0-beta.102 is installed (7m 40s)
 ```
 
-It ends with your setup link (`https://panel.example.com/setup?token=…`): open it to create the admin account with two-factor sign-in. Only that link opens the setup page, so nobody who finds a fresh panel first can claim it.
+It ends with your setup link, like `http://203.0.113.10:8000/setup?token=…`.
 
 ### Choose what to install
 
@@ -114,13 +112,14 @@ curl -fsSL https://cdn.laravelify.cloud/install.sh | sudo bash -s -- --php=8.3,8
 | --- | --- |
 | `--php=8.3,8.4` | PHP-FPM versions (8.0 to 8.5). The panel needs 8.4 or newer; 8.4 is added if neither 8.4 nor 8.5 is chosen. |
 | `--node=22,24` | Node.js majors (20, 22, 24). The newest is the system Node.js. |
-| `--panel-domain=HOST` | The panel's domain (otherwise asked) |
+| `--panel-port=PORT` | The panel's port until it has a domain (default 8000) |
+| `--panel-domain=HOST` | Start on this domain instead of a port (with a tunnel token, or an A record you make) |
 | `--databases=mysql,postgresql` | Database servers: `mysql` or `mariadb`, `postgresql`, `mongodb`, or `none` (default `mysql`) |
 | `--tools=phpmyadmin,vscode` | Optional tools: `phpmyadmin`, `vscode`, `glitchtip`, or `none` (default `phpmyadmin,vscode`; phpMyAdmin only with MySQL or MariaDB) |
 | `--phpmyadmin-path=PATH` | phpMyAdmin's path on the panel's address (default `/phpmyadmin`) |
 | `--help` | All options |
 
-The tunnel token is always asked on the server, so it never ends up in a copied command. For unattended installs every prompt is also an environment variable: see the [installation guide](https://docs.laravelify.cloud/installation/install).
+Tokens and keys go in environment variables, never in options: see the [installation guide](https://docs.laravelify.cloud/installation/install).
 
 ### What gets installed
 
@@ -243,7 +242,7 @@ Java, .NET, Python, Go, and Bun are not installed up front: the panel downloads 
 | CPU | 2 vCPU | 4 vCPU |
 | Memory | 2 GB | 4 GB or more (Next.js and Nuxt builds need memory) |
 | Disk | 30 GB SSD | 60 GB SSD or more |
-| Network | A free `laravelify.cloud` address (install key), or a domain on Cloudflare and a tunnel token | |
+| Network | Nothing to start (the panel opens on port 8000); a domain on Cloudflare for HTTPS later | |
 
 **Need a server?** Get a VPS with Ubuntu 24.04 from [Hostinger](https://www.hostinger.com/in?REFERRALCODE=LARAVELIFY). This is a referral link: Laravelify may earn a commission, which helps fund the project.
 
