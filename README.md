@@ -30,8 +30,11 @@
 
 **Laravelify** is an open-source, self-hosted control panel that turns one Ubuntu server into a home for all your apps:
 
-- **Backends:** Laravel and plain PHP (8.0 to 8.5), Express, NestJS, and any Node.js server
-- **Front ends:** React, Vue.js, Angular, Svelte, Astro, and static HTML
+- **PHP:** Laravel and plain PHP (7.4 to 8.5)
+- **Java and C#:** Spring Boot and ASP.NET Core
+- **Python:** Django, Flask, and FastAPI
+- **Go and JavaScript servers:** Go, Bun, Express, NestJS, and any Node.js server
+- **Front ends:** React, Vue.js, Angular, Svelte, Astro, Hugo, Gatsby, Docusaurus, VitePress, Eleventy, and static HTML
 - **Full-stack:** Next.js, Nuxt, SvelteKit, Laravel + Livewire, Laravel + Inertia
 
 Push to GitHub and your site deploys. Open the panel and you see live traffic, errors, attacks, and server load, browse and edit your databases, read logs, and run commands. Your server, your data, no monthly bill, no per-seat pricing.
@@ -222,7 +225,15 @@ flowchart LR
 | Express, NestJS, Node.js | PM2 behind nginx | Node 20, 22, 24 |
 | Next.js, Nuxt, SvelteKit | PM2 (Next.js standalone supported) behind nginx | Node 20, 22, 24 |
 | React, Vue.js, Angular, Svelte, Astro | Built on the server, served as files by nginx | Node 20, 22, 24 |
+| Spring Boot (Java) | Built on the server, run by PM2 behind nginx | Java 11, 17, 21 or newer |
+| ASP.NET Core (C#) | Built on the server, run by PM2 behind nginx | .NET 6 to 10 |
+| Django, Flask, FastAPI (Python) | Run by PM2 behind nginx | Python 3.9 to 3.13 |
+| Go | Built on the server, run by PM2 behind nginx | Go 1.18 or newer |
+| Bun | Run by PM2 behind nginx | Bun 1.x |
+| Hugo, Gatsby, Docusaurus, VitePress, Eleventy | Built on the server, served as files by nginx | |
 | Static HTML | Served as files by nginx | — |
+
+Java, .NET, Python, Go, and Bun are not installed up front: the panel downloads the version a website needs on its first deploy.
 
 ## Requirements
 
