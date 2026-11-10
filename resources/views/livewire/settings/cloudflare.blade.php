@@ -30,7 +30,11 @@
         </form>
     </x-layer-card>
 
-    <x-layer-card title="Make the token" helper="About two minutes, once.">
+    <x-layer-card title="Make the token" helper="About a minute, once.">
+        <a class="btn btn-primary mb-4 self-start" href="{{ \App\Services\CloudflareApi::tokenUrl() }}" target="_blank" rel="noreferrer">
+            Create the API token in Cloudflare <x-menu-icon name="external" />
+        </a>
+        <p class="mb-3 text-[13.5px] text-muted">The button opens Cloudflare with the name and permissions already filled in: scroll down, press <b>Continue to summary</b> and <b>Create Token</b>, then paste it above. Or make it by hand:</p>
         <ol class="flex list-decimal flex-col gap-1.5 pl-4 text-[13.5px]">
             <li>Open <a class="text-accent hover:underline" href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer">Cloudflare → My Profile → API Tokens</a> and choose <b>Create Token → Create Custom Token</b>.</li>
             <li>Add these permissions:

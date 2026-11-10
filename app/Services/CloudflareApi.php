@@ -20,6 +20,24 @@ class CloudflareApi
 
     public const SETTING = 'cloudflare_api_token';
 
+    /**
+     * Cloudflare's "create token" page with the name and the permissions Laravelify needs already
+     * filled in: Cloudflare Tunnel edit, DNS edit, and Zone read, on all zones.
+     */
+    public static function tokenUrl(): string
+    {
+        return 'https://dash.cloudflare.com/profile/api-tokens?'.http_build_query([
+            'permissionGroupKeys' => json_encode([
+                ['key' => 'argotunnel', 'type' => 'edit'],
+                ['key' => 'dns', 'type' => 'edit'],
+                ['key' => 'zone', 'type' => 'read'],
+            ]),
+            'accountId' => '*',
+            'zoneId' => 'all',
+            'name' => 'Laravelify',
+        ]);
+    }
+
     public function token(): ?string
     {
         $token = Setting::getValue(self::SETTING);
