@@ -10,7 +10,7 @@
   <a href="https://github.com/laravelify-cloud/laravelify/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/laravelify-cloud/laravelify?color=6B16ED&include_prereleases"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-FCD452"></a>
   <img alt="Status: public beta" src="https://img.shields.io/badge/status-public%20beta-8B5CF6">
-  <img alt="PHP 8.0 to 8.5, Node 20 to 24" src="https://img.shields.io/badge/sites-PHP%208.0–8.5%20·%20Node%2020–24-6B16ED">
+  <img alt="Deploys PHP, Java, .NET, Python, Go, and Node.js" src="https://img.shields.io/badge/deploys-PHP%20·%20Java%20·%20.NET%20·%20Python%20·%20Go%20·%20Node.js-6B16ED">
   <a href="https://github.com/laravelify-cloud/laravelify/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/laravelify-cloud/laravelify?style=flat&color=FCD452"></a>
 </p>
 
@@ -220,11 +220,11 @@ flowchart LR
 
 | Type | How it runs | Versions |
 | --- | --- | --- |
-| Laravel | nginx + PHP-FPM, Supervisor queue and scheduler workers, optional Reverb | PHP 8.0–8.5 |
-| PHP | nginx + PHP-FPM | PHP 8.0–8.5 |
-| Express, NestJS, Node.js | PM2 behind nginx | Node 20, 22, 24 |
-| Next.js, Nuxt, SvelteKit | PM2 (Next.js standalone supported) behind nginx | Node 20, 22, 24 |
-| React, Vue.js, Angular, Svelte, Astro | Built on the server, served as files by nginx | Node 20, 22, 24 |
+| Laravel | nginx + PHP-FPM, Supervisor queue and scheduler workers, optional Reverb | PHP 7.4–8.5 |
+| PHP | nginx + PHP-FPM | PHP 7.4–8.5 |
+| Express, NestJS, Node.js | PM2 behind nginx | Node 18, 20, 22, 24 |
+| Next.js, Nuxt, SvelteKit | PM2 (Next.js standalone supported) behind nginx | Node 18, 20, 22, 24 |
+| React, Vue.js, Angular, Svelte, Astro | Built on the server, served as files by nginx | Node 18, 20, 22, 24 |
 | Spring Boot (Java) | Built on the server, run by PM2 behind nginx | Java 11, 17, 21 or newer |
 | ASP.NET Core (C#) | Built on the server, run by PM2 behind nginx | .NET 6 to 10 |
 | Django, Flask, FastAPI (Python) | Run by PM2 behind nginx | Python 3.9 to 3.13 |
