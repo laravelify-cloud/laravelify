@@ -57,6 +57,19 @@ class CloudflareRoutes
     }
 
     /**
+     * Route one domain (a plugin's page) through a tunnel to nginx on port 80, or take it off.
+     *
+     * @return array{configured: bool, lines: list<array{host: string, route: string, dns: string, ok: bool}>, note: ?string}
+     */
+    public function syncHost(CloudflareTunnel $tunnel, ?string $host, ?string $removed = null): array
+    {
+        $desired = $host === null ? [] : [$host => 'http://127.0.0.1:80'];
+        $removed = $removed !== null && $removed !== $host ? [$removed] : [];
+
+        return $this->reconcile($tunnel, $desired, $removed);
+    }
+
+    /**
      * Point domains straight at this server (a proxied A record to its public IP, for redirects served
      * on port 80) and remove the A records of domains that no longer are.
      *

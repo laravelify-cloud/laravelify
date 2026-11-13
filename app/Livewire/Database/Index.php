@@ -81,6 +81,13 @@ class Index extends PanelComponent
 
     public ?string $searchedFor = null;
 
+    /** The "New database" dialog: on which server, and its name. */
+    public bool $newDatabaseOpen = false;
+
+    public string $newDatabaseServer = '';
+
+    public string $newDatabaseName = '';
+
     public bool $connectionOpen = false;
 
     public ?int $connectionId = null;
@@ -445,6 +452,37 @@ class Index extends PanelComponent
         $model->password = null;
 
         return $model;
+    }
+
+    public function openNewDatabase(EngineDatabases $databases): void
+    {
+        $this->resetErrorBag('newDatabaseName');
+        $this->newDatabaseName = '';
+        $this->newDatabaseServer = (string) array_key_first($databases->databaseServers());
+        $this->newDatabaseOpen = true;
+    }
+
+    /** Make the database, then open it. */
+    public function createDatabase(EngineDatabases $databases): mixed
+    {
+        if (! array_key_exists($this->newDatabaseServer, $databases->databaseServers())) {
+            $this->addError('newDatabaseName', 'Choose where to make it.');
+
+            return null;
+        }
+
+        try {
+            $made = $databases->createDatabase($this->newDatabaseServer, trim($this->newDatabaseName));
+        } catch (Throwable $exception) {
+            $this->addError('newDatabaseName', $exception->getMessage());
+
+            return null;
+        }
+
+        $this->newDatabaseOpen = false;
+        $this->toast('Database '.trim($this->newDatabaseName).' is ready.', 'success');
+
+        return $this->redirect($made['engine'] === 'mysql' ? route('database.show', $made['database']) : route('database.engine', [$made['engine'], $made['database']]), navigate: true);
     }
 
     private function uniqueSlug(string $name): string

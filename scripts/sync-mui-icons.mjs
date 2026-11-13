@@ -96,6 +96,7 @@ const icons = {
     article: 'ArticleOutlined',
     bolt: 'BoltOutlined',
     login: 'LoginOutlined',
+    info: 'InfoOutlined',
 };
 
 const result = {};

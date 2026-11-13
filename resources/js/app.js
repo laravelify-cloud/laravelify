@@ -900,3 +900,18 @@ window.commandPalette = function (actions) {
         },
     };
 };
+
+// Keep the sidebar's active link in view (e.g. Settings → Telegram far down the menu), on load and after wire:navigate.
+function revealActiveNavLink() {
+    requestAnimationFrame(() => {
+        const nav = document.querySelector('.sidebar-nav');
+        const link = nav?.querySelector('.menu-item-active');
+        if (!link) return;
+        const top = link.getBoundingClientRect().top - nav.getBoundingClientRect().top + nav.scrollTop;
+        if (top < nav.scrollTop || top + link.offsetHeight > nav.scrollTop + nav.clientHeight) {
+            nav.scrollTop = Math.max(0, top - nav.clientHeight / 2 + link.offsetHeight / 2);
+        }
+    });
+}
+document.addEventListener('DOMContentLoaded', revealActiveNavLink);
+document.addEventListener('livewire:navigated', revealActiveNavLink);

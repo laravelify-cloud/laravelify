@@ -5,8 +5,10 @@ namespace App\Services;
 use App\Jobs\RunPanelTask;
 use App\Models\CloudflareTunnel;
 use App\Models\PanelTask;
+use App\Models\Plugin;
 use App\Models\User;
 use App\Models\Website;
+use App\Support\Plugins;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -186,6 +188,9 @@ class PanelTaskRunner
                 User::query()->findOrFail((int) ($task->payload['user_id'] ?? 0)),
                 fn (int $percent, string $step) => $task->report($percent, $step, force: true),
             )],
+            'plugins.install' => $this->pluginInstallTask($task),
+            'plugins.control' => $this->pluginControlTask($task),
+            'plugins.uninstall' => $this->pluginUninstallTask($task),
             'glitchtip.remove' => ['message' => app(Glitchtip::class)->uninstall()],
             'glitchtip.sdk' => app(GlitchtipSdk::class)->setUp(Website::query()->findOrFail((int) ($task->payload['website_id'] ?? 0))),
             default => throw new RuntimeException('Unknown task.'),
@@ -216,6 +221,48 @@ class PanelTaskRunner
         return $problems === []
             ? ['message' => $report['lines'] !== [] ? $website->name.': domains set in nginx, the tunnel, and Cloudflare DNS.' : $website->name.': domains applied.']
             : ['message' => $website->name.': Cloudflare needs attention: '.implode(' ', $problems), 'failed' => true];
+    }
+
+    /**
+     * Install a plugin from the Plugins page, with its steps on the task.
+     *
+     * @return array{message: string}
+     */
+    private function pluginInstallTask(PanelTask $task): array
+    {
+        $definition = Plugins::find((string) ($task->payload['key'] ?? ''));
+        app(PluginManager::class)->install($definition->key(), fn (int $percent, string $step) => $task->report($percent, $step, true));
+
+        return ['message' => $definition->label().' is installed and running.'];
+    }
+
+    /**
+     * @return array{message: string}
+     */
+    private function pluginControlTask(PanelTask $task): array
+    {
+        $plugin = Plugin::query()->where('key', (string) ($task->payload['key'] ?? ''))->firstOrFail();
+        $action = (string) ($task->payload['action'] ?? '');
+        app(PluginManager::class)->control($plugin, $action);
+
+        return ['message' => $plugin->definition()->label().' '.match ($action) {
+            'start' => 'started.',
+            'stop' => 'stopped.',
+            default => 'restarted.',
+        }];
+    }
+
+    /**
+     * @return array{message: string}
+     */
+    private function pluginUninstallTask(PanelTask $task): array
+    {
+        $plugin = Plugin::query()->where('key', (string) ($task->payload['key'] ?? ''))->firstOrFail();
+        $label = $plugin->definition()->label();
+        $purge = (bool) ($task->payload['purge'] ?? false);
+        app(PluginManager::class)->uninstall($plugin, $purge);
+
+        return ['message' => $label.' is removed'.($purge ? ' with its data.' : '. Its data is kept for a reinstall.')];
     }
 
     /**

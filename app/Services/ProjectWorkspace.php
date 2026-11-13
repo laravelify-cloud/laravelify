@@ -23,8 +23,9 @@ class ProjectWorkspace
     }
 
     /**
-     * Whether the site deploys from a repository VS Code can push to: a GitHub repository, or
-     * the local repository of a built-in example (in the site user's home).
+     * Whether VS Code can work on the site: a GitHub repository, a local repository in the site
+     * user's home (an example's, or one made by localRepository()), or any other deployed site,
+     * which gets such a local repository the first time VS Code opens it.
      */
     public function supports(Website $website): bool
     {
@@ -32,8 +33,60 @@ class ProjectWorkspace
             return false;
         }
 
-        return str_starts_with((string) $website->repository, 'https://github.com/')
-            || app(ExampleRepositories::class)->isExample($website);
+        return $this->onGithub($website)
+            || app(ExampleRepositories::class)->isExample($website)
+            || filled($website->deploy_path);
+    }
+
+    private function onGithub(Website $website): bool
+    {
+        return str_starts_with((string) $website->repository, 'https://github.com/');
+    }
+
+    /**
+     * Give a site that is neither on GitHub nor an example a local Git repository in its user's
+     * home, where examples keep theirs: a clone of its current repository (another server's,
+     * a local folder), or, when that cannot be read, one commit of its deployed files without
+     * .env, dependencies and build output. The site then deploys from it, and a push from VS Code
+     * deploys it, as for an example. Returns where it is.
+     */
+    public function localRepository(Website $website): string
+    {
+        $user = $this->user($website);
+        $target = $user->home().'/examples/'.$website->slug;
+        $branch = preg_match('/\A[A-Za-z0-9._\/-]{1,100}\z/', (string) $website->branch) === 1 ? (string) $website->branch : 'main';
+        $source = trim((string) $website->repository);
+
+        $this->files->exec(['rm', '-rf', '--', $target], null, null, $user);
+        $cloned = $source !== '' && ! str_starts_with($source, '-')
+            && $this->files->exec(['git', '-c', 'safe.directory=*', 'clone', '-q', '--branch', $branch, '--', $source, $target], null, null, $user)->ok;
+
+        if (! $cloned) {
+            $deployed = (string) $website->deploy_path;
+
+            if ($deployed === '' || str_starts_with($deployed, '-')) {
+                throw new RuntimeException('The website has no repository and no deployed files to start one from.');
+            }
+
+            $snapshot = $this->files->exec(['/bin/sh', '-c', <<<'SH'
+                set -e
+                rm -rf -- "$2"; mkdir -p -m 0700 -- "$2"
+                tar -C "$1" --exclude=./.git --exclude=./.env --exclude=./node_modules --exclude=./vendor --exclude=./.next                     --exclude=./target --exclude=./build --exclude=./dist --exclude=./bin --exclude=./obj --exclude=./.laravelify-out                     --exclude=./storage/logs --exclude=./storage/framework -cf - . | tar -xf - --no-same-owner -C "$2"
+                cd "$2"
+                git init -q -b "$3"
+                git add -A
+                git -c user.name=Laravelify -c user.email=laravelify@localhost commit -q -m "Deployed files of the website"
+                SH, 'snapshot', $deployed, $target, $branch], null, null, $user);
+
+            if (! $snapshot->ok) {
+                throw new RuntimeException('Could not make a local repository: '.trim($snapshot->output));
+            }
+        }
+
+        $this->files->exec(['git', '-C', $target, 'remote', 'remove', 'origin'], null, null, $user);
+        $website->update(['repository' => $target, 'branch' => $branch]);
+
+        return $target;
     }
 
     /**
@@ -42,7 +95,7 @@ class ProjectWorkspace
     public function prepare(Website $website): void
     {
         if (! $this->supports($website)) {
-            throw new RuntimeException('The code editor needs a site that deploys from a GitHub repository or an example project.');
+            throw new RuntimeException('The code editor needs a deployed website (or a GitHub repository or an example project).');
         }
 
         // One at a time per website: a second launcher (a workspace and the website's own editor,
@@ -52,6 +105,10 @@ class ProjectWorkspace
 
     private function prepareNow(Website $website): void
     {
+        if (! $this->onGithub($website) && ! app(ExampleRepositories::class)->isExample($website)) {
+            $this->localRepository($website);
+        }
+
         if (app(ExampleRepositories::class)->isExample($website)) {
             // In the home of the site's user (a site moved to its own user leaves it in the shared one).
             app(ExampleRepositories::class)->ensure($website, $this->user($website));

@@ -79,7 +79,7 @@ class Show extends PanelComponent
      */
     private function groupedWebsites(): Collection
     {
-        $websites = $this->group->websites()->orderBy('name')->get();
+        $websites = $this->group->websites()->with('latestDeployment:id,website_id,status')->orderBy('name')->get();
         $children = $websites->whereNotNull('parent_id')->groupBy('parent_id');
         $ids = $websites->pluck('id')->flip();
 

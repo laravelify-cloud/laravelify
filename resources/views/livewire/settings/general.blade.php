@@ -95,8 +95,10 @@
                         @foreach (array_values(array_unique(array_filter([$detectedAddress, ...$localIps]))) as $ip)
                             <button class="btn btn-sm font-mono" type="button" wire:click="$set('server_address', '{{ $ip }}')">{{ $ip }}</button>
                         @endforeach
+                        <button class="btn btn-sm font-mono" type="button" wire:click="$set('server_address', 'localhost')">localhost</button>
                     </div>
                 @endif
+                <p class="text-[12px] text-muted">On WSL or your own computer, use <code>localhost</code>: browsers allow VS Code's extension panels (like the AI chat) only on https:// or localhost, not on a plain http:// IP address.</p>
             </div>
         </x-layer-card>
     </form>

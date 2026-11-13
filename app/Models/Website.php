@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Website extends Model
 {
@@ -173,6 +174,12 @@ class Website extends Model
         return $this->runtime() === SiteTypes::RUNTIME_NODE;
     }
 
+    /** A Dockerfile site: built and run as a container by host-apply.sh, not by PM2. */
+    public function isDocker(): bool
+    {
+        return $this->type === 'docker';
+    }
+
     public function isStatic(): bool
     {
         return $this->runtime() === SiteTypes::RUNTIME_STATIC;
@@ -303,6 +310,16 @@ class Website extends Model
     public function githubApp(): BelongsTo
     {
         return $this->belongsTo(GithubApp::class);
+    }
+
+    /**
+     * The newest deploy, for the status in lists.
+     *
+     * @return HasOne<Deployment, $this>
+     */
+    public function latestDeployment(): HasOne
+    {
+        return $this->hasOne(Deployment::class)->latestOfMany('id');
     }
 
     /**

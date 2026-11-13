@@ -21,16 +21,20 @@ use App\Mcp\Tools\GetNginx;
 use App\Mcp\Tools\GetTask;
 use App\Mcp\Tools\GetWebsite;
 use App\Mcp\Tools\ImportDatabase;
+use App\Mcp\Tools\InstallPlugin;
+use App\Mcp\Tools\LinkPlugin;
 use App\Mcp\Tools\ListBackups;
 use App\Mcp\Tools\ListDeployments;
 use App\Mcp\Tools\ListFiles;
 use App\Mcp\Tools\ListGroups;
 use App\Mcp\Tools\ListIssues;
+use App\Mcp\Tools\ListPlugins;
 use App\Mcp\Tools\ListPorts;
 use App\Mcp\Tools\ListSiteEnvironments;
 use App\Mcp\Tools\ListSiteTypes;
 use App\Mcp\Tools\ListSources;
 use App\Mcp\Tools\ListWebsites;
+use App\Mcp\Tools\PluginStatus;
 use App\Mcp\Tools\ReadFile;
 use App\Mcp\Tools\RestartWebsite;
 use App\Mcp\Tools\RunBackup;
@@ -40,6 +44,7 @@ use App\Mcp\Tools\SetDomains;
 use App\Mcp\Tools\SetRedirects;
 use App\Mcp\Tools\SetWebsiteEnabled;
 use App\Mcp\Tools\SyncCloudflare;
+use App\Mcp\Tools\UnsealVault;
 use App\Mcp\Tools\UpdateEnvironment;
 use App\Mcp\Tools\UpdateGroup;
 use App\Mcp\Tools\UpdateNginx;
@@ -74,6 +79,10 @@ use Laravel\Mcp\Server\Attributes\Version;
     - Files and data: files the repository does not carry, like a Firebase key in storage/app/private [upload-file, up to 20 MB, a .zip/.tgz can be
       unpacked]; delete a file, which goes to the Trash [delete-file]; import a .sql or .sql.gz dump into the site's database [import-database, then get-task].
     - Backups to S3: [list-backups, run-backup].
+    - Plugins: PostgreSQL, Redis, MinIO, and Vault run with Docker on 127.0.0.1 [list-plugins, install-plugin then get-task, plugin-status].
+      link-plugin writes a plugin's variables into a website's .env (DATABASE_URL, SPRING_DATASOURCE_*, REDIS_URL, VAULT_ADDR...).
+      Vault seals itself on a restart: unseal-vault. Passwords are never shown to you; the user sees them once on the Plugins page.
+    - Any app with a Dockerfile: type docker (built and run as a container). Spring Boot: type spring. ASP.NET Core: type aspnet.
     - Clean up: [delete-website, delete-group, update-group]. The site's folder moves to /var/www/.trash and its database stays on the server. Always ask the user first.
 
     Ports are picked by themselves: every new site gets a port nothing else uses, including apps still running from an old server.
@@ -136,6 +145,11 @@ class LaravelifyServer extends Server
         GetNginx::class,
         UpdateNginx::class,
         RestartWebsite::class,
+        ListPlugins::class,
+        InstallPlugin::class,
+        PluginStatus::class,
+        UnsealVault::class,
+        LinkPlugin::class,
         GetLogs::class,
         CheckWebsite::class,
         RunCommand::class,

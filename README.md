@@ -86,7 +86,7 @@ Then it works through the install one step at a time, with a spinner, a check ma
 │  Node.js              22 24 (system: 24)
 │  Log                  /var/log/laravelify-install.log
 │
-◆  Downloaded Laravelify 0.3.0-beta.102 4s
+◆  Downloaded Laravelify 0.3.0-beta.104 4s
 ◆  Installing nginx, Redis, Supervisor, Git, and tools 38s
 ◆  Installing PHP 8.3 (FPM, CLI, MySQL, Redis, GD, intl, and more) 51s
 ◆  Installing PHP 8.4 (FPM, CLI, MySQL, Redis, GD, intl, and more) 47s
@@ -95,7 +95,7 @@ Then it works through the install one step at a time, with a spinner, a check ma
    …
 ◆  Turning on the firewall (SSH, 80, 443, 8000) 2s
 │
-└  Laravelify 0.3.0-beta.102 is installed (7m 40s)
+└  Laravelify 0.3.0-beta.104 is installed (7m 40s)
 ```
 
 It ends with your setup link, like `http://203.0.113.10:8000/setup?token=…`.
@@ -138,6 +138,7 @@ The panel lives in `/opt/laravelify`, websites in `/var/www/<slug>`, and the ins
 
 - **Git push to deploy** through a **GitHub App** (created in one click, private repositories, automatic webhooks) or a personal token, with a branch per site.
 - **Live build log** in a real console that streams while the build runs: commands, warnings, and errors in colour, no jumping.
+- **Plugins**: PostgreSQL, MySQL, MongoDB, Redis, MinIO, and HashiCorp Vault in one click, with Docker on 127.0.0.1: credentials made and kept encrypted (shown again with your 2FA code), linked to a website as `.env` variables, backed up with your databases, and MinIO's and Vault's pages on a domain behind basic auth.
 - **Deployments page**: every website as a card with its latest deploy (waiting, in progress, finished, failed), commit, trigger, and time, with Deploy and Watch live.
 - **Roll back** to any earlier deploy in one click: its commit goes live again, and the code it replaces is saved as a `.tar.gz` to download or roll forward to.
 - npm, pnpm, and Yarn are detected from the lock file; Composer, migrations, and caches for Laravel; zero-config builds for the front-end frameworks.
@@ -210,7 +211,7 @@ flowchart LR
     panel -- backups --> s3[(Your S3 bucket)]
 ```
 
-- **No Docker.** Each site is a folder (`/var/www/<slug>`), an nginx server block, and, depending on its type, a PHP-FPM pool, PM2 app, or Supervisor programs that the panel writes and keeps in step.
+- **No Docker needed.** Each site is a folder (`/var/www/<slug>`), an nginx server block, and, depending on its type, a PHP-FPM pool, PM2 app, or Supervisor programs that the panel writes and keeps in step.
 - **Deploys** run in the panel's queue worker: pull, install, build, migrate, cache, reload, with every line in the live log and a Telegram message at the end.
 - **Cloudflare tunnels** give every site HTTPS without opening ports; one tunnel serves many sites, and the panel adds the DNS records when you give it an API token.
 - **The panel only reaches the system through `scripts/host-apply.sh`**, a single script that checks every argument and file before it writes nginx, Supervisor, PM2, or PHP-FPM settings.
@@ -229,6 +230,7 @@ flowchart LR
 | Django, Flask, FastAPI (Python) | Run by PM2 behind nginx | Python 3.9 to 3.13 |
 | Go | Built on the server, run by PM2 behind nginx | Go 1.18 or newer |
 | Bun | Run by PM2 behind nginx | Bun 1.x |
+| Any language with a Dockerfile | Built and run with Docker on 127.0.0.1, behind nginx | Docker (installed when needed) |
 | Hugo, Gatsby, Docusaurus, VitePress, Eleventy | Built on the server, served as files by nginx | |
 | Static HTML | Served as files by nginx | — |
 

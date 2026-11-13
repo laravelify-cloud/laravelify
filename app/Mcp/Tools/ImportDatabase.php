@@ -15,7 +15,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 use RuntimeException;
 
 #[IsDestructive]
-#[Description('Import a .sql or .sql.gz dump that is in the website\'s folder into the MySQL database the panel made for it (create-website with create_database). It runs in the background as the site\'s own database user, so it can only change that database; follow it with get-task. With reset true the database is emptied first, which is needed when a deploy already ran the migrations (the dump creates the same tables). Ask the user before reset: it deletes the database\'s current data. Get the dump into the site folder first: upload-file for small ones (up to 20 MB), or the user copies it to the server (scp) for big ones.')]
+#[Description('Import a .sql or .sql.gz dump that is in the website\'s folder into the MySQL or PostgreSQL database the panel made for it (create-website with create_database; for PostgreSQL a plain-format pg_dump). It runs in the background as the site\'s own database user, so it can only change that database; follow it with get-task. With reset true the database is emptied first, which is needed when a deploy already ran the migrations (the dump creates the same tables). Ask the user before reset: it deletes the database\'s current data. Get the dump into the site folder first: upload-file for small ones (up to 20 MB), or the user copies it to the server (scp) for big ones.')]
 class ImportDatabase extends Tool
 {
     use DescribesWebsites;

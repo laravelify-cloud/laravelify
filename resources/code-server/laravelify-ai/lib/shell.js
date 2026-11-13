@@ -4,8 +4,12 @@ const os = require('os');
 const path = require('path');
 
 const localBin = path.join(os.homedir(), '.local', 'bin');
-const shellPath = [localBin, '/opt/graphify/bin', process.env.PATH || '/usr/local/bin:/usr/bin:/bin'].join(':');
-const env = () => ({ ...process.env, PATH: shellPath, NO_OPEN_BROWSER: '1', BROWSER: 'true', TERM: 'xterm-256color', NO_COLOR: '1' });
+// The agents the server installs once for every editor (Claude Code, Cursor Agent, Copilot CLI);
+// one a user installed in ~/.local/bin wins.
+const sharedBin = '/opt/laravelify-agents/bin';
+const shellPath = [localBin, sharedBin, '/opt/graphify/bin', process.env.PATH || '/usr/local/bin:/usr/bin:/bin'].join(':');
+// The shared copies are read-only for each user: the server updates them, not the CLIs themselves.
+const env = () => ({ ...process.env, PATH: shellPath, NO_OPEN_BROWSER: '1', BROWSER: 'true', TERM: 'xterm-256color', NO_COLOR: '1', DISABLE_AUTOUPDATER: '1' });
 
 /** Run a shell command and collect what it prints. */
 function run(command, { timeout = 60000, cwd } = {}) {
@@ -67,4 +71,4 @@ function pty(command, { cwd, onData, onExit }) {
     return child;
 }
 
-module.exports = { run, which, stream, pty, shellPath, localBin };
+module.exports = { run, which, stream, pty, shellPath, localBin, sharedBin };

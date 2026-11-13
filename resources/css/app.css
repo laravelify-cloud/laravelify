@@ -2086,6 +2086,137 @@ button.domain-suggest-row:hover { background: var(--color-fill); }
         position: relative;
     }
 
+    /* Plugins page: one card per service. */
+    .plugin-grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+        grid-auto-rows: 1fr;
+    }
+
+    .plugin-card {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        min-height: 300px;
+        padding: 16px;
+        transition: box-shadow .15s;
+    }
+
+    .plugin-card.is-installed { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 14%, var(--color-line)); }
+    .plugin-head { display: flex; align-items: flex-start; gap: 12px; }
+    .plugin-desc { display: -webkit-box; margin-top: 2px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 12.5px; line-height: 1.45; color: var(--color-muted); }
+    .plugin-body { display: flex; flex: 1; flex-direction: column; gap: 12px; min-height: 0; }
+    .plugin-label { font-size: 11.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--color-muted); }
+    .plugin-note { padding: 10px 12px; border: 1px dashed var(--color-line); border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--color-muted); }
+    .plugin-preview { display: grid; gap: 8px; font-size: 12.5px; color: var(--color-muted); }
+    .plugin-preview li { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
+    .plugin-preview .menu-icon { flex-shrink: 0; margin-top: 1px; color: var(--color-accent); }
+    .plugin-link-form { display: flex; gap: 8px; }
+    .copy-inline { display: inline-flex; align-items: center; gap: 4px; }
+    .copy-inline .icon-btn, .copy-inline button { width: 24px; height: 24px; }
+
+    .plugin-info { position: relative; display: inline-flex; }
+    .plugin-info-btn { width: 22px; height: 22px; color: var(--color-muted); }
+    .plugin-info-btn:hover, .plugin-info-btn[aria-expanded="true"] { color: var(--color-ink); }
+    .plugin-info-pop { position: absolute; top: calc(100% + 6px); left: -8px; z-index: 40; width: min(320px, 80vw); padding: 12px; border-radius: 10px; background: var(--color-recessed); box-shadow: 0 0 0 1px var(--color-line), var(--shadow-dropdown); font-size: 12.5px; line-height: 1.5; }
+    .plugin-info-pop > p { margin-bottom: 8px; }
+    .plugin-info-pop dl { display: grid; gap: 6px; }
+    .plugin-info-pop dl > div { display: grid; grid-template-columns: 92px 1fr; gap: 8px; }
+    .plugin-info-pop dt { color: var(--color-muted); }
+    .plugin-info-pop dd { min-width: 0; overflow-wrap: anywhere; }
+
+    .plugin-logo {
+        display: inline-grid;
+        place-items: center;
+        flex-shrink: 0;
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: var(--plugin-color);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+    }
+
+    .plugin-logo-sm {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        font-size: 11px;
+    }
+
+    /* The shown-once credentials modal. */
+    .credential-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .credential dt {
+        margin-bottom: 4px;
+        font-size: 12px;
+        color: var(--color-muted);
+    }
+
+    .credential .input {
+        min-width: 0;
+        font-size: 12.5px;
+    }
+
+    .credential-group {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid var(--color-line);
+        border-radius: 10px;
+    }
+
+    .credential-group h3 {
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .credential-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .plugin-facts {
+        display: grid;
+        gap: 6px;
+        font-size: 12.5px;
+    }
+
+    .plugin-facts > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 24px; }
+    .plugin-facts dt { color: var(--color-muted); }
+
+    .plugin-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .plugin-links > p, .plugin-links > div { flex-basis: 100%; }
+
+    .plugin-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 2px 4px 2px 8px;
+        border: 1px solid var(--color-line);
+        border-radius: 999px;
+        font-size: 12px;
+    }
+
+    .plugin-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--color-line); }
+
+    .plugin-log {
+        max-height: 60vh;
+        overflow: auto;
+        padding: 12px;
+        border-radius: 8px;
+        background: var(--color-surface-2, rgba(127, 127, 127, 0.08));
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
     .copy-field .input { padding-right: 40px; }
 
     .copy-field .copy-button {
@@ -3237,7 +3368,7 @@ label.conn-option:hover { background: var(--color-fill); }
     .nav-section-action { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 5px; color: var(--color-nav-muted); transition: background 120ms, color 120ms; }
     .nav-section-action:hover { background: color-mix(in srgb, var(--color-ink) 7%, transparent); color: var(--color-ink); }
 
-    .page-main > * { animation: page-in 280ms var(--ease-out) both; }
+    .page-main > * { animation: page-in 280ms var(--ease-out) backwards; }
     .page-main > :nth-child(2) { animation-delay: 30ms; }
     .page-main > :nth-child(3) { animation-delay: 60ms; }
     @keyframes page-in { from { opacity: 0; transform: translateY(6px); } }
@@ -3403,3 +3534,15 @@ label.conn-option:hover { background: var(--color-fill); }
 
 /* The global terminal fills the window below its header. Unlayered, like logs.css whose height it replaces. */
 .live-terminal-fill .live-terminal-screen { height: max(26rem, calc(100vh - 310px)); }
+
+/* Schemas of a PostgreSQL or SQL Server database, above its tables. */
+.db-schemas { display: grid; gap: 10px; padding: 12px 16px 14px; }
+.db-schema-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.db-schema { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px; border: 1px solid var(--color-line); border-radius: 9px; font-size: 13px; transition: border-color .15s, background-color .15s; }
+.db-schema small { font-size: 11.5px; color: var(--color-muted); }
+.db-schema:hover { border-color: color-mix(in srgb, var(--color-ink) 25%, var(--color-line)); }
+.db-schema.is-active { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 9%, transparent); }
+.db-schema.is-new { border-style: dashed; color: var(--color-muted); }
+.db-schema.is-new:hover { color: var(--color-ink); }
+.db-schema-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.db-schema-form .input { width: min(260px, 100%); }

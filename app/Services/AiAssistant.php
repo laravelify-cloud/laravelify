@@ -358,15 +358,26 @@ class AiAssistant
 
         return [
             'HOME' => $home,
-            'PATH' => $home.'/.local/bin:/opt/graphify/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+            'PATH' => $home.'/.local/bin:'.self::SHARED_BIN.':/opt/graphify/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+            // The shared copies are updated by the server, not by the CLIs themselves.
+            'DISABLE_AUTOUPDATER' => '1',
             'LANG' => 'C.UTF-8',
             'NO_COLOR' => '1',
             'TERM' => 'xterm-256color',
         ];
     }
 
+    /** Where the panel installs the agents once for the whole server (scripts/host-apply.sh code-server-install). */
+    public const SHARED_BIN = '/opt/laravelify-agents/bin';
+
     private function binary(string $agent): ?string
     {
+        $shared = self::SHARED_BIN.'/'.self::AGENTS[$agent]['binary'];
+
+        if (is_file($shared) && is_executable($shared)) {
+            return $shared;
+        }
+
         $path = trim($this->shell('command -v '.self::AGENTS[$agent]['binary'].' 2>/dev/null', 10));
 
         return $path !== '' && str_starts_with($path, '/') ? strtok($path, "\n") : null;

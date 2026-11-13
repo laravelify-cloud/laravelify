@@ -27,6 +27,7 @@ class ConfigRenderer
     {
         return match (true) {
             $website->isLaravel() => $this->supervisor($website),
+            $website->isDocker() => '',
             $website->isNode() => $this->pm2($website),
             default => '',
         };
@@ -825,6 +826,17 @@ NODE_ENV=production
 PORT={$port}
 HOSTNAME=127.0.0.1
 ENV;
+
+        // Spring Boot reads SERVER_PORT and SERVER_ADDRESS itself (relaxed binding), so the app
+        // answers on its own port even when started without the --server.port flag.
+        // ASP.NET Core listens where ASPNETCORE_URLS says (Kestrel's own default is port 5000).
+        if ($website->type === 'aspnet') {
+            $content = EnvFile::set($content, ['ASPNETCORE_URLS' => 'http://127.0.0.1:'.$port, 'ASPNETCORE_ENVIRONMENT' => 'Production', 'DOTNET_CLI_TELEMETRY_OPTOUT' => '1']);
+        }
+
+        if ($website->type === 'spring') {
+            $content = EnvFile::set($content, ['SERVER_PORT' => (string) $port, 'SERVER_ADDRESS' => '127.0.0.1']);
+        }
 
         if ($website->provision_database && $website->db_name) {
             $content = EnvFile::set($content, app(DatabaseProvisioner::class)->envValues($website));

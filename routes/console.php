@@ -18,6 +18,7 @@ Schedule::command('laravelify:monitor --patches')->dailyAt('06:00')->withoutOver
 Schedule::call(fn () => app(HostWriter::class)->syncAgentSignIns())->name('agent-auth-sync')->everyMinute()->withoutOverlapping(5);
 
 // The panel's own queue worker runs every deploy: start it again when it stopped, and say so.
+Schedule::command('laravelify:unseal-plugins')->everyMinute()->withoutOverlapping(5);
 Schedule::command('laravelify:watch-worker')->everyMinute()->withoutOverlapping(5);
 
 // Background tasks (zips, backup exports) and their files are removed after a day.

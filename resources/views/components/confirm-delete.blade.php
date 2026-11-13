@@ -5,10 +5,14 @@
     'button' => 'Delete',
     'actions' => [],
     'small' => false,
+    'event' => null,
 ])
 
-<div x-data="{ open: false, typed: '' }" class="inline-flex">
-    <button @class(['btn btn-danger', 'btn-sm' => $small]) type="button" @click="open = true; typed = ''; $wire.confirmName = ''">{{ $button }}</button>
+{{-- With $event, a window event of that name opens it (from a menu) and it shows no button of its own. --}}
+<div x-data="{ open: false, typed: '' }" class="inline-flex" @if ($event) x-on:{{ $event }}.window="open = true; typed = ''; $wire.confirmName = ''" @endif>
+    @unless ($event)
+        <button @class(['btn btn-danger', 'btn-sm' => $small]) type="button" @click="open = true; typed = ''; $wire.confirmName = ''">{{ $button }}</button>
+    @endunless
 
     <template x-teleport="body">
         <x-modal-frame class="modal-root-top" open="open" close="open = false">

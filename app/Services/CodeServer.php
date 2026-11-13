@@ -43,7 +43,7 @@ class CodeServer
     public function unavailableReason(Website $website): ?string
     {
         if (! $this->workspace->supports($website)) {
-            return 'VS Code needs a website that deploys from a GitHub repository or an example project.';
+            return 'VS Code needs a deployed website first: deploy it once, then open VS Code.';
         }
 
         if (! $this->sites->for($website)->isOwn()) {

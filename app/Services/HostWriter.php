@@ -495,6 +495,164 @@ UNIT;
         return $this->apply(['panel-preview-remove', $website->slug]);
     }
 
+    /** Docker Engine and the compose plugin from Docker's apt repository, when missing. */
+    public function dockerInstall(?callable $onStep = null): string
+    {
+        return $this->apply(['docker-install', 'engine'], $this->stepsFrom($onStep));
+    }
+
+    /**
+     * Write a plugin's compose file and .env under /opt/laravelify-plugins/<key> and start it.
+     * The .env (secrets) goes through a panel-only file that host-apply.sh moves and never prints.
+     *
+     * @param  array<string, string>  $env
+     */
+    public function pluginUp(string $key, string $compose, array $env, ?callable $onStep = null): string
+    {
+        $directory = storage_path('app/rendered/plugins/'.$key);
+        $this->ensurePanelCanWrite($directory);
+        File::put($directory.'/compose.yml', $compose);
+        $envFile = $directory.'/.env';
+        File::put($envFile, '');
+        @chmod($envFile, 0600);
+        File::put($envFile, implode("\n", array_map(fn (string $name, string $value): string => $name.'='.$value, array_keys($env), $env))."\n");
+
+        try {
+            return $this->apply(['plugin-up', $key], $this->stepsFrom($onStep));
+        } finally {
+            @unlink($envFile);
+        }
+    }
+
+    /** Start, stop, or restart a plugin's containers. */
+    public function pluginControl(string $key, string $action): string
+    {
+        return $this->apply(['plugin-'.$action, $key]);
+    }
+
+    /** The state of a plugin's main container: running, exited, restarting… or "missing". */
+    public function pluginStatus(string $key): string
+    {
+        return trim($this->apply(['plugin-status', $key]));
+    }
+
+    public function pluginLogs(string $key, int $lines): string
+    {
+        return $this->apply(['plugin-logs', $key, (string) max(1, min($lines, 2000))]);
+    }
+
+    /**
+     * Save a plugin's data to $file (gzipped): pg_dumpall for PostgreSQL, a tar of its data
+     * volume for the others. Made by root inside the container, handed to the panel user.
+     */
+    public function pluginBackup(string $key, string $file): void
+    {
+        $this->apply(['plugin-backup', $key]);
+        $made = storage_path('app/rendered/plugins/'.$key.'/backup.gz');
+
+        if (! is_file($made) || ! @rename($made, $file)) {
+            throw new RuntimeException('The plugin backup was not made.');
+        }
+    }
+
+    /**
+     * Open a plugin's web page on a domain through nginx, behind basic auth. The server block
+     * is built by host-apply.sh from checked arguments; only the htpasswd line is a rendered file.
+     */
+    public function pluginDomain(string $key, string $host, int $port, string $htpasswd): string
+    {
+        $directory = storage_path('app/rendered/plugins/'.$key);
+        File::ensureDirectoryExists($directory);
+        File::put($directory.'/htpasswd', $htpasswd);
+
+        try {
+            return $this->apply(['plugin-domain', $key, $host, (string) $port]);
+        } finally {
+            @unlink($directory.'/htpasswd');
+        }
+    }
+
+    public function pluginDomainRemove(string $key): string
+    {
+        return $this->apply(['plugin-domain', $key, 'remove']);
+    }
+
+    /** Build a Dockerfile site's image from its folder (as root: site users never reach Docker). */
+    public function siteDockerBuild(Website $website): string
+    {
+        return $this->apply(['site-docker-build', $website->slug]);
+    }
+
+    /** Stop and remove a plugin; $purge also deletes its data volumes. */
+    public function pluginRemove(string $key, bool $purge): string
+    {
+        return $this->apply(['plugin-remove', $key, $purge ? 'purge' : 'keep']);
+    }
+
+    /**
+     * Initialize Vault: returns its unseal keys and root token (never logged).
+     *
+     * @return array{unseal_keys: list<string>, root_token: string}
+     */
+    public function vaultInit(string $key): array
+    {
+        $json = self::jsonIn($this->apply(['vault-init', $key]));
+
+        if (! is_array($json) || ! isset($json['unseal_keys_b64'], $json['root_token'])) {
+            throw new RuntimeException('Vault did not return its unseal keys. It may be initialized already.');
+        }
+
+        return ['unseal_keys' => array_values(array_map('strval', $json['unseal_keys_b64'])), 'root_token' => (string) $json['root_token']];
+    }
+
+    /**
+     * Unseal Vault with its keys, handed over in a panel-only file that host-apply.sh removes.
+     *
+     * @param  list<string>  $keys
+     */
+    public function vaultUnseal(string $key, array $keys): string
+    {
+        $directory = storage_path('app/rendered/plugins/'.$key);
+        $this->ensurePanelCanWrite($directory);
+        $file = $directory.'/unseal';
+        File::put($file, '');
+        @chmod($file, 0600);
+        File::put($file, implode("\n", $keys)."\n");
+
+        try {
+            return $this->apply(['vault-unseal', $key]);
+        } finally {
+            @unlink($file);
+        }
+    }
+
+    /** Whether Vault is sealed; null when it does not answer. */
+    public function vaultSealed(string $key): ?bool
+    {
+        $json = self::jsonIn($this->apply(['vault-status', $key]));
+
+        return is_array($json) && isset($json['sealed']) ? (bool) $json['sealed'] : null;
+    }
+
+    /**
+     * The JSON object in a command's output, which may carry warnings around it.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function jsonIn(string $output): ?array
+    {
+        $start = strpos($output, '{');
+        $end = strrpos($output, '}');
+
+        if ($start === false || $end === false) {
+            return null;
+        }
+
+        $json = json_decode(substr($output, $start, $end - $start + 1), true);
+
+        return is_array($json) ? $json : null;
+    }
+
     public function nginxTest(): string
     {
         return $this->apply(['nginx-test', 'all']);

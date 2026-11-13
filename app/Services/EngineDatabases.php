@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\DatabaseConnection;
 use App\Models\Website;
 use App\Support\DatabaseEngines;
+use Illuminate\Support\Str;
 use PDO;
 use RuntimeException;
 use Throwable;
@@ -112,6 +113,12 @@ class EngineDatabases
             } catch (Throwable $exception) {
                 $errors[$engine] = $exception->getMessage();
             }
+        }
+
+        try {
+            app(PluginManager::class)->syncConnections();
+        } catch (Throwable) {
+            // The plugins' connections are a convenience; the page lists the rest anyway.
         }
 
         foreach (DatabaseConnection::query()->orderBy('name')->get() as $connection) {
@@ -770,6 +777,146 @@ class EngineDatabases
         }
 
         return $pdo;
+    }
+
+    /** Names a new database or schema may have: letters, digits and underscores, not starting with a digit. */
+    public const NEW_NAME = '/\A[A-Za-z_][A-Za-z0-9_]{0,62}\z/';
+
+    /**
+     * Where a new database can be made: this server's MySQL and PostgreSQL, and the server of each
+     * saved MySQL or PostgreSQL connection (one entry per server and login).
+     *
+     * @return array<string, string> key ("local:mysql", "local:pgsql" or a connection slug) => label
+     */
+    public function databaseServers(): array
+    {
+        $servers = [];
+
+        if (DatabaseEngines::has(DatabaseEngines::MYSQL)) {
+            $servers['local:mysql'] = 'This server\'s MySQL';
+        }
+
+        if (DatabaseEngines::has(DatabaseEngines::POSTGRESQL)) {
+            $servers['local:pgsql'] = 'This server\'s PostgreSQL';
+        }
+
+        $seen = [];
+
+        foreach (DatabaseConnection::query()->whereIn('driver', ['mysql', 'pgsql'])->where('read_only', false)->orderBy('name')->get() as $connection) {
+            $server = $connection->driver.'|'.$connection->host.'|'.$connection->port.'|'.$connection->username;
+
+            if (! isset($seen[$server])) {
+                $seen[$server] = true;
+                $servers[$connection->slug] = $connection->name.' · '.$connection->driverLabel().' · '.$connection->address();
+            }
+        }
+
+        return $servers;
+    }
+
+    /**
+     * Make an empty database. On a connection's server a new saved connection opens it (same
+     * login, the new database), so it shows on the Database page.
+     *
+     * @return array{engine: string, database: string} Where the new database opens.
+     */
+    public function createDatabase(string $server, string $name): array
+    {
+        if (preg_match(self::NEW_NAME, $name) !== 1) {
+            throw new RuntimeException('Use letters, digits and underscores (not starting with a digit), up to 63.');
+        }
+
+        if ($server === 'local:mysql') {
+            if (in_array(strtolower($name), ['mysql', 'sys', 'information_schema', 'performance_schema'], true)) {
+                throw new RuntimeException('That name belongs to MySQL itself.');
+            }
+
+            app(DatabaseBrowser::class)->connection()->statement('CREATE DATABASE `'.$name.'` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+
+            return ['engine' => DatabaseEngines::MYSQL, 'database' => $name];
+        }
+
+        if ($server === 'local:pgsql') {
+            $this->query(DatabaseEngines::POSTGRESQL, 'postgres', 'CREATE DATABASE "'.$name.'" ENCODING \'UTF8\'');
+
+            return ['engine' => DatabaseEngines::POSTGRESQL, 'database' => $name];
+        }
+
+        $connection = $this->connection($server);
+
+        if (! in_array($connection->driver, ['mysql', 'pgsql'], true)) {
+            throw new RuntimeException('New databases can be made on MySQL and PostgreSQL connections.');
+        }
+
+        $this->assertWritable(self::REMOTE, $connection->slug);
+        $this->query(self::REMOTE, $connection->slug, $connection->driver === 'mysql'
+            ? 'CREATE DATABASE `'.$name.'` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
+            : 'CREATE DATABASE "'.$name.'" ENCODING \'UTF8\'');
+
+        $copy = $connection->replicate(['slug', 'name', 'database']);
+        $copy->forceFill([
+            'name' => $connection->name.' / '.$name,
+            'database' => $name,
+            'slug' => $this->freeSlug(Str::slug($connection->slug.'-'.$name) ?: 'connection'),
+            'password' => $connection->password,
+        ])->save();
+
+        return ['engine' => self::REMOTE, 'database' => $copy->slug];
+    }
+
+    /**
+     * The schemas of a PostgreSQL or SQL Server database, with how many tables each has.
+     *
+     * @return list<array{name: string, tables: int}>
+     */
+    public function schemas(string $engine, string $database): array
+    {
+        $sql = match ($this->dialect($engine, $database)) {
+            'pgsql' => "SELECT n.nspname, COUNT(c.oid) FROM pg_namespace n LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relkind IN ('r', 'p')
+                        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\_%' GROUP BY n.nspname ORDER BY n.nspname = 'public' DESC, n.nspname",
+            'sqlsrv' => "SELECT s.name, COUNT(t.object_id) FROM sys.schemas s LEFT JOIN sys.tables t ON t.schema_id = s.schema_id
+                         WHERE s.name = 'dbo' OR s.schema_id BETWEEN 5 AND 16383 GROUP BY s.name ORDER BY CASE WHEN s.name = 'dbo' THEN 0 ELSE 1 END, s.name",
+            default => null,
+        };
+
+        if ($sql === null) {
+            return [];
+        }
+
+        return array_map(fn (array $row): array => ['name' => (string) $row[0], 'tables' => (int) $row[1]], $this->query($engine, $database, $sql)['rows']);
+    }
+
+    /** Make an empty schema in a PostgreSQL or SQL Server database. */
+    public function createSchema(string $engine, string $database, string $name): void
+    {
+        if (preg_match(self::NEW_NAME, $name) !== 1) {
+            throw new RuntimeException('Use letters, digits and underscores (not starting with a digit), up to 63.');
+        }
+
+        if (str_starts_with(strtolower($name), 'pg_')) {
+            throw new RuntimeException('Names starting with pg_ belong to PostgreSQL.');
+        }
+
+        $this->assertWritable($engine, $database);
+
+        $sql = match ($this->dialect($engine, $database)) {
+            'pgsql' => 'CREATE SCHEMA "'.$name.'"',
+            'sqlsrv' => 'EXEC(\'CREATE SCHEMA ['.$name.']\')',
+            default => throw new RuntimeException('Only PostgreSQL and SQL Server databases have schemas.'),
+        };
+
+        $this->query($engine, $database, $sql);
+    }
+
+    private function freeSlug(string $base): string
+    {
+        $slug = $base;
+
+        for ($i = 2; DatabaseConnection::query()->where('slug', $slug)->exists(); $i++) {
+            $slug = $base.'-'.$i;
+        }
+
+        return $slug;
     }
 
     /** Whether rows can be changed here: not on a connection set to read-only. */

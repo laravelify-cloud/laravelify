@@ -227,4 +227,18 @@ class GroupsAndWebsitesBulkTest extends TestCase
         $this->assertStringContainsString('listen 8083;', $config);
         $this->assertStringContainsString('server_name _;', $config);
     }
+
+    public function test_the_group_list_shows_a_failed_last_deploy_instead_of_on(): void
+    {
+        $this->actingAs(User::factory()->create(['two_factor_secret' => app(TwoFactor::class)->generateSecret(), 'two_factor_confirmed_at' => now()]));
+        $group = Group::factory()->create();
+        $failed = Website::factory()->for($group)->create(['name' => 'Admin']);
+        $failed->deployments()->create(['status' => 'success', 'trigger' => 'manual']);
+        $failed->deployments()->create(['status' => 'failed', 'trigger' => 'manual']);
+        $good = Website::factory()->for($group)->create(['name' => 'Shop']);
+        $good->deployments()->create(['status' => 'success', 'trigger' => 'manual']);
+
+        Livewire::test(GroupShow::class, ['group' => $group])
+            ->assertSeeInOrder(['Admin', 'Deploy failed', 'Shop', 'On']);
+    }
 }

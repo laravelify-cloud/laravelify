@@ -7,6 +7,7 @@ use App\Services\PanelWorker;
 use App\Services\PortAllocator;
 use App\Services\ServerProcesses;
 use App\Services\UploadLimits;
+use App\Support\ServerAddress;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\URL;
@@ -33,6 +34,9 @@ class AppServiceProvider extends ServiceProvider
     {
         // The panel's queue worker says it is alive (see PanelWorker: the watchdog and the banner).
         Queue::looping(fn () => PanelWorker::beat());
+
+        // A panel without a domain follows the server address set in Settings → General.
+        config(['app.url' => ServerAddress::panelUrl((string) config('app.url'))]);
 
         // Behind a proxied DNS record Cloudflare is not a trusted proxy, so its header is not used:
         // a panel whose address is https:// on this host is https all the same.

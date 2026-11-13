@@ -100,6 +100,7 @@ class ProjectDetectorTest extends TestCase
             'private_key' => "-----BEGIN RSA PRIVATE KEY-----\nMIIB\n-----END RSA PRIVATE KEY-----",
         ]);
         $client = $this->mock(GithubAppClient::class);
+        $client->shouldReceive('rootNames')->andReturn(['package.json', 'README.md']);
         $client->shouldReceive('files')->once()->with(\Mockery::type(GithubApp::class), 'acme/shop', 'main', \Mockery::any())->andReturn([
             'composer.json' => null, 'package.json' => json_encode(['dependencies' => ['next' => '15'], 'engines' => ['node' => '>=22']]),
             '.nvmrc' => null, '.node-version' => null, 'index.html' => null,

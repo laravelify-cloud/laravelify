@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CodeWorkspace;
+use App\Models\Plugin;
 use App\Models\Website;
 
 /**
@@ -95,6 +96,11 @@ class PortAllocator
 
         // VS Code workspaces keep their editor's port while it is stopped, as websites do.
         $ports = [...$ports, ...CodeWorkspace::query()->whereNotNull('code_server_port')->pluck('code_server_port')->map(fn ($port) => (int) $port)->all()];
+
+        // Plugins keep their ports while stopped too.
+        foreach (Plugin::query()->pluck('ports') as $pluginPorts) {
+            $ports = [...$ports, ...array_map('intval', array_values((array) $pluginPorts))];
+        }
 
         return array_fill_keys($ports, true);
     }

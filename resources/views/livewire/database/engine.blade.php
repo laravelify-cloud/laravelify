@@ -85,6 +85,30 @@
     @elseif ($tab === 'history' && ! $isMongo)
         @include('livewire.database.partials.sql-history')
     @elseif ($table === '')
+        @if ($hasSchemas)
+            @php $defaultSchema = ($connection?->driver ?? $engine) === 'sqlsrv' ? 'dbo' : 'public'; @endphp
+            <x-layer-card title="Schemas" helper="A schema groups tables inside this database. Click one to show its tables; tables outside {{ $defaultSchema }} are listed as schema.table." flush>
+                <div class="db-schemas" x-data="{ adding: false }" @schema-created.window="adding = false">
+                    <div class="db-schema-list">
+                        @foreach ($schemas as $schema)
+                            @php $filter = $schema['name'] === $defaultSchema ? '' : $schema['name'].'.'; @endphp
+                            <button type="button" wire:key="schema-{{ $schema['name'] }}" @class(['db-schema', 'is-active' => $search !== '' && $search === $filter]) wire:click="$set('search', @js($search === $filter ? '' : $filter))" title="{{ $schema['name'] === $defaultSchema ? 'The default schema' : 'Show the tables of '.$schema['name'] }}">
+                                <x-menu-icon name="folder-plus" class="size-4 text-muted" />
+                                <span class="font-mono">{{ $schema['name'] }}</span>
+                                <small>{{ $schema['tables'] }} {{ $schema['tables'] === 1 ? 'table' : 'tables' }}</small>
+                            </button>
+                        @endforeach
+                        <button type="button" class="db-schema is-new" x-show="! adding" @click="adding = true; $nextTick(() => $refs.schema.focus())"><x-menu-icon name="plus" class="size-4" /> New schema</button>
+                    </div>
+                    <form class="db-schema-form" x-show="adding" x-cloak wire:submit="createSchema">
+                        <input class="input font-mono" x-ref="schema" wire:model="newSchema" placeholder="reporting" maxlength="63" autocomplete="off" spellcheck="false" aria-label="Schema name" @keydown.escape="adding = false">
+                        <button class="btn btn-primary btn-sm" type="submit" wire:loading.attr="disabled" wire:target="createSchema">Create schema</button>
+                        <button class="btn btn-sm" type="button" @click="adding = false">Cancel</button>
+                        @error('newSchema') <small class="error basis-full">{{ $message }}</small> @enderror
+                    </form>
+                </div>
+            </x-layer-card>
+        @endif
         <x-layer-card :title="$isMongo ? 'Collections' : 'Tables'" :helper="$isMongo ? 'Document counts are MongoDB’s estimates.' : ($engine === 'sqlite' ? 'Exact row counts.' : 'Rows and sizes are the server’s own estimates and can be a little behind.')" flush>
             @include('livewire.database.partials.local-grid', ['spec' => [
                 'key' => 'tables-'.$engine,

@@ -68,16 +68,18 @@ class CodeServerTest extends TestCase
         $zip->close();
     }
 
-    public function test_vs_code_needs_a_github_website_or_an_example_project(): void
+    public function test_vs_code_works_on_any_deployed_website(): void
     {
-        $other = Website::factory()->create(['repository' => '/srv/somewhere/else']);
+        $local = Website::factory()->create(['repository' => '/srv/somewhere/else']);
+        $other = Website::factory()->create(['seed_example' => true]);
         $example = Website::factory()->create(['slug' => 'shop']);
         $example->update(['repository' => config('laravelify.site_home').'/examples/shop']);
         $github = Website::factory()->create(['repository' => 'https://github.com/acme/shop.git']);
         $workspace = app(ProjectWorkspace::class);
 
-        $this->assertSame('VS Code needs a website that deploys from a GitHub repository or an example project.', app(CodeServer::class)->unavailableReason($other));
+        $this->assertSame('VS Code needs a deployed website first: deploy it once, then open VS Code.', app(CodeServer::class)->unavailableReason($other));
         $this->assertFalse($workspace->supports($other));
+        $this->assertTrue($workspace->supports($local), 'a site without GitHub gets a local repository');
         $this->assertTrue($workspace->supports($example));
         $this->assertTrue($workspace->supports($github));
         $this->assertFalse($workspace->supports(tap($github)->update(['seed_example' => true])));

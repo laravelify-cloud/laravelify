@@ -184,7 +184,7 @@ class CreateWebsite extends Tool
         return [
             'group' => $schema->string()->description('Group id or name (list-groups). A new name creates the group.')->required(),
             'name' => $schema->string()->description('The website name, shown in the panel.')->required(),
-            'type' => $schema->string()->description('The kind of app (list-site-types), like laravel, nextjs, react, express.')->required(),
+            'type' => $schema->string()->description('The kind of app (list-site-types), like laravel, nextjs, react, express, spring, aspnet, or docker (any Dockerfile).')->required(),
             'repository' => $schema->string()->description('Git URL (https://github.com/owner/repo.git) or owner/repo. A connected GitHub App that can read it is used automatically.'),
             'branch' => $schema->string()->description('The branch to deploy (default main).'),
             'domain' => $schema->string()->description('The main domain, like example.com. Leave empty to use a free HTTP port instead.'),

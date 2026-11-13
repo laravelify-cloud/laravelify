@@ -203,4 +203,45 @@ class DatabaseConnectionsTest extends TestCase
         DatabaseConnection::factory()->create(['slug' => 'erp']);
         Livewire::test(Engine::class, ['engine' => 'remote', 'database' => 'erp'])->assertSee('ERP')->assertSee('SQL Server');
     }
+
+    public function test_new_databases_go_on_each_writable_mysql_or_postgresql_server_once(): void
+    {
+        DatabaseConnection::factory()->create(['name' => 'Shop', 'slug' => 'shop', 'driver' => 'pgsql', 'host' => '127.0.0.1', 'port' => 5433, 'username' => 'app']);
+        DatabaseConnection::factory()->create(['name' => 'Shop / logs', 'slug' => 'shop-logs', 'driver' => 'pgsql', 'host' => '127.0.0.1', 'port' => 5433, 'username' => 'app', 'database' => 'logs']);
+        DatabaseConnection::factory()->create(['name' => 'Reports', 'slug' => 'reports', 'driver' => 'mysql', 'host' => '10.0.0.5', 'port' => 3306, 'read_only' => true]);
+        DatabaseConnection::factory()->create(['name' => 'ERP', 'slug' => 'erp', 'driver' => 'sqlsrv']);
+
+        $this->assertSame(['shop'], array_keys(app(EngineDatabases::class)->databaseServers()));
+
+        Livewire::test(Index::class)
+            ->call('openNewDatabase')
+            ->assertSet('newDatabaseServer', 'shop')
+            ->assertSee('New database')
+            ->set('newDatabaseName', 'drop table;')
+            ->call('createDatabase')
+            ->assertHasErrors('newDatabaseName')
+            ->set('newDatabaseServer', 'erp')
+            ->set('newDatabaseName', 'shop2')
+            ->call('createDatabase')
+            ->assertHasErrors('newDatabaseName');
+
+        $this->assertSame(4, DatabaseConnection::query()->count(), 'nothing was made');
+    }
+
+    public function test_schemas_are_only_made_in_postgresql_and_sql_server(): void
+    {
+        $file = storage_path('framework/testing/schemas.sqlite');
+        File::ensureDirectoryExists(dirname($file));
+        File::put($file, '');
+        DatabaseConnection::factory()->create(['slug' => 'local-file', 'driver' => 'sqlite', 'database' => $file, 'host' => null, 'port' => 0]);
+
+        Livewire::test(Engine::class, ['engine' => 'remote', 'database' => 'local-file'])
+            ->assertDontSee('New schema')
+            ->set('newSchema', 'reporting')
+            ->call('createSchema')
+            ->assertHasErrors('newSchema');
+
+        $this->expectExceptionMessage('Use letters');
+        app(EngineDatabases::class)->createSchema('remote', 'local-file', 'bad name');
+    }
 }

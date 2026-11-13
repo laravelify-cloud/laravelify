@@ -6,6 +6,7 @@ use App\Livewire\Concerns\ListsTables;
 use App\Livewire\PanelComponent;
 use App\Models\BackupSchedule;
 use App\Models\BackupStorage;
+use App\Models\Plugin;
 use App\Services\DatabaseDumper;
 use App\Services\FileArchiver;
 use App\Support\BackupCron;
@@ -251,7 +252,7 @@ class ScheduleForm extends PanelComponent
         }
 
         if ($isDatabase) {
-            $databases = array_values(array_unique(array_filter($this->databases, fn (string $name) => DatabaseDumper::validName($name))));
+            $databases = array_values(array_unique(array_filter($this->databases, fn (string $name) => DatabaseDumper::validName($name) || preg_match('/^plugin:[a-z][a-z0-9-]{1,30}$/', $name) === 1)));
 
             if (! $this->all_databases && $databases === []) {
                 $this->addError('databases', 'Choose at least one database, or back up all of them.');
@@ -355,6 +356,8 @@ class ScheduleForm extends PanelComponent
         try {
             if ($isDatabase) {
                 $available = $dumper->databases();
+                // Plugins (Plugins page) back up with the databases, as plugin:<key>.
+                $available = [...$available, ...Plugin::query()->orderBy('key')->get()->map(fn (Plugin $plugin): string => $plugin->backupTarget())->all()];
             } else {
                 $folders = $archiver->listing($this->browse);
             }

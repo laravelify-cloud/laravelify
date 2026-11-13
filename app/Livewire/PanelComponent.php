@@ -10,7 +10,7 @@ use Livewire\Component;
 abstract class PanelComponent extends Component
 {
     /** How long one authenticator code unlocks saved passwords and tokens. */
-    public const SECRET_UNLOCK_MINUTES = 5;
+    public const SECRET_UNLOCK_MINUTES = 10;
 
     public string $confirmName = '';
 
@@ -93,7 +93,7 @@ abstract class PanelComponent extends Component
 
     public static function secretsUnlocked(): bool
     {
-        return (int) session('secrets_unlocked_until', 0) > time();
+        return (int) session('secrets_unlocked_until', 0) > now()->getTimestamp();
     }
 
     /**

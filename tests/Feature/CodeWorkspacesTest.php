@@ -157,7 +157,7 @@ class CodeWorkspacesTest extends TestCase
         $shop = Website::factory()->create();
         $other = Website::factory()->create();
         $editors = Mockery::mock(CodeServer::class);
-        $editors->shouldReceive('unavailableReason')->andReturnUsing(fn (Website $website) => $website->is($other) ? 'VS Code needs a website that deploys from a GitHub repository or an example project.' : null);
+        $editors->shouldReceive('unavailableReason')->andReturnUsing(fn (Website $website) => $website->is($other) ? 'VS Code needs a deployed website first: deploy it once, then open VS Code.' : null);
         $editors->shouldReceive('canMoveToOwnUser')->andReturn(false);
         $this->app->instance(CodeServer::class, $editors);
 

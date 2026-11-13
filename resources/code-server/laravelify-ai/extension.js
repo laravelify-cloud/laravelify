@@ -498,6 +498,28 @@ function activate(context) {
 
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('laravelifyAi.agents', view, { webviewOptions: { retainContextWhenHidden: true } }),
+        // The left bar's AI Agents icon toggles the chat in the right side bar (one view cannot be
+        // in both places) and gives the left side back to the Explorer. A badge on the icon shows
+        // while the chat is open.
+        vscode.window.registerWebviewViewProvider('laravelifyAi.launcher', {
+            resolveWebviewView(launcher) {
+                launcher.webview.html = '<!doctype html><body style="padding:12px;font:13px var(--vscode-font-family);color:var(--vscode-descriptionForeground)">The AI chat is in the right side bar.</body>';
+                const chatOpen = () => !!(view.view && view.view.visible);
+                const mark = () => {
+                    launcher.badge = chatOpen() ? { value: 1, tooltip: 'The AI chat is open: click to close it' } : undefined;
+                };
+                const toggle = async () => {
+                    if (!launcher.visible) return;
+                    await vscode.commands.executeCommand(chatOpen() ? 'workbench.action.closeAuxiliaryBar' : 'laravelifyAi.agents.focus');
+                    await vscode.commands.executeCommand('workbench.view.explorer');
+                    setTimeout(mark, 150);
+                };
+                launcher.onDidChangeVisibility(toggle);
+                const timer = setInterval(mark, 1000);
+                launcher.onDidDispose(() => clearInterval(timer));
+                toggle();
+            },
+        }),
         vscode.window.onDidChangeActiveTextEditor(() => view.sendActiveFile()),
         vscode.commands.registerCommand('laravelifyAi.newChat', () => view.receive({ type: 'newChat' })),
         vscode.commands.registerCommand('laravelifyAi.addFile', (uri) => {

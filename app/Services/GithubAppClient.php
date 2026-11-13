@@ -232,6 +232,21 @@ class GithubAppClient
     }
 
     /**
+     * The names of the files and folders at the top of a repository (empty when it cannot be read).
+     *
+     * @return list<string>
+     */
+    public function rootNames(GithubApp $app, string $fullName, string $branch): array
+    {
+        $response = Http::withToken($this->installationToken($app))
+            ->withHeaders(['Accept' => 'application/vnd.github+json', 'X-GitHub-Api-Version' => '2022-11-28'])
+            ->timeout(10)
+            ->get($this->endpoint($app, '/repos/'.$fullName.'/contents/'), ['ref' => $branch]);
+
+        return $response->successful() ? array_values(array_filter(array_map(fn ($entry) => is_array($entry) ? (string) ($entry['name'] ?? '') : '', (array) $response->json()))) : [];
+    }
+
+    /**
      * @return list<array{name: string, clone_url: string, branch: string}>
      */
     public function repositories(GithubApp $app): array

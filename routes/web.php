@@ -36,6 +36,7 @@ use App\Livewire\Groups\Show as GroupShow;
 use App\Livewire\Monitoring\Errors as MonitoringErrors;
 use App\Livewire\Monitoring\Index as MonitoringIndex;
 use App\Livewire\Monitoring\Server as MonitoringServer;
+use App\Livewire\Plugins\Index as PluginsIndex;
 use App\Livewire\Security\Access as SecurityAccess;
 use App\Livewire\Security\PrivateKeys;
 use App\Livewire\Server\Edit as ServerEdit;
@@ -157,6 +158,7 @@ Route::get('/tunnels', TunnelIndex::class)->name('tunnels.index');
 Route::get('/tunnels/create', TunnelForm::class)->name('tunnels.create');
 Route::get('/tunnels/{tunnel}', TunnelShow::class)->name('tunnels.show');
 
+Route::get('/plugins', PluginsIndex::class)->name('plugins.index');
 Route::get('/server', ServerIndex::class)->name('server.index');
 Route::get('/server/nginx', ServerNginx::class)->name('server.nginx');
 Route::get('/server/ports', ServerPorts::class)->name('server.ports');

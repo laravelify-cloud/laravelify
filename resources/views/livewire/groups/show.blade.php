@@ -81,6 +81,12 @@
                                     <span class="status-badge is-switching"><span class="task-spinner"></span> Deleting…</span>
                                 @elseif (in_array($website->id, $switching, true))
                                     <span class="status-badge is-switching"><span class="task-spinner"></span> Switching…</span>
+                                @elseif ($website->enabled && in_array($website->latestDeployment?->status, ['queued', 'running'], true))
+                                    <span class="status-badge is-live" style="--status-color: var(--color-warning)">Deploying</span>
+                                @elseif ($website->enabled && $website->latestDeployment?->status === 'failed')
+                                    <a class="status-badge" style="--status-color: var(--color-danger)" href="{{ route('websites.show', $website) }}" wire:navigate title="The last deploy failed; the site may still run its previous deploy. Open its deployments.">Deploy failed</a>
+                                @elseif ($website->enabled && $website->latestDeployment === null)
+                                    <span class="status-badge" style="--status-color: var(--color-muted)">Not deployed</span>
                                 @elseif ($website->enabled)
                                     <span class="status-badge" style="--status-color: var(--color-success)">On</span>
                                 @else

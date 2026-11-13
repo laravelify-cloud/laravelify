@@ -69,6 +69,7 @@
                     @php($sidebarLinks = \App\Support\SidebarLinks::custom())
                     @php($hasPhpMyAdmin = \App\Support\SidebarLinks::phpMyAdminAvailable())
                     @php($hasGlitchtip = app(\App\Services\Glitchtip::class)->installed())
+                    @php($pluginLinks = \App\Support\SidebarLinks::plugins(request()->getHost()))
                     <x-nav-section key="links" label="Links">
                         <x-slot:action>
                             <a class="nav-section-action" href="{{ route('settings.links') }}" wire:navigate title="Edit links" aria-label="Edit links"><x-menu-icon name="pencil" class="size-3.5" /></a>
@@ -86,6 +87,15 @@
                                 <span>GlitchTip</span>
                             </a>
                         @endif
+                        @foreach ($pluginLinks as $link)
+                            <a class="menu-item" href="{{ $link['url'] }}" @if ($link['external']) target="_blank" rel="noopener noreferrer" @else wire:navigate @endif title="{{ $link['title'] }}">
+                                <x-menu-icon :name="$link['icon']" />
+                                <span>{{ $link['label'] }}</span>
+                                @if ($link['external'])
+                                    <x-menu-icon name="external" class="ml-auto size-3.5 opacity-50" />
+                                @endif
+                            </a>
+                        @endforeach
                         @foreach ($sidebarLinks as $link)
                             <a class="menu-item" href="{{ $link['url'] }}" target="_blank" rel="noopener noreferrer" title="{{ $link['url'] }}">
                                 <x-menu-icon name="link" />
@@ -93,7 +103,7 @@
                                 <x-menu-icon name="external" class="ml-auto size-3.5 opacity-50" />
                             </a>
                         @endforeach
-                        @if (! $hasPhpMyAdmin && ! $hasGlitchtip && $sidebarLinks === [])
+                        @if (! $hasPhpMyAdmin && ! $hasGlitchtip && $pluginLinks === [] && $sidebarLinks === [])
                             <a class="menu-item" href="{{ route('settings.links') }}" wire:navigate>
                                 <x-menu-icon name="plus" />
                                 <span>Add a link</span>
@@ -117,12 +127,16 @@
                         </a>
                     </x-nav-section>
 
-                    <x-nav-section key="infrastructure" label="Infrastructure" :active="request()->routeIs('server.*', 'sources.*', 'domains.*', 'ai.*', 'workspaces.*', 'tunnels.*')">
+                    <x-nav-section key="infrastructure" label="Infrastructure" :active="request()->routeIs('server.*', 'plugins.*', 'sources.*', 'domains.*', 'ai.*', 'workspaces.*', 'tunnels.*')">
                         <a class="menu-item {{ request()->routeIs('server.*') ? 'menu-item-active' : '' }}" href="{{ route('server.index') }}" wire:navigate>
                             <x-menu-icon name="server" />
                             <span>Server</span>
                         </a>
-                        <a class="menu-item {{ request()->routeIs('sources.*', 'settings.github') ? 'menu-item-active' : '' }}" href="{{ route('sources.index') }}" wire:navigate>
+                        <a class="menu-item {{ request()->routeIs('plugins.*') ? 'menu-item-active' : '' }}" href="{{ route('plugins.index') }}" wire:navigate>
+                            <x-menu-icon name="grid" />
+                            <span>Plugins</span>
+                        </a>
+                        <a class="menu-item {{ request()->routeIs('sources.*') ? 'menu-item-active' : '' }}" href="{{ route('sources.index') }}" wire:navigate>
                             <x-menu-icon name="sources" />
                             <span>Sources</span>
                         </a>

@@ -29,6 +29,11 @@ class ProjectDetector
 
         [$type, $stack, $reason] = self::framework($composer !== null, $phpRequire, $package !== null, $npm, (array) ($package['scripts'] ?? []), (bool) ($files['index'] ?? false));
 
+        // Nothing else matched, but there is a Dockerfile: build and run that.
+        if ($type === null && ($files['dockerfile'] ?? false)) {
+            [$type, $stack, $reason] = ['docker', '', 'Dockerfile'];
+        }
+
         $nodeWanted = trim((string) ($files['nvmrc'] ?? $files['node_version'] ?? '')) ?: (string) ($package['engines']['node'] ?? '');
 
         return [
@@ -74,8 +79,12 @@ class ProjectDetector
             return ['type' => 'spring', 'runtime_version' => $java, 'reason' => ($files['maven'] ?? null) !== null ? 'pom.xml' : 'build.gradle'];
         }
 
-        if ($files['dotnet'] ?? false) {
-            return ['type' => 'aspnet', 'runtime_version' => null, 'reason' => 'Program.cs'];
+        // .NET: a .csproj or .sln at the top (dotnet_project is its name), or a Program.cs.
+        if (($files['dotnet'] ?? false) || filled($files['dotnet_project'] ?? null)) {
+            preg_match('/<TargetFrameworks?>\s*net(\d+\.0)/', (string) ($files['csproj'] ?? ''), $match);
+            $version = isset($match[1]) && preg_match((string) SiteTypes::TOOLCHAINS['dotnet']['pattern'], $match[1]) === 1 ? $match[1] : null;
+
+            return ['type' => 'aspnet', 'runtime_version' => $version, 'reason' => (string) (($files['dotnet_project'] ?? null) ?: 'Program.cs')];
         }
 
         if (($files['gomod'] ?? null) !== null) {

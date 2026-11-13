@@ -31,6 +31,33 @@ class ServerAddress
         return self::detected();
     }
 
+    /**
+     * The panel's own address. A panel without a domain is http://IP:port, with the IP found at
+     * install: once a server address is set (WSL, NAT, a local network), the panel's links (VS Code,
+     * GlitchTip, the Domains list) use it too, on the same scheme and port. A domain is kept.
+     */
+    public static function panelUrl(string $appUrl): string
+    {
+        $parts = parse_url($appUrl);
+        $host = (string) ($parts['host'] ?? '');
+
+        if ($host === '' || filter_var(trim($host, '[]'), FILTER_VALIDATE_IP) === false) {
+            return $appUrl;
+        }
+
+        try {
+            $chosen = trim((string) Setting::getValue(self::SETTING));
+        } catch (Throwable) {
+            return $appUrl;
+        }
+
+        if ($chosen === '' || $chosen === $host) {
+            return $appUrl;
+        }
+
+        return ($parts['scheme'] ?? 'http').'://'.$chosen.(isset($parts['port']) ? ':'.$parts['port'] : '').($parts['path'] ?? '');
+    }
+
     /** The address found without the setting: LARAVELIFY_PUBLIC_IP, or the public IPv4. */
     public static function detected(): ?string
     {

@@ -95,6 +95,17 @@ class Deployer
             $this->syncEnvBack($website, $log);
             $log->line($this->hostWriter->writeWebsite($website));
 
+            // A JVM takes a while to start: wait for Spring Boot to answer, and say what its health is.
+            if ($website->type === 'spring' && $website->port) {
+                $log->line('Waiting for Spring Boot on port '.$website->port.'...');
+                $health = app(SpringHealth::class)->waitUntilReady($website);
+                $log->line(match ($health['state']) {
+                    'none' => 'Warning: the app did not answer within 2 minutes. Check its logs (PM2).',
+                    'down' => 'Warning: '.$health['detail'],
+                    default => $health['detail'],
+                });
+            }
+
             $sha = trim($this->must($this->runner->runAsSite(['git', '-C', $website->deploy_path, 'rev-parse', 'HEAD']), $log)->output);
             $commit = $this->runner->runAsSite(['git', '-C', $website->deploy_path, 'log', '-1', '--format=%an%n%B']);
             [$author, $message] = array_pad(explode("\n", trim($commit->output), 2), 2, '');
@@ -268,6 +279,7 @@ class Deployer
         match (true) {
             $website->isLaravel() => $this->installLaravel($website, $log),
             $website->isPhp() => $this->installPhp($website, $log),
+            $website->isDocker() => $this->installDocker($website, $log),
             $website->isNextjs() => $this->installNextjs($website, $log),
             $website->isNode() => $this->installNode($website, $log),
             default => $this->installStatic($website, $log),
@@ -314,6 +326,21 @@ class Deployer
         $this->installDependencies($website, $log);
         $this->buildSite($website, $log);
         $this->prepareStandalone($website->deploy_path, $log);
+    }
+
+    /**
+     * A Dockerfile site: Docker (installed the first time), then the image is built as root by
+     * host-apply.sh. writeWebsite then starts the container in place of a PM2 app.
+     */
+    private function installDocker(Website $website, DeploymentLogger $log): void
+    {
+        if (! is_file($website->deploy_path.'/Dockerfile')) {
+            throw new RuntimeException('There is no Dockerfile at the top of the repository.');
+        }
+
+        $log->line($this->hostWriter->dockerInstall());
+        $log->line('Building the image (docker build)...');
+        $log->line($this->hostWriter->siteDockerBuild($website));
     }
 
     /**

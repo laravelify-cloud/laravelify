@@ -7,6 +7,7 @@ use App\Jobs\RunRestore;
 use App\Models\BackupRun;
 use App\Models\BackupSchedule;
 use App\Models\BackupStorage;
+use App\Models\Plugin;
 use App\Support\BackupCron;
 use App\Support\BackupExcludes;
 use App\Support\DatabaseEngines;
@@ -116,7 +117,7 @@ class BackupManager
      */
     public function backupDatabases(array $databases): BackupSchedule
     {
-        $databases = array_values(array_filter($databases, fn (string $name): bool => DatabaseDumper::validName($name) || EngineDatabases::parseBackupTarget($name) !== null));
+        $databases = array_values(array_filter($databases, fn (string $name): bool => DatabaseDumper::validName($name) || EngineDatabases::parseBackupTarget($name) !== null || preg_match('/^plugin:[a-z][a-z0-9-]{1,30}$/', $name) === 1));
         $storage = BackupStorage::query()->where('is_default', true)->first() ?? BackupStorage::query()->first()
             ?? throw new RuntimeException('Add a backup storage first (Backups → Backup storage): an S3 bucket or a folder on this server.');
 
@@ -265,6 +266,12 @@ class BackupManager
             $names = ! empty($targets['all']) ? $this->databases->databases() : array_values($targets['databases'] ?? []);
             $names = array_values(array_diff($names, (array) ($targets['skip_databases'] ?? [])));
 
+            // Plugins (Plugins page) are backed up with the databases: all of them with "all", or by name.
+            $plugins = Plugin::query()->pluck('key')->map(fn (string $key): string => 'plugin:'.$key)->all();
+            $names = ! empty($targets['all'])
+                ? [...$names, ...array_values(array_diff($plugins, (array) ($targets['skip_databases'] ?? [])))]
+                : array_values(array_filter($names, fn (string $name): bool => ! str_starts_with($name, 'plugin:') || in_array($name, $plugins, true)));
+
             return array_map(fn (string $name) => ['label' => $name, 'database' => $name, 'skip' => SkippedTables::forDatabase($schedule->skippedTables(), $name)], $names);
         }
 
@@ -310,14 +317,26 @@ class BackupManager
         $phase = fn (string $text, ?int $percent = null) => $run->forceFill(['phase' => $text, 'progress' => $percent])->save();
         $workDir = $this->workDir();
         $otherEngine = $schedule->isDatabase() ? EngineDatabases::parseBackupTarget((string) ($target['database'] ?? '')) : null;
-        $extension = $otherEngine ? EngineDatabases::DUMP_EXTENSIONS[$otherEngine[0]] : ($schedule->isDatabase() ? 'sql.gz' : 'tar.gz');
+        $plugin = $schedule->isDatabase() && str_starts_with((string) ($target['database'] ?? ''), 'plugin:')
+            ? Plugin::query()->where('key', substr((string) $target['database'], 7))->first()
+            : null;
+        $extension = $plugin ? (match ($plugin->definition()->backupMethod()) {
+            'pg_dump', 'mysqldump' => 'sql.gz', 'mongodump' => 'archive.gz', default => 'tar.gz'
+        }) : ($otherEngine ? EngineDatabases::DUMP_EXTENSIONS[$otherEngine[0]] : ($schedule->isDatabase() ? 'sql.gz' : 'tar.gz'));
         $file = $workDir.'/'.Str::random(12).'.'.$extension;
 
         try {
             $storage = $schedule->storage ?? throw new RuntimeException('This schedule has no storage. Choose a storage and save it.');
             $meta = [];
 
-            if ($otherEngine) {
+            if ($plugin) {
+                $phase('Saving the plugin data');
+                $log->line('Saving '.$plugin->definition()->label().' ('.(match ($plugin->definition()->backupMethod()) {
+                    'pg_dump' => 'pg_dumpall', 'mysqldump' => 'mysqldump', 'mongodump' => 'mongodump', default => 'its data volume'
+                }).')...');
+                app(HostWriter::class)->pluginBackup($plugin->key, $file);
+                $meta['plugin'] = $plugin->key;
+            } elseif ($otherEngine) {
                 $phase('Dumping the database');
                 $log->line('Dumping '.DatabaseEngines::label($otherEngine[0]).' database '.$otherEngine[1].'...');
                 app(EngineDatabases::class)->dump($otherEngine[0], $otherEngine[1], $file);
@@ -376,7 +395,7 @@ class BackupManager
             $log->line('Done. '.$key);
 
             try {
-                $otherEngine || $this->inspector->remember($run, $file);
+                $otherEngine || $plugin || $this->inspector->remember($run, $file);
             } catch (Throwable $exception) {
                 $log->line('Saved, but the list of what is inside could not be read: '.$exception->getMessage());
             }
@@ -446,6 +465,10 @@ class BackupManager
     {
         if (! $source->restorable()) {
             throw new RuntimeException('That backup is not available to restore.');
+        }
+
+        if (str_starts_with((string) $source->target, 'plugin:')) {
+            throw new RuntimeException('A plugin backup is restored by hand: download it, then load it into the plugin (psql for PostgreSQL, or unpack it into the data volume).');
         }
 
         $restore = BackupRun::query()->create([

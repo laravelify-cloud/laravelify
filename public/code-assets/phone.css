@@ -11,6 +11,22 @@
 .lfy-menu-head,
 .lfy-menu-back { display: none; }
 
+/* The AI Agents icon in the left bar opens the chat in the right side bar. While the chat is open
+   its icon carries a badge (set by the Laravelify AI extension): shown as VS Code's own active
+   item (the tinted square and the bright icon) instead of the badge. All screen sizes. */
+.monaco-workbench .activitybar .action-item:has(> .action-label[aria-label*="AI chat is open"]) > .action-label {
+    background-color: var(--vscode-activityBar-foreground) !important;
+}
+.monaco-workbench .activitybar .action-item:has(> .action-label[aria-label*="AI chat is open"]) > .active-item-indicator {
+    top: 0;
+    left: 2px;
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    background-color: color-mix(in srgb, var(--vscode-activityBar-foreground) 13%, transparent);
+}
+.monaco-workbench .activitybar .action-item:has(> .action-label[class*="laravelifyAiLauncher"]) > .badge { visibility: hidden; }
+
 /* Touch: targets at least 44px, text that iOS does not zoom into. */
 @media (pointer: coarse) {
     .monaco-workbench .part.activitybar .action-item:not(.monaco-menu *) { min-height: 48px; }

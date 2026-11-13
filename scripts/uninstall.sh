@@ -62,6 +62,23 @@ for unit in /etc/systemd/system/laravelify-tunnel-*.service /etc/systemd/system/
 done
 systemctl daemon-reload || true
 
+# Plugins (lfy-<key> compose projects, with their data volumes) and Dockerfile sites
+# (lfy-site-<slug> containers and images). Docker itself stays: other things may use it.
+if [[ -x /usr/bin/docker ]]; then
+  for dir in /opt/laravelify-plugins/*/; do
+    key="$(basename "$dir")"
+    [[ -f "${dir}compose.yml" ]] || continue
+    echo "Removing plugin ${key} and its data"
+    /usr/bin/docker compose -p "lfy-${key}" -f "${dir}compose.yml" --project-directory "$dir" down -v --remove-orphans >/dev/null 2>&1 || true
+  done
+  for container in $(/usr/bin/docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^lfy-site-' || true); do
+    echo "Removing container ${container}"
+    /usr/bin/docker rm -f "$container" >/dev/null 2>&1 || true
+    /usr/bin/docker rmi "${container}:latest" >/dev/null 2>&1 || true
+  done
+fi
+rm -rf /opt/laravelify-plugins
+
 if command -v supervisorctl >/dev/null 2>&1; then
   while read -r program _; do
     [[ "$program" == laravelify-* ]] || continue

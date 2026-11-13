@@ -26,11 +26,32 @@ class SiteHealth
     {
         return [
             $this->http($website),
+            ...($website->type === 'spring' && $website->port ? [$this->spring($website)] : []),
             ...$this->programs($website),
             ...($website->isLaravel() ? [$this->laravelErrors($website)] : []),
             $this->nginxConfig(),
             $this->nginxLogging($website),
             $this->lastDeploy($website),
+        ];
+    }
+
+    /**
+     * @return array{key: string, title: string, status: string, detail: string}
+     */
+    private function spring(Website $website): array
+    {
+        $health = app(SpringHealth::class)->check($website);
+
+        return [
+            'key' => 'spring',
+            'title' => 'Spring Boot health',
+            'status' => match ($health['state']) {
+                'up' => 'ok',
+                'missing' => 'unknown',
+                'down' => 'warn',
+                default => 'fail',
+            },
+            'detail' => $health['detail'],
         ];
     }
 

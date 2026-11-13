@@ -50,7 +50,7 @@
                             @foreach ($availableDatabases as $database)
                                 <label class="flex items-center gap-2 rounded-lg border border-line px-3 py-2" wire:key="db-{{ $database }}">
                                     <input type="checkbox" wire:model="databases" value="{{ $database }}">
-                                    <x-menu-icon name="database" class="size-4 text-muted" />
+                                    <x-menu-icon :name="str_starts_with($database, 'plugin:') ? 'grid' : 'database'" class="size-4 text-muted" />
                                     <span class="truncate font-mono text-[13px]">{{ $database }}</span>
                                 </label>
                             @endforeach
@@ -291,7 +291,7 @@
 
         @if ($isDatabase)
         <x-layer-card title="Skip tables" helper="Tables to leave out of every dump, like cache, sessions, logs, or data that never changes. Untick them in a database; *.table skips a table in every database.">
-                @include('livewire.backups.partials.table-picker', ['databases' => $all_databases ? $availableDatabases : array_values(array_unique([...$databases, ...$availableDatabases])), 'model' => 'skip_tables'])
+                @include('livewire.backups.partials.table-picker', ['databases' => array_values(array_filter($all_databases ? $availableDatabases : array_values(array_unique([...$databases, ...$availableDatabases])), fn (string $name): bool => ! str_starts_with($name, 'plugin:'))), 'model' => 'skip_tables'])
         </x-layer-card>
         @endif
 

@@ -3,7 +3,7 @@
     "displayName": "Laravelify AI",
     "description": "Chat with Claude, Cursor and Copilot in VS Code, sign in from a dialog, and switch agents in the middle of a task without losing the work.",
     "publisher": "laravelify",
-    "version": "2.1.13",
+    "version": "2.1.17",
     "license": "MIT",
     "engines": {
         "vscode": "^1.90.0"
@@ -19,9 +19,16 @@
     ],
     "contributes": {
         "viewsContainers": {
-            "activitybar": [
+            "secondarySidebar": [
                 {
                     "id": "laravelifyAi",
+                    "title": "AI Agents",
+                    "icon": "media/sparkle.svg"
+                }
+            ],
+            "activitybar": [
+                {
+                    "id": "laravelifyAiLauncher",
                     "title": "AI Agents",
                     "icon": "media/sparkle.svg"
                 }
@@ -33,6 +40,13 @@
                     "type": "webview",
                     "id": "laravelifyAi.agents",
                     "name": "Chat"
+                }
+            ],
+            "laravelifyAiLauncher": [
+                {
+                    "type": "webview",
+                    "id": "laravelifyAi.launcher",
+                    "name": "AI Agents"
                 }
             ]
         },

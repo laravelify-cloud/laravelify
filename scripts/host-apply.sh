@@ -201,7 +201,8 @@ location /code/${TOKEN}/ {
     error_page 502 504 = @laravelify_code_down_${TOKEN};
     proxy_pass http://127.0.0.1:${PORT}/;
     proxy_http_version 1.1;
-    proxy_set_header Host \$host;
+    # With the port (\$host drops it): code-server checks it against the WebSocket's Origin.
+    proxy_set_header Host \$http_host;
     proxy_set_header Upgrade \$http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1040,7 +1041,7 @@ ROTATE
 site_runtime() {
   case "$1" in
     laravel|php) echo php ;;
-    nextjs|nuxt|sveltekit|express|nestjs|node|django|flask|fastapi|go|bun|spring|aspnet) echo node ;;
+    nextjs|nuxt|sveltekit|express|nestjs|node|django|flask|fastapi|go|bun|spring|aspnet|docker) echo node ;;
     react|vue|angular|svelte|astro|static|hugo|gatsby|docusaurus|vitepress|eleventy) echo static ;;
     *) die "invalid site kind" ;;
   esac
@@ -1066,6 +1067,13 @@ apply_site_processes() {
     for program in $(supervisorctl status 2>/dev/null | awk '{print $1}' | grep -E "^${slug}-" || true); do
       supervisorctl restart "${program}" || true
     done
+  elif [[ "${kind}" == "docker" ]]; then
+    # A Dockerfile site runs as a container (site_docker_run), not in PM2.
+    if [[ -x /usr/bin/docker ]] && /usr/bin/docker image inspect "lfy-site-${slug}:latest" >/dev/null 2>&1; then
+      site_docker_run "${slug}"
+    else
+      echo "The container is not started: the site has not been built yet. Deploy it first."
+    fi
   elif [[ "${runtime}" == "node" ]]; then
     trusted_source "${src}/process.conf"
     pm2_install_config "${slug}" "${src}/process.conf"
@@ -1080,6 +1088,22 @@ apply_site_processes() {
       pm2_start_site "${slug}"
     fi
   fi
+}
+
+# A Dockerfile site's container: lfy-site-<slug> from the image site-docker-build made, on
+# 127.0.0.1:<port> only, with the site's .env, no host folders, no extra privileges, started again
+# after a reboot. The app listens inside on the Dockerfile's first EXPOSE, or on PORT.
+site_docker_run() {
+  local slug="$1" dir="${SITES_ROOT}/$1" port inner
+  port="$(grep -E '^PORT=[0-9]{2,5}$' "${dir}/.env" 2>/dev/null | head -n 1 | cut -d= -f2)"
+  [[ "${port}" =~ ^[0-9]{2,5}$ ]] && (( port >= 1024 && port <= 65535 )) || die "the site's .env has no valid PORT"
+  inner="$(grep -ioE '^[[:space:]]*EXPOSE[[:space:]]+[0-9]{2,5}' "${dir}/Dockerfile" 2>/dev/null | head -n 1 | grep -oE '[0-9]+$' || true)"
+  inner="${inner:-${port}}"
+  /usr/bin/docker rm -f "lfy-site-${slug}" >/dev/null 2>&1 || true
+  local env_args=()
+  [[ -f "${dir}/.env" && ! -L "${dir}/.env" ]] && env_args=(--env-file "${dir}/.env")
+  /usr/bin/docker run -d --name "lfy-site-${slug}" --restart unless-stopped     -p "127.0.0.1:${port}:${inner}" "${env_args[@]}" -e "PORT=${inner}"     --add-host host.docker.internal:host-gateway     --security-opt no-new-privileges --memory 2g --pids-limit 1024     --log-opt max-size=10m --log-opt max-file=3     "lfy-site-${slug}:latest" >/dev/null
+  echo "Container lfy-site-${slug} runs on 127.0.0.1:${port} (port ${inner} inside)."
 }
 
 # Give a site back to the shared user: its files, trash, and PM2 app; its own pool, daemon, and
@@ -1337,23 +1361,53 @@ EOF
         || echo "graphify could not be installed; the AI agents work without the project map." >&2
       chmod -R a+rX /opt/graphify 2>/dev/null || true
     fi
+    # The AI chat's agents (Claude Code, Cursor Agent, GitHub Copilot CLI), once for the whole
+    # server in /opt/laravelify-agents/bin, readable by every website and workspace user: no
+    # editor downloads its own copy. Sign-ins stay per user (in each home). Best effort.
+    install -d -m 0755 /opt/laravelify-agents/bin
+    if [[ ! -x /opt/laravelify-agents/bin/claude || ! -x /opt/laravelify-agents/bin/copilot ]]; then
+      echo "Installing the AI agents (Claude Code, Copilot CLI)..."
+      export HOME=/root
+      NPM_CONFIG_CACHE=/var/cache/laravelify/npm bash "$(dirname "${BASH_SOURCE[0]}")/with-node.sh" 22 \
+        npm install -g --silent --prefix /opt/laravelify-agents @anthropic-ai/claude-code @github/copilot >/dev/null 2>&1 \
+        || echo "The AI agents could not be installed now; each editor can still install them." >&2
+    fi
+    if [[ ! -x /opt/laravelify-agents/bin/cursor-agent ]]; then
+      echo "Installing Cursor Agent..."
+      install -d -m 0755 /opt/laravelify-agents/cursor
+      if HOME=/opt/laravelify-agents/cursor bash -c 'curl -fsSL https://cursor.com/install | bash' >/dev/null 2>&1 \
+        && [[ -e /opt/laravelify-agents/cursor/.local/bin/cursor-agent ]]; then
+        ln -sfn "$(readlink -f /opt/laravelify-agents/cursor/.local/bin/cursor-agent)" /opt/laravelify-agents/bin/cursor-agent
+      else
+        echo "Cursor Agent could not be installed now; each editor can still install it." >&2
+      fi
+    fi
+    chmod -R a+rX /opt/laravelify-agents 2>/dev/null || true
     install -d -m 0755 /etc/nginx/laravelify-panel.d
     # nginx asks the panel (with the visitor's cookies) before every request to an editor:
     # only a signed-in panel user gets through; anyone else is sent to the login page.
-    cat > /etc/nginx/laravelify-panel.d/00-code-auth.conf <<'EOF'
+    # The panel answers on its own port (8000 on a panel without a domain), not always on 80.
+    panel_port="$(sed -n -E 's/^PREV_PANEL_PORT=([0-9]{1,5})$/\1/p' /etc/laravelify/install.env 2>/dev/null | head -n 1)"
+    panel_port="${panel_port:-80}"
+    cat > /etc/nginx/laravelify-panel.d/00-code-auth.conf <<EOF
 location = /_laravelify/code-auth {
     internal;
-    proxy_pass http://127.0.0.1/_access/code;
+    proxy_pass http://127.0.0.1:${panel_port}/_access/code;
     proxy_pass_request_body off;
     proxy_set_header Content-Length "";
-    proxy_set_header Host $host;
-    proxy_set_header X-Original-URI $request_uri;
-    proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Original-URI \$request_uri;
+    proxy_set_header X-Forwarded-Proto \$http_x_forwarded_proto;
 }
 location @laravelify_code_login {
     return 302 /login;
 }
 EOF
+    # Editors written before: the Host with its port, or code-server refuses the WebSocket (1006)
+    # on a panel that answers on a port like 8000.
+    for conf in /etc/nginx/laravelify-panel.d/code-*.conf; do
+      [[ -f "${conf}" ]] && sed -i 's/^    proxy_set_header Host \$host;$/    proxy_set_header Host $http_host;/' "${conf}"
+    done
     nginx -t 2>/dev/null && systemctl reload nginx
     # Right after unpacking, node can still be "busy" (being written) for a moment.
     for _ in 1 2 3 4 5; do
@@ -1425,7 +1479,7 @@ EOF
         --disable-telemetry --disable-update-check --disable-workspace-trust \
         --abs-proxy-base-path "/code/${TOKEN}" \
         --app-name "Laravelify Code" \
-        --idle-timeout-seconds 1800 \
+        --idle-timeout-seconds 1800 --disable-getting-started-override \
         --user-data-dir "${SITE_HOME}/.code-server/data" \
         --extensions-dir "${SITE_HOME}/.code-server/extensions" \
         "${WORKSPACE}"
@@ -1494,7 +1548,7 @@ EOF
         --disable-telemetry --disable-update-check --disable-workspace-trust \
         --abs-proxy-base-path "/code/${TOKEN}" \
         --app-name "Laravelify Code" \
-        --idle-timeout-seconds 1800 \
+        --idle-timeout-seconds 1800 --disable-getting-started-override \
         --user-data-dir "${WS_HOME}/.code-server/data" \
         --extensions-dir "${WS_HOME}/.code-server/extensions" \
         "${FILE}"
@@ -1979,6 +2033,10 @@ EOF
     if [[ -f /etc/laravelify/install.env ]]; then
       sed -i -E -e "s#^PREV_PANEL_DOMAIN=.*#PREV_PANEL_DOMAIN=${TARGET}#" -e "s#^PREV_PANEL_PORT=.*#PREV_PANEL_PORT=#" /etc/laravelify/install.env
     fi
+    # VS Code's sign-in check follows the panel to its new port (80).
+    if [[ -f /etc/nginx/laravelify-panel.d/00-code-auth.conf ]]; then
+      sed -i -E 's#proxy_pass http://127\.0\.0\.1(:[0-9]+)?/_access/code;#proxy_pass http://127.0.0.1:80/_access/code;#' /etc/nginx/laravelify-panel.d/00-code-auth.conf
+    fi
     systemctl reload nginx
     supervisorctl restart laravelify-queue laravelify-scheduler >/dev/null 2>&1 || true
     ;;
@@ -2119,6 +2177,219 @@ if (isset($cfg['Servers'][1])) {
 PHP
     chmod 644 /etc/phpmyadmin/conf.d/laravelify-signon.php
     echo "phpMyAdmin one-click sign-in is installed."
+    ;;
+  docker-install)
+    # docker-install engine: Docker Engine and the compose plugin from Docker's own apt repository,
+    # for plugins (Plugins page). Nothing happens when both are there.
+    [[ "${TARGET}" == engine ]] || die "invalid docker target"
+    if [[ -x /usr/bin/docker ]] && /usr/bin/docker compose version >/dev/null 2>&1; then
+      systemctl enable --now docker >/dev/null 2>&1 || true
+      echo "Docker is installed."
+      exit 0
+    fi
+    export DEBIAN_FRONTEND=noninteractive HOME=/root
+    exec 8>/run/laravelify-apt.lock
+    flock -w 900 8 || die "another package install is running; try again"
+    echo "Adding Docker's apt repository..."
+    apt-get update -q >/dev/null 2>&1 || true
+    apt-get install -y -q ca-certificates curl >/dev/null 2>&1 || die "curl could not be installed"
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc || die "Docker's signing key could not be downloaded"
+    chmod a+r /etc/apt/keyrings/docker.asc
+    codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-${VERSION_CODENAME}}")"
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${codename} stable" > /etc/apt/sources.list.d/docker.list
+    echo "Installing Docker Engine and Docker Compose..."
+    apt-get update -q >/dev/null 2>&1 || die "Docker's apt repository could not be read"
+    apt-get install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin >/dev/null 2>&1 || die "Docker could not be installed"
+    systemctl enable --now docker >/dev/null 2>&1 || die "Docker did not start"
+    echo "Docker is installed."
+    ;;
+  plugin-up|plugin-start|plugin-stop|plugin-restart|plugin-status|plugin-logs|plugin-remove|plugin-backup|plugin-domain|vault-init|vault-unseal|vault-status)
+    # Plugins (Plugins page): one Docker compose project per plugin in /opt/laravelify-plugins/<key>,
+    # named lfy-<key>. The compose file comes from the panel's storage and is checked here first:
+    # ports on 127.0.0.1 only, named volumes only, no builds, no privileged or host-namespace
+    # containers, no extra capabilities but IPC_LOCK (Vault). Its .env (passwords) is root-only.
+    [[ "${TARGET}" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || die "invalid plugin"
+    PLUGIN_DIR="/opt/laravelify-plugins/${TARGET}"
+    PLUGIN_SRC="${RENDERED}/plugins/${TARGET}"
+    # Only the server's own Docker: never a docker found elsewhere on PATH.
+    [[ -x /usr/bin/docker ]] || die "Docker is not installed"
+    dc() {
+      /usr/bin/docker compose -p "lfy-${TARGET}" -f "${PLUGIN_DIR}/compose.yml" --project-directory "${PLUGIN_DIR}" "$@"
+    }
+    if [[ "${ACTION}" != plugin-up && ! -f "${PLUGIN_DIR}/compose.yml" ]]; then
+      [[ "${ACTION}" == plugin-status ]] && { echo missing; exit 0; }
+      [[ "${ACTION}" == plugin-remove ]] && { echo "Nothing to remove."; exit 0; }
+      die "the plugin is not installed"
+    fi
+    case "${ACTION}" in
+      plugin-up)
+        [[ -f "${PLUGIN_SRC}/compose.yml" && ! -L "${PLUGIN_SRC}/compose.yml" ]] || die "missing rendered compose file"
+        compose="$(cat -- "${PLUGIN_SRC}/compose.yml")"
+        if grep -Eiq '(privileged|network_mode|^\s*pid:|^\s*ipc:|devices:|userns_mode|security_opt|docker\.sock|^\s*build:|published:|host_ip|driver_opts|^\s*device:|^\s*source:|volumes_from|extra_hosts)' <<<"${compose}"; then
+          die "the plugin's compose file asks for something plugins may not use"
+        fi
+        while IFS= read -r line; do
+          if [[ "${line}" =~ ^[[:space:]]*-[[:space:]]*\"?[0-9.]*:?[0-9]+:[0-9]+\"?[[:space:]]*$ ]]; then
+            [[ "${line}" =~ ^[[:space:]]*-[[:space:]]*\"127\.0\.0\.1:[0-9]{4,5}:[0-9]{2,5}\"[[:space:]]*$ ]] || die "plugin ports must be bound to 127.0.0.1"
+          fi
+          if [[ "${line}" =~ ^[[:space:]]*-[[:space:]]*\"?[/.~] ]]; then
+            die "plugins may only use named volumes"
+          fi
+          if [[ "${line}" =~ ^[[:space:]]*-[[:space:]]*[A-Z_]+[[:space:]]*$ && ! "${line}" =~ IPC_LOCK ]]; then
+            die "plugins may only add the IPC_LOCK capability"
+          fi
+          if [[ "${line}" =~ env_file: && ! "${line}" =~ env_file:[[:space:]]*\.env[[:space:]]*$ ]]; then
+            die "plugins may only read their own .env"
+          fi
+        done <<<"${compose}"
+        install -d -m 0700 -o root -g root /opt/laravelify-plugins "${PLUGIN_DIR}"
+        install -m 0600 -o root -g root -- "${PLUGIN_SRC}/compose.yml" "${PLUGIN_DIR}/compose.yml"
+        if [[ -f "${PLUGIN_SRC}/.env" && ! -L "${PLUGIN_SRC}/.env" ]]; then
+          grep -Evq '^([A-Z][A-Z0-9_]*=[A-Za-z0-9._:@/+=-]*)?$' -- "${PLUGIN_SRC}/.env" && die "invalid plugin environment"
+          install -m 0600 -o root -g root -- "${PLUGIN_SRC}/.env" "${PLUGIN_DIR}/.env"
+        fi
+        [[ -f "${PLUGIN_DIR}/.env" ]] || install -m 0600 -o root -g root /dev/null "${PLUGIN_DIR}/.env"
+        echo "Pulling ${TARGET}..."
+        dc pull -q 2>&1 | grep -v -i 'password\|secret\|token' || true
+        echo "Starting ${TARGET}..."
+        dc up -d --remove-orphans 2>&1 | tail -n 5
+        ;;
+      plugin-start) dc start ;;
+      plugin-stop) dc stop ;;
+      plugin-restart) dc restart ;;
+      plugin-status)
+        # The service named like the plugin, when a plugin has more than one container.
+        state="$(dc ps -a --format '{{.State}}' "${TARGET}" 2>/dev/null | head -n 1)"
+        echo "${state:-missing}"
+        ;;
+      plugin-logs)
+        [[ "${3:-}" =~ ^[0-9]{1,4}$ ]] || die "invalid line count"
+        exec /usr/bin/docker compose -p "lfy-${TARGET}" -f "${PLUGIN_DIR}/compose.yml" --project-directory "${PLUGIN_DIR}" logs --no-color --tail "$3"
+        ;;
+      plugin-remove)
+        [[ "${3:-}" == keep || "${3:-}" == purge ]] || die "invalid remove mode"
+        if [[ "$3" == purge ]]; then
+          dc down -v --remove-orphans
+          rm -rf -- "${PLUGIN_DIR}"
+          rm -f -- "/etc/nginx/sites-enabled/laravelify-plugin-${TARGET}.conf" "/etc/nginx/sites-available/laravelify-plugin-${TARGET}.conf" "/etc/nginx/laravelify-security/plugin-${TARGET}.htpasswd"
+          nginx -t >/dev/null 2>&1 && systemctl reload nginx
+          echo "Removed with its data."
+        else
+          dc down --remove-orphans
+          echo "Removed. Its data volumes are kept."
+        fi
+        ;;
+      plugin-backup)
+        # A gzipped copy of the plugin's data for the backup feature: pg_dumpall for PostgreSQL
+        # (consistent while it runs), a tar of the data volume for the others. Written next to the
+        # rendered files and handed to the panel user, who uploads it and deletes it.
+        install -d -m 0750 -o "${PANEL_USER}" -g "${PANEL_USER}" "${RENDERED}/plugins" "${PLUGIN_SRC}"
+        OUT="${PLUGIN_SRC}/backup.gz"
+        rm -f -- "${OUT}"
+        ( umask 077
+          if [[ "${TARGET}" == postgres ]]; then
+            dc exec -T postgres sh -c 'pg_dumpall -U "$POSTGRES_USER"' | gzip -c > "${OUT}"
+          elif [[ "${TARGET}" == mysql ]]; then
+            # The root password stays inside the container (MYSQL_PWD), never on a command line here.
+            dc exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -uroot --all-databases --single-transaction --routines --events' | gzip -c > "${OUT}"
+          elif [[ "${TARGET}" == mongodb ]]; then
+            # The password goes in a 0600 config file inside the container, not on mongodump's command line.
+            dc exec -T mongodb sh -c 'umask 077; printf "password: %s
+" "$MONGO_INITDB_ROOT_PASSWORD" > /tmp/lfy-dump.yml; mongodump --quiet --config /tmp/lfy-dump.yml -u "$MONGO_INITDB_ROOT_USERNAME" --authenticationDatabase admin --archive; s=$?; rm -f /tmp/lfy-dump.yml; exit $s' | gzip -c > "${OUT}"
+          else
+            data_path="$(grep -oE '^[[:space:]]*-[[:space:]]*data:/[A-Za-z0-9/_.-]+' "${PLUGIN_DIR}/compose.yml" | head -n 1 | sed -E 's/.*data://')"
+            [[ "${data_path}" =~ ^/[A-Za-z0-9/_.-]+$ ]] || die "the plugin's data folder was not found"
+            dc cp "${TARGET}:${data_path}/." - | gzip -c > "${OUT}"
+          fi ) || { rm -f -- "${OUT}"; die "the backup of ${TARGET} failed"; }
+        [[ -s "${OUT}" ]] || { rm -f -- "${OUT}"; die "the backup of ${TARGET} is empty"; }
+        chown "${PANEL_USER}:${PANEL_USER}" "${OUT}"
+        chmod 0600 "${OUT}"
+        echo "Saved $(stat -c %s "${OUT}") bytes."
+        ;;
+      plugin-domain)
+        # plugin-domain <key> <host> <port> | plugin-domain <key> remove: the plugin's web page on a
+        # domain, behind basic auth, proxied to its 127.0.0.1 port (which must be one of its own).
+        PLUGIN_CONF="/etc/nginx/sites-available/laravelify-plugin-${TARGET}.conf"
+        PLUGIN_AUTH="/etc/nginx/laravelify-security/plugin-${TARGET}.htpasswd"
+        if [[ "${3:-}" == remove ]]; then
+          rm -f -- "/etc/nginx/sites-enabled/laravelify-plugin-${TARGET}.conf" "${PLUGIN_CONF}" "${PLUGIN_AUTH}"
+          nginx -t && systemctl reload nginx
+          echo "The domain is removed."
+          exit 0
+        fi
+        P_HOST="${3:-}"; P_PORT="${4:-}"
+        [[ "${P_HOST}" =~ ^[a-z0-9]([a-z0-9-]{0,62}\.)+[a-z]{2,63}$ && ${#P_HOST} -le 253 ]] || die "invalid domain"
+        [[ "${P_PORT}" =~ ^[0-9]{4,5}$ ]] || die "invalid port"
+        grep -qE "\"127\.0\.0\.1:${P_PORT}:[0-9]+\"" "${PLUGIN_DIR}/compose.yml" || die "the port is not one of the plugin's"
+        [[ -f "${PLUGIN_SRC}/htpasswd" && ! -L "${PLUGIN_SRC}/htpasswd" ]] || die "missing basic auth"
+        grep -Eq '^[A-Za-z0-9_.-]{1,64}:\$6\$[A-Za-z0-9./]{1,16}\$[A-Za-z0-9./]{86}$' "${PLUGIN_SRC}/htpasswd"           && [[ "$(wc -l < "${PLUGIN_SRC}/htpasswd")" -le 1 ]] || die "invalid basic auth"
+        ensure_dirs /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/laravelify-security
+        install -m 0640 -o root -g www-data -- "${PLUGIN_SRC}/htpasswd" "${PLUGIN_AUTH}"
+        rm -f -- "${PLUGIN_SRC}/htpasswd"
+        cat > "${PLUGIN_CONF}" <<EOF
+# Written by Laravelify (Plugins page): ${TARGET} on ${P_HOST}, behind basic auth.
+server {
+    listen 80;
+    server_name ${P_HOST};
+    client_max_body_size 0;
+    auth_basic "${TARGET}";
+    auth_basic_user_file ${PLUGIN_AUTH};
+    location / {
+        proxy_pass http://127.0.0.1:${P_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
+}
+EOF
+        chmod 0644 "${PLUGIN_CONF}"
+        ln -sfn "${PLUGIN_CONF}" "/etc/nginx/sites-enabled/laravelify-plugin-${TARGET}.conf"
+        if ! nginx -t 2>&1; then
+          rm -f -- "/etc/nginx/sites-enabled/laravelify-plugin-${TARGET}.conf" "${PLUGIN_CONF}"
+          die "nginx refused the plugin's domain"
+        fi
+        systemctl reload nginx
+        echo "${TARGET} answers on ${P_HOST}."
+        ;;
+      vault-init|vault-unseal|vault-status)
+        # Vault answers "vault status" with exit 2 while sealed, 1 when it cannot be reached.
+        for _ in $(seq 1 30); do
+          set +e
+          dc exec -T vault vault status >/dev/null 2>&1
+          code=$?
+          set -e
+          [[ ${code} -ne 1 ]] && break
+          sleep 1
+        done
+        if [[ "${ACTION}" == vault-init ]]; then
+          dc exec -T vault vault operator init -key-shares=5 -key-threshold=3 -format=json
+        elif [[ "${ACTION}" == vault-unseal ]]; then
+          [[ -f "${PLUGIN_SRC}/unseal" && ! -L "${PLUGIN_SRC}/unseal" ]] || die "missing unseal keys"
+          # Keys go to Vault's API on its 127.0.0.1 port through curl's stdin, so a key is never
+          # in a command line (ps) on the host or in the container.
+          vault_port="$(grep -oE '127\.0\.0\.1:[0-9]{4,5}:8200' "${PLUGIN_DIR}/compose.yml" | head -n 1 | cut -d: -f2)"
+          [[ "${vault_port}" =~ ^[0-9]{4,5}$ ]] || die "Vault's port was not found"
+          while IFS= read -r -u 3 unseal_key; do
+            [[ -n "${unseal_key}" ]] || continue
+            [[ "${unseal_key}" =~ ^[A-Za-z0-9+/=]+$ ]] || die "invalid unseal key"
+            unseal_out="$(printf '{"key":"%s"}' "${unseal_key}" | curl -sS -X PUT --data-binary @- "http://127.0.0.1:${vault_port}/v1/sys/unseal" 2>&1 || true)"
+            if grep -q '"errors"' <<<"${unseal_out}"; then
+              echo "warning: Vault refused an unseal key: $(grep -oE '"errors":\[[^]]*\]' <<<"${unseal_out}" | head -c 300)" >&2
+            fi
+          done 3< "${PLUGIN_SRC}/unseal"
+          rm -f -- "${PLUGIN_SRC}/unseal"
+          dc exec -T vault vault status -format=json || true
+        else
+          dc exec -T vault vault status -format=json || true
+        fi
+        ;;
+    esac
     ;;
   glitchtip-remove)
     # Turn off error tracking: GlitchTip's process, nginx locations, database (with every error
@@ -2572,6 +2843,15 @@ PHP
     if slug_ok "$3"; then
       use_site "$3"
     fi
+    # A Dockerfile site has a container, not a PM2 app.
+    if slug_ok "$3" && [[ -x /usr/bin/docker ]] && /usr/bin/docker container inspect "lfy-site-$3" >/dev/null 2>&1; then
+      case "${TARGET}" in
+        restart) /usr/bin/docker restart "lfy-site-$3" >/dev/null && echo "Restarted." ;;
+        delete) /usr/bin/docker rm -f "lfy-site-$3" >/dev/null && echo "Removed." ;;
+        logs) /usr/bin/docker logs --tail 400 "lfy-site-$3" 2>&1 ;;
+      esac
+      exit 0
+    fi
     case "${TARGET}" in
       restart) site_pm2 restart "$3" --update-env && site_pm2 save --force >/dev/null 2>&1 ;;
       delete) site_pm2 delete "$3" && site_pm2 save --force >/dev/null 2>&1 ;;
@@ -2666,6 +2946,7 @@ PHP
       supervisorctl reread || true
       supervisorctl update || true
     fi
+    [[ -x /usr/bin/docker ]] && /usr/bin/docker rm -f "lfy-site-${TARGET}" >/dev/null 2>&1 || true
     if command -v pm2 >/dev/null 2>&1; then
       pm2_leave_root "${TARGET}"
       if site_pm2 describe "${TARGET}" >/dev/null 2>&1; then
@@ -2676,8 +2957,37 @@ PHP
     nginx -t
     systemctl reload nginx
     ;;
+  site-docker-build)
+    # site-docker-build <slug>: build the image of a Dockerfile site from its folder, as root
+    # (site users never reach the Docker socket). The build sees only the site's own folder.
+    slug_ok "${TARGET}" || die "invalid slug"
+    [[ -x /usr/bin/docker ]] || die "Docker is not installed"
+    use_site "${TARGET}"
+    SITE_DIR="${SITES_ROOT}/${TARGET}"
+    [[ -d "${SITE_DIR}" && ! -L "${SITE_DIR}" ]] || die "the site folder is missing"
+    [[ -f "${SITE_DIR}/Dockerfile" && ! -L "${SITE_DIR}/Dockerfile" ]] || die "there is no Dockerfile at the top of the repository"
+    DOCKER_BUILDKIT=1 /usr/bin/docker build --pull -t "lfy-site-${TARGET}:latest" -f "${SITE_DIR}/Dockerfile" "${SITE_DIR}" 2>&1 | tail -n 40
+    [[ ${PIPESTATUS[0]} -eq 0 ]] || die "the image did not build"
+    /usr/bin/docker image prune -f --filter "label!=keep" >/dev/null 2>&1 || true
+    echo "Built lfy-site-${TARGET}:latest."
+    ;;
+  site-docker)
+    # site-docker <restart|logs|stop> <slug>: the container of a Dockerfile site.
+    slug_ok "${3:-}" || die "invalid slug"
+    [[ -x /usr/bin/docker ]] || die "Docker is not installed"
+    case "${TARGET}" in
+      restart) /usr/bin/docker restart "lfy-site-$3" >/dev/null && echo "Restarted." ;;
+      logs) /usr/bin/docker logs --tail 400 "lfy-site-$3" 2>&1 ;;
+      stop) /usr/bin/docker rm -f "lfy-site-$3" >/dev/null 2>&1 || true; echo "Stopped." ;;
+      *) die "unknown docker command" ;;
+    esac
+    ;;
   remove-site)
     slug_ok "${TARGET}" || die "invalid slug"
+    if [[ -x /usr/bin/docker ]]; then
+      /usr/bin/docker rm -f "lfy-site-${TARGET}" >/dev/null 2>&1 || true
+      /usr/bin/docker rmi "lfy-site-${TARGET}:latest" >/dev/null 2>&1 || true
+    fi
     systemctl stop "laravelify-code-${TARGET}" >/dev/null 2>&1 || true
     rm -f "/etc/nginx/laravelify-panel.d/code-${TARGET}.conf"
     # The site's own user goes; its folder, owned by the shared user again, moves to the trash in

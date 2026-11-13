@@ -80,7 +80,7 @@ class SiteTypesTest extends TestCase
     public function test_the_catalog_groups_backend_frontend_and_full_stack(): void
     {
         $this->assertSame(['backend', 'frontend', 'fullstack'], array_keys(SiteTypes::GROUPS));
-        $this->assertSame(['PHP', 'TypeScript / JavaScript', 'Python', 'Go', 'Java', 'C# / .NET'], array_keys(SiteTypes::inGroup('backend')));
+        $this->assertSame(['PHP', 'TypeScript / JavaScript', 'Python', 'Go', 'Java', 'C# / .NET', 'Any language'], array_keys(SiteTypes::inGroup('backend')));
         $this->assertSame(['laravel', 'php'], array_keys(SiteTypes::inGroup('backend')['PHP']));
         $this->assertSame(['express', 'nestjs', 'node', 'bun'], array_keys(SiteTypes::inGroup('backend')['TypeScript / JavaScript']));
         $this->assertSame(['django', 'flask', 'fastapi'], array_keys(SiteTypes::inGroup('backend')['Python']));

@@ -106,6 +106,7 @@ class ServerMonitor
         foreach ($this->monitoredWebsites() as $website) {
             $names = match (true) {
                 $website->isLaravel() => array_map(fn (string $name): array => ['supervisor', $name], array_keys($this->logs->programs($website))),
+                $website->isDocker() => [],
                 $website->isNode() => [['pm2', $website->slug]],
                 default => [],
             };

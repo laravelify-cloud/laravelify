@@ -76,6 +76,27 @@ class Engine extends PanelComponent
 
     public string $documentJson = '';
 
+    /** The name typed in "New schema". */
+    public string $newSchema = '';
+
+    /** Make an empty schema (PostgreSQL, SQL Server). */
+    public function createSchema(EngineDatabases $databases): void
+    {
+        $name = trim($this->newSchema);
+
+        try {
+            $databases->createSchema($this->engine, $this->database, $name);
+        } catch (Throwable $exception) {
+            $this->addError('newSchema', $exception->getMessage());
+
+            return;
+        }
+
+        $this->newSchema = '';
+        $this->dispatch('schema-created');
+        $this->toast('Schema '.$name.' is ready. Make tables in it with SQL: CREATE TABLE '.$name.'.items (...).', 'success');
+    }
+
     public function mount(string $engine, string $database): void
     {
         $known = $engine === EngineDatabases::REMOTE
@@ -386,12 +407,14 @@ class Engine extends PanelComponent
         $tables = [];
         $page = null;
         $grid = null;
+        $schemas = [];
 
         try {
             $label = $databases->label($this->engine, $this->database);
 
             if ($this->table === '') {
                 $tables = $databases->tables($this->engine, $this->database);
+                $schemas = $this->isMongo() ? [] : $databases->schemas($this->engine, $this->database);
             } elseif ($this->tab === 'tables' && $this->isMongo()) {
                 $page = $databases->documents($this->database, $this->table, $this->page, $this->search);
             } elseif ($this->tab === 'tables') {
@@ -418,6 +441,8 @@ class Engine extends PanelComponent
             'perPage' => EngineDatabases::PER_PAGE,
             'error' => $error,
             'routeEngine' => $this->engine,
+            'schemas' => $schemas,
+            'hasSchemas' => ! $this->isMongo() && in_array(rescue(fn () => $databases->dialect($this->engine, $this->database), '', false), ['pgsql', 'sqlsrv'], true),
         ])->layout('layouts.app')->title(($this->table !== '' ? $this->table.' · ' : '').($connection->name ?? $this->database).' · Database');
     }
 

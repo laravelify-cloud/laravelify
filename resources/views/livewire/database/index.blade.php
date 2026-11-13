@@ -2,9 +2,46 @@
     <x-page-header title="Database" summary="Browse every database on this server: MySQL, PostgreSQL, SQLite and MongoDB. Search, edit rows, and undo a MySQL change later.">
         <x-slot:actions>
             <a class="btn" href="{{ route('backups.databases') }}" wire:navigate><x-menu-icon name="backup" /> Backups</a>
+            <button class="btn" type="button" wire:click="openNewDatabase"><x-menu-icon name="database" /> New database</button>
             <button class="btn btn-primary" type="button" wire:click="openConnection"><x-menu-icon name="plus" /> Connect a database</button>
         </x-slot:actions>
     </x-page-header>
+
+    <x-modal-frame open="$wire.newDatabaseOpen" close="$wire.set('newDatabaseOpen', false)">
+        @if ($newDatabaseOpen)
+            @php $servers = app(\App\Services\EngineDatabases::class)->databaseServers(); @endphp
+            <form class="flex flex-col gap-4" wire:submit="createDatabase">
+                <div class="modal-head">
+                    <h2 class="flex items-center gap-2"><x-menu-icon name="database" class="size-5 text-muted" /> New database</h2>
+                    <button class="icon-btn" type="button" wire:click="$set('newDatabaseOpen', false)" aria-label="Close"><x-menu-icon name="close" /></button>
+                </div>
+                @if ($servers === [])
+                    <p class="text-[13px] text-muted">There is no server to make it on. Install MySQL or PostgreSQL on this server, the MySQL or PostgreSQL plugin, or connect a MySQL or PostgreSQL database first.</p>
+                @else
+                    <label class="field">
+                        <span>Server</span>
+                        <select class="select" wire:model="newDatabaseServer">
+                            @foreach ($servers as $value => $serverLabel)
+                                <option value="{{ $value }}">{{ $serverLabel }}</option>
+                            @endforeach
+                        </select>
+                        <small class="text-muted">On a connection's server, it uses the same login and shows here as its own connection.</small>
+                    </label>
+                    <label class="field">
+                        <span>Name</span>
+                        <input class="input font-mono" wire:model="newDatabaseName" placeholder="shop" autocomplete="off" spellcheck="false" autofocus maxlength="63">
+                        @error('newDatabaseName') <small class="error">{{ $message }}</small> @else <small class="text-muted">Letters, digits and underscores. UTF-8 (utf8mb4 on MySQL).</small> @enderror
+                    </label>
+                @endif
+                <div class="modal-foot flex justify-end gap-2">
+                    <button class="btn" type="button" wire:click="$set('newDatabaseOpen', false)">Cancel</button>
+                    @if ($servers !== [])
+                        <button class="btn btn-primary" type="submit" wire:loading.attr="disabled" wire:target="createDatabase"><x-menu-icon name="plus" /> Create database</button>
+                    @endif
+                </div>
+            </form>
+        @endif
+    </x-modal-frame>
 
     @include('livewire.database.partials.export')
 

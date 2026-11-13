@@ -209,13 +209,20 @@ class Form extends PanelComponent
             $files = $client->files($app, $fullName, $branch, [
                 'composer.json', 'package.json', '.nvmrc', '.node-version', 'index.html',
                 'requirements.txt', 'pyproject.toml', 'manage.py', '.python-version', 'go.mod', 'bun.lock', 'bun.lockb', 'hugo.toml', 'hugo.yaml',
-                'pom.xml', 'build.gradle', 'build.gradle.kts', 'Program.cs',
+                'pom.xml', 'build.gradle', 'build.gradle.kts', 'Program.cs', 'Dockerfile',
             ]);
+            // .NET projects are named after the app (Shop.Api.csproj, Shop.sln): look at the top folder for one.
+            $names = $client->rootNames($app, $fullName, $branch);
+            $project = collect($names)->first(fn (string $name): bool => str_ends_with($name, '.csproj'))
+                ?? collect($names)->first(fn (string $name): bool => str_ends_with($name, '.sln') || str_ends_with($name, '.slnx'));
+            $csproj = $project !== null && str_ends_with($project, '.csproj') ? ($client->files($app, $fullName, $branch, [$project])[$project] ?? null) : null;
         } catch (Throwable) {
             return;
         }
 
         $found = ProjectDetector::detect([
+            'dotnet_project' => $project,
+            'csproj' => $csproj,
             'composer' => $files['composer.json'],
             'package' => $files['package.json'],
             'nvmrc' => $files['.nvmrc'] ?? $files['.node-version'],
@@ -230,6 +237,7 @@ class Form extends PanelComponent
             'maven' => $files['pom.xml'] ?? null,
             'gradle' => $files['build.gradle'] ?? $files['build.gradle.kts'] ?? null,
             'dotnet' => ($files['Program.cs'] ?? null) !== null,
+            'dockerfile' => ($files['Dockerfile'] ?? null) !== null,
         ]);
 
         if ($found['type'] === null) {
