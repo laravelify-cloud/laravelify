@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\HostWriter;
 use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
@@ -42,6 +43,24 @@ class PanelAddressTest extends TestCase
             ->set('domain', 'Panel.Example.com')
             ->call('move')
             ->assertRedirect('https://panel.example.com/settings/panel-address');
+    }
+
+    public function test_a_domain_this_server_cannot_reach_says_why(): void
+    {
+        Http::fake(fn () => throw new ConnectionException('cURL error 6: Could not resolve host: panel.example.com (see https://curl.haxx.se/libcurl/c/libcurl-errors.html) for https://panel.example.com/_laravelify/panel-check'));
+        $this->mock(HostWriter::class, function (MockInterface $host): void {
+            $host->shouldReceive('panelDomainAdd')->once();
+            $host->shouldReceive('panelDomainRestore')->once();
+            $host->shouldNotReceive('panelDomainCommit');
+        });
+        $this->partialMockSleep();
+
+        Livewire::test(PanelAddress::class)
+            ->set('method', 'dns')
+            ->set('domain', 'panel.example.com')
+            ->call('move')
+            ->assertSet('problem', fn (?string $problem): bool => str_contains((string) $problem, '(Could not resolve host: panel.example.com)')
+                && ! str_contains((string) $problem, 'curl.haxx.se'));
     }
 
     public function test_a_domain_answered_by_another_server_changes_nothing(): void

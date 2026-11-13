@@ -84,7 +84,7 @@ class PanelAddress extends PanelComponent
 
         $tunnel = $this->tunnel !== '' ? CloudflareTunnel::query()->find($this->tunnel) : null;
         $result = $tunnel
-            ? $routes->route($tunnel, $this->domain, 'http://localhost:80', null)
+            ? $routes->route($tunnel, $this->domain, 'http://127.0.0.1:80', null)
             : $routes->syncAddresses([$this->domain]);
 
         foreach ($result['lines'] as $line) {
@@ -98,12 +98,23 @@ class PanelAddress extends PanelComponent
         }
     }
 
+    /** The useful part of an HTTP client error (cURL's own words), without any address details. */
+    private static function reason(string $message): string
+    {
+        $message = (string) preg_replace('/^cURL error \d+: /', '', trim($message));
+        $message = (string) preg_replace('/\s*\(see https?:\/\/[^)]*\)/', '', $message);
+        $message = (string) preg_replace('/\s+for https?:\/\/\S+/', '', $message);
+
+        return Str::limit($message, 160);
+    }
+
     /** Null when https://domain reaches this panel, otherwise what to do about it. */
     private function check(): ?string
     {
         $value = Str::random(40);
         Cache::put(self::CHECK_KEY, $value, now()->addMinutes(3));
         $status = null;
+        $reason = null;
 
         try {
             for ($try = 1; $try <= self::CHECK_TRIES; $try++) {
@@ -114,8 +125,9 @@ class PanelAddress extends PanelComponent
                     if (trim($response->body()) === $value) {
                         return null;
                     }
-                } catch (Throwable) {
+                } catch (Throwable $exception) {
                     $status = null;
+                    $reason = self::reason($exception->getMessage());
                 }
 
                 if ($try < self::CHECK_TRIES) {
@@ -127,7 +139,7 @@ class PanelAddress extends PanelComponent
         }
 
         return match (true) {
-            $status === null => "https://{$this->domain} did not answer. Check that the DNS record exists and has the orange cloud (Proxied) in Cloudflare; a new record can take a few minutes. Nothing was changed.",
+            $status === null => "This server could not reach https://{$this->domain}".($reason ? " ({$reason})" : '').'. Check that the DNS record exists and has the orange cloud (Proxied) in Cloudflare, and that this server can open https:// addresses; a new record can take a few minutes. Nothing was changed.',
             in_array($status, [521, 522, 525, 526], true) => "Cloudflare could not reach this server (error {$status}). Set SSL/TLS to Flexible for this domain, or use a tunnel, and check that port 80 is open. Nothing was changed.",
             default => "https://{$this->domain} answered with status {$status}, but not from this panel. Check where the DNS record points. Nothing was changed.",
         };

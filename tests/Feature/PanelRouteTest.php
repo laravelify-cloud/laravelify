@@ -47,7 +47,7 @@ class PanelRouteTest extends TestCase
 
         @unlink($file);
         $this->assertSame('abcdefghijklmnopqrstuvwxyz0123456789', Setting::getValue(CloudflareApi::SETTING));
-        $this->assertSame(['hostname' => 'panel.x.com', 'service' => 'http://localhost:80'], $put['config']['ingress'][0]);
+        $this->assertSame(['hostname' => 'panel.x.com', 'service' => 'http://127.0.0.1:80'], $put['config']['ingress'][0]);
         Http::assertSent(fn (Request $request) => $request->method() === 'POST' && str_contains($request->url(), '/zones/zone1/dns_records')
             && $request['content'] === 'tun456.cfargotunnel.com');
     }

@@ -56,7 +56,7 @@ class PanelRoute extends Command
         }
 
         try {
-            $result = $routes->route($tunnel, $panel, 'http://localhost:80', null);
+            $result = $routes->route($tunnel, $panel, 'http://127.0.0.1:80', null);
         } catch (Throwable $exception) {
             $this->warn('Cloudflare: '.$exception->getMessage());
 

@@ -4,6 +4,10 @@ All notable changes are listed here. Releases follow [semantic versioning](https
 
 ## [Unreleased]
 
+## [0.3.0-beta.105] - 2026-11-13
+
+- **Fixed: Settings → Panel address said "did not answer" with no reason.** When the server cannot open https://your-domain itself, the message now says why (the DNS name is not known yet, a timeout, a certificate problem), so you know what to fix. The tunnel route for the panel now points to 127.0.0.1:80 instead of localhost:80, so cloudflared does not try IPv6 (::1) first.
+
 ## [0.3.0-beta.104] - 2026-11-13
 
 Replaces 0.3.0-beta.103, which was published by mistake from the previous commit (it is the same as 0.3.0-beta.102 plus the Cloudflare token button).
