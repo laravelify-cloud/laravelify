@@ -2204,7 +2204,7 @@ PHP
     systemctl enable --now docker >/dev/null 2>&1 || die "Docker did not start"
     echo "Docker is installed."
     ;;
-  plugin-up|plugin-start|plugin-stop|plugin-restart|plugin-status|plugin-logs|plugin-remove|plugin-backup|plugin-domain|vault-init|vault-unseal|vault-status)
+  plugin-up|plugin-start|plugin-stop|plugin-restart|plugin-status|plugin-logs|plugin-remove|plugin-backup|plugin-domain|plugin-api-domain|vault-init|vault-unseal|vault-status)
     # Plugins (Plugins page): one Docker compose project per plugin in /opt/laravelify-plugins/<key>,
     # named lfy-<key>. The compose file comes from the panel's storage and is checked here first:
     # ports on 127.0.0.1 only, named volumes only, no builds, no privileged or host-namespace
@@ -2273,6 +2273,7 @@ PHP
           dc down -v --remove-orphans
           rm -rf -- "${PLUGIN_DIR}"
           rm -f -- "/etc/nginx/sites-enabled/laravelify-plugin-${TARGET}.conf" "/etc/nginx/sites-available/laravelify-plugin-${TARGET}.conf" "/etc/nginx/laravelify-security/plugin-${TARGET}.htpasswd"
+          rm -f -- "/etc/nginx/sites-enabled/laravelify-plugin-${TARGET}-api.conf" "/etc/nginx/sites-available/laravelify-plugin-${TARGET}-api.conf"
           nginx -t >/dev/null 2>&1 && systemctl reload nginx
           echo "Removed with its data."
         else
@@ -2356,6 +2357,50 @@ EOF
         fi
         systemctl reload nginx
         echo "${TARGET} answers on ${P_HOST}."
+        ;;
+      plugin-api-domain)
+        # plugin-api-domain <key> <host> <port> | plugin-api-domain <key> remove: a plugin's API on a
+        # public domain (MinIO's S3 API: image links must open without a password; S3 checks its own
+        # signed keys). The Host header goes through unchanged, which S3 signatures cover.
+        API_CONF="/etc/nginx/sites-available/laravelify-plugin-${TARGET}-api.conf"
+        if [[ "${3:-}" == remove ]]; then
+          rm -f -- "/etc/nginx/sites-enabled/laravelify-plugin-${TARGET}-api.conf" "${API_CONF}"
+          nginx -t && systemctl reload nginx
+          echo "The API domain is removed."
+          exit 0
+        fi
+        P_HOST="${3:-}"; P_PORT="${4:-}"
+        [[ "${P_HOST}" =~ ^[a-z0-9]([a-z0-9-]{0,62}\.)+[a-z]{2,63}$ && ${#P_HOST} -le 253 ]] || die "invalid domain"
+        [[ "${P_PORT}" =~ ^[0-9]{4,5}$ ]] || die "invalid port"
+        grep -qE "\"127\.0\.0\.1:${P_PORT}:[0-9]+\"" "${PLUGIN_DIR}/compose.yml" || die "the port is not one of the plugin's"
+        ensure_dirs /etc/nginx/sites-available /etc/nginx/sites-enabled
+        cat > "${API_CONF}" <<APICONF
+# Written by Laravelify (Plugins page): ${TARGET}'s API on ${P_HOST}, public (its own keys decide access).
+server {
+    listen 80;
+    server_name ${P_HOST};
+    client_max_body_size 0;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    location / {
+        proxy_pass http://127.0.0.1:${P_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$http_host;
+        proxy_set_header Connection "";
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_read_timeout 300s;
+    }
+}
+APICONF
+        chmod 0644 "${API_CONF}"
+        ln -sfn "${API_CONF}" "/etc/nginx/sites-enabled/laravelify-plugin-${TARGET}-api.conf"
+        if ! nginx -t 2>&1; then
+          rm -f -- "/etc/nginx/sites-enabled/laravelify-plugin-${TARGET}-api.conf" "${API_CONF}"
+          die "nginx refused the plugin's API domain"
+        fi
+        systemctl reload nginx
+        echo "${TARGET}'s API answers on ${P_HOST}."
         ;;
       vault-init|vault-unseal|vault-status)
         # Vault answers "vault status" with exit 2 while sealed, 1 when it cannot be reached.

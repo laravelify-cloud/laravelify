@@ -24,7 +24,7 @@ class PanelAddress extends PanelComponent
 {
     public const CHECK_KEY = 'laravelify.panel-address-check';
 
-    private const CHECK_TRIES = 8;
+    private const CHECK_TRIES = 6;
 
     public string $domain = '';
 
@@ -108,6 +108,31 @@ class PanelAddress extends PanelComponent
         return Str::limit($message, 160);
     }
 
+    /** The domain's address from Cloudflare's public DNS (over HTTPS), for when the server's DNS does not know it yet. */
+    private function publicIp(): ?string
+    {
+        // Cloudflare's, then Google's (both answer in the same JSON form); some networks block one.
+        foreach (['https://1.1.1.1/dns-query', 'https://dns.google/resolve'] as $resolver) {
+            try {
+                $answers = Http::timeout(5)->withHeaders(['Accept' => 'application/dns-json'])
+                    ->get($resolver, ['name' => $this->domain, 'type' => 'A'])
+                    ->json('Answer', []);
+            } catch (Throwable) {
+                continue;
+            }
+
+            foreach ((array) $answers as $answer) {
+                $ip = (string) ($answer['data'] ?? '');
+
+                if (($answer['type'] ?? null) === 1 && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+                    return $ip;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /** Null when https://domain reaches this panel, otherwise what to do about it. */
     private function check(): ?string
     {
@@ -119,7 +144,24 @@ class PanelAddress extends PanelComponent
         try {
             for ($try = 1; $try <= self::CHECK_TRIES; $try++) {
                 try {
-                    $response = Http::timeout(6)->get('https://'.$this->domain.'/_laravelify/panel-check');
+                    $request = Http::timeout(6);
+
+                    // The server's own DNS can still hold "no such name" from before the record
+                    // existed (for up to 30 minutes). Only this check needs it: ask Cloudflare's DNS.
+                    if ($reason !== null && str_contains($reason, 'resolve host')) {
+                        $ip = $this->publicIp();
+
+                        // Waiting does not fix this server's DNS: say so after a second try.
+                        if ($ip === null && $try > 2) {
+                            break;
+                        }
+
+                        if ($ip !== null) {
+                            $request = $request->withOptions(['curl' => [CURLOPT_RESOLVE => [$this->domain.':443:'.$ip]]]);
+                        }
+                    }
+
+                    $response = $request->get('https://'.$this->domain.'/_laravelify/panel-check');
                     $status = $response->status();
 
                     if (trim($response->body()) === $value) {
@@ -139,6 +181,7 @@ class PanelAddress extends PanelComponent
         }
 
         return match (true) {
+            $status === null && $reason !== null && str_contains($reason, 'resolve host') => "This server's DNS does not know {$this->domain} yet ({$reason}), though Cloudflare has it. Run `getent hosts {$this->domain}` on the server: when it finds nothing, point /etc/resolv.conf to systemd-resolved (ln -sfn /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf) or to 1.1.1.1. Nothing was changed.",
             $status === null => "This server could not reach https://{$this->domain}".($reason ? " ({$reason})" : '').'. Check that the DNS record exists and has the orange cloud (Proxied) in Cloudflare, and that this server can open https:// addresses; a new record can take a few minutes. Nothing was changed.',
             in_array($status, [521, 522, 525, 526], true) => "Cloudflare could not reach this server (error {$status}). Set SSL/TLS to Flexible for this domain, or use a tunnel, and check that port 80 is open. Nothing was changed.",
             default => "https://{$this->domain} answered with status {$status}, but not from this panel. Check where the DNS record points. Nothing was changed.",

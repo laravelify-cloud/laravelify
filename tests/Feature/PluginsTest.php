@@ -296,7 +296,6 @@ class PluginsTest extends TestCase
         }
     }
 
-
     public function test_the_glitchtip_card_installs_the_panels_own_glitchtip(): void
     {
         Queue::fake();
@@ -348,5 +347,34 @@ class PluginsTest extends TestCase
 
         $this->travel(11)->minutes();
         $page->call('$refresh')->assertSet('credentialsFor', null)->assertDontSee('secretredispassword');
+    }
+
+    public function test_minio_opens_its_s3_api_on_a_public_domain_beside_the_console(): void
+    {
+        $this->signIn();
+        $host = $this->host();
+        $plugin = Plugin::factory()->create(['key' => 'minio', 'ports' => ['api' => 9000, 'console' => 9001], 'domain' => 's3-ui.example.com', 'basic_auth_user' => 'admin']);
+        Website::factory()->create(['domain' => 'taken.example.com']);
+        $host->shouldReceive('pluginApiDomain')->once()->with('minio', 's3.example.com', 9000)->andReturn('');
+        $host->shouldReceive('pluginApiDomainRemove')->once()->with('minio')->andReturn('');
+
+        Livewire::test(Index::class)
+            ->call('editDomain', 'minio', 'api')
+            ->assertSee('S3 API on a domain')
+            ->set('domain', 'S3-UI.example.com')
+            ->call('saveDomain')
+            ->assertHasErrors('domain')->assertSee('s3-ui.example.com is already used by a plugin.')
+            ->set('domain', 'taken.example.com')
+            ->call('saveDomain')
+            ->assertHasErrors('domain')->assertSee('taken.example.com is already used by a website.')
+            ->set('domain', 's3.example.com')
+            ->call('saveDomain')
+            ->assertHasNoErrors()
+            ->assertSee(['Console domain', 's3-ui.example.com', 'S3 API domain', 's3.example.com']);
+
+        $this->assertSame('s3.example.com', $plugin->fresh()->api_domain);
+
+        app(PluginManager::class)->removeApiDomain($plugin->fresh());
+        $this->assertNull($plugin->fresh()->api_domain);
     }
 }

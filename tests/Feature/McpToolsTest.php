@@ -184,6 +184,14 @@ class McpToolsTest extends TestCase
         $this->server()->tool(GetEnvironment::class, ['website' => 'shop', 'keys' => ['DB_PASSWORD'], 'reveal' => true])->assertOk()->assertSee('hunter2');
     }
 
+    public function test_passwords_inside_urls_and_other_values_are_hidden_too(): void
+    {
+        $this->site(['env_content' => "REDIS_PASSWORD=redispass99\nDATABASE_URL=postgresql://app:dbpass1234@127.0.0.1:5433/app\nREDIS_URL=redis://:redispass99@127.0.0.1:6380\n"]);
+
+        $this->server()->tool(GetEnvironment::class, ['website' => 'shop'])
+            ->assertOk()->assertSee('127.0.0.1:5433')->assertDontSee('dbpass1234')->assertDontSee('redispass99');
+    }
+
     public function test_deployments_are_listed_and_a_running_one_is_cancelled(): void
     {
         $website = $this->site();

@@ -4,6 +4,13 @@ All notable changes are listed here. Releases follow [semantic versioning](https
 
 ## [Unreleased]
 
+## [0.3.0-beta.106] - 2026-11-13
+
+- **MinIO: the S3 API on its own public domain.** Beside the console domain (behind a password), MinIO's card has **S3 API on a domain**: image links and your apps' S3 clients use it without a password (MinIO's keys decide who can write), with the Host header passed on for S3 signatures. Both domains show on the card, and a domain used by a website or another plugin is refused.
+- **Panel address: a new domain is checked even when the server's DNS does not know it yet.** The server can remember "no such name" for up to 30 minutes; the check then asks Cloudflare's or Google's DNS, so moving the panel to a domain does not fail for that.
+- **Fixed: MCP `get-environment` showed passwords inside URLs.** `DB_PASSWORD` was hidden, but `DATABASE_URL` and `REDIS_URL` showed the same password. Passwords inside URLs, and any value holding a hidden secret, are hidden now.
+- **Fixed: the plugin domain dialog kept showing an earlier error** after the domain was corrected.
+
 ## [0.3.0-beta.105] - 2026-11-13
 
 - **Fixed: Settings → Panel address said "did not answer" with no reason.** When the server cannot open https://your-domain itself, the message now says why (the DNS name is not known yet, a timeout, a certificate problem), so you know what to fix. The tunnel route for the panel now points to 127.0.0.1:80 instead of localhost:80, so cloudflared does not try IPv6 (::1) first.

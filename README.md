@@ -86,7 +86,7 @@ Then it works through the install one step at a time, with a spinner, a check ma
 │  Node.js              22 24 (system: 24)
 │  Log                  /var/log/laravelify-install.log
 │
-◆  Downloaded Laravelify 0.3.0-beta.105 4s
+◆  Downloaded Laravelify 0.3.0-beta.106 4s
 ◆  Installing nginx, Redis, Supervisor, Git, and tools 38s
 ◆  Installing PHP 8.3 (FPM, CLI, MySQL, Redis, GD, intl, and more) 51s
 ◆  Installing PHP 8.4 (FPM, CLI, MySQL, Redis, GD, intl, and more) 47s
@@ -95,7 +95,7 @@ Then it works through the install one step at a time, with a spinner, a check ma
    …
 ◆  Turning on the firewall (SSH, 80, 443, 8000) 2s
 │
-└  Laravelify 0.3.0-beta.105 is installed (7m 40s)
+└  Laravelify 0.3.0-beta.106 is installed (7m 40s)
 ```
 
 It ends with your setup link, like `http://203.0.113.10:8000/setup?token=…`.

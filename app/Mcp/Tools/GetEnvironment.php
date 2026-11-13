@@ -34,12 +34,45 @@ class GetEnvironment extends Tool
             $variables[$key] = $value === null ? null : ($value !== '' && ! $reveal && preg_match(self::SECRET, $key) === 1 ? '********' : $value);
         }
 
+        if (! $reveal) {
+            $variables = $this->hideSecretsInsideValues($variables, $content);
+        }
+
         return Response::json([
             'website' => $website->slug,
             'count' => count($variables),
             'variables' => $variables,
             'hidden' => ! $reveal ? array_keys(array_filter($variables, fn ($value) => $value === '********')) : [],
         ]);
+    }
+
+    /**
+     * A secret also hides inside other values: the password of a URL (DATABASE_URL, REDIS_URL,
+     * postgresql://app:secret@host) and any value that contains a hidden variable's value.
+     *
+     * @param  array<string, string|null>  $variables
+     * @return array<string, string|null>
+     */
+    private function hideSecretsInsideValues(array $variables, string $content): array
+    {
+        $secrets = [];
+
+        foreach (EnvFile::values($content, EnvFile::keys($content)) as $key => $value) {
+            if (is_string($value) && strlen($value) >= 6 && preg_match(self::SECRET, $key) === 1) {
+                $secrets[] = $value;
+            }
+        }
+
+        foreach ($variables as $key => $value) {
+            if ($value === null || $value === '********') {
+                continue;
+            }
+
+            $value = (string) preg_replace('#(://[^:/@\s]*:)[^@\s]+@#', '$1********@', $value);
+            $variables[$key] = str_replace($secrets, '********', $value);
+        }
+
+        return $variables;
     }
 
     /**

@@ -32,7 +32,10 @@
                         $menu[] = ['label' => 'Stop', 'icon' => 'stop', 'click' => "control('{$key}', 'stop')"];
                     }
                     if ($definition->webPort()) {
-                        $menu[] = ['label' => $plugin->domain ? 'Change domain' : 'Open on a domain', 'icon' => 'globe', 'click' => "editDomain('{$key}')"];
+                        $menu[] = ['label' => $plugin->domain ? 'Change '.($definition->apiPort() ? 'console ' : '').'domain' : 'Open '.($definition->apiPort() ? 'the console ' : '').'on a domain', 'icon' => 'globe', 'click' => "editDomain('{$key}')"];
+                    }
+                    if ($definition->apiPort()) {
+                        $menu[] = ['label' => $plugin->api_domain ? 'Change S3 API domain' : 'S3 API on a domain', 'icon' => 's3', 'click' => "editDomain('{$key}', 'api')"];
                     }
                     if ($definition->sealable()) {
                         $menu[] = ['label' => $plugin->auto_unseal ? 'Turn off auto-unseal' : 'Turn on auto-unseal', 'icon' => 'lock', 'click' => "setAutoUnseal('{$key}', ".($plugin->auto_unseal ? 'false' : 'true').')', 'confirm' => $plugin->auto_unseal ? null : 'The unseal keys are then on this same server (encrypted with the panel\'s key), so anyone who gets the server and the panel gets the secrets too. Turn it on?'];
@@ -90,7 +93,10 @@
                                 </div>
                             @endif
                             @if ($plugin->domain)
-                                <div><dt>Domain</dt><dd class="truncate"><a class="text-accent hover:underline" href="https://{{ $plugin->domain }}" target="_blank" rel="noopener">{{ $plugin->domain }}</a></dd></div>
+                                <div><dt>{{ $definition->apiPort() ? 'Console domain' : 'Domain' }}</dt><dd class="truncate"><a class="text-accent hover:underline" href="https://{{ $plugin->domain }}" target="_blank" rel="noopener" title="Behind basic auth ({{ $plugin->basic_auth_user }})">{{ $plugin->domain }}</a></dd></div>
+                            @endif
+                            @if ($plugin->api_domain)
+                                <div><dt>S3 API domain</dt><dd class="truncate"><a class="text-accent hover:underline" href="https://{{ $plugin->api_domain }}" target="_blank" rel="noopener" title="Public: its access keys decide who can write">{{ $plugin->api_domain }}</a></dd></div>
                             @endif
                         </dl>
 
@@ -300,13 +306,17 @@
         <x-modal-frame class="modal-root-top" open="true" close="$wire.closeDomain()">
             <form class="flex flex-col gap-4" wire:submit="saveDomain">
                 <div class="modal-head">
-                    <h2>{{ $definitions[$domainFor]->label() }} on a domain</h2>
+                    <h2>{{ $definitions[$domainFor]->label() }}{{ $domainKind === 'api' ? ' S3 API' : '' }} on a domain</h2>
                     <button class="icon-btn" type="button" wire:click="closeDomain" aria-label="Close"><x-menu-icon name="close" /></button>
                 </div>
-                <p class="text-[12.5px] text-muted">Opens its web page through nginx, behind basic auth. Pick a Cloudflare tunnel for HTTPS; Laravelify adds the route and DNS when an API token is saved.</p>
+                @if ($domainKind === 'api')
+                    <p class="text-[12.5px] text-muted">Opens its S3 API through nginx, <b>without</b> a password: image links and your apps' S3 clients use it, and its own access keys decide who can write. Pick a Cloudflare tunnel for HTTPS.</p>
+                @else
+                    <p class="text-[12.5px] text-muted">Opens its web page through nginx, behind basic auth. Pick a Cloudflare tunnel for HTTPS; Laravelify adds the route and DNS when an API token is saved.</p>
+                @endif
                 <label class="field">
                     <span>Domain</span>
-                    <input class="input" wire:model="domain" placeholder="{{ $domainFor }}.example.com" required>
+                    <input class="input" wire:model="domain" placeholder="{{ $domainKind === 'api' ? 's3' : $domainFor }}.example.com" required>
                     @error('domain') <small class="error">{{ $message }}</small> @enderror
                 </label>
                 <label class="field">
@@ -318,9 +328,9 @@
                         @endforeach
                     </select>
                 </label>
-                <div class="grid gap-3 sm:grid-cols-2">
-                    <label class="field"><span>Basic auth user</span><input class="input" wire:model="domainUser" autocomplete="off" required></label>
-                    <label class="field"><span>Password (12+ characters)</span><input class="input" type="password" wire:model="domainPassword" autocomplete="new-password" required></label>
+                <div @class(['grid gap-3 sm:grid-cols-2', 'hidden' => $domainKind === 'api'])>
+                    <label class="field"><span>Basic auth user</span><input class="input" wire:model="domainUser" autocomplete="off" @required($domainKind !== 'api')></label>
+                    <label class="field"><span>Password (12+ characters)</span><input class="input" type="password" wire:model="domainPassword" autocomplete="new-password" @required($domainKind !== 'api')></label>
                 </div>
                 @if ($domainReport !== [])
                     @if ($domainReport['note'] ?? null)
@@ -331,7 +341,7 @@
                     @endforeach
                 @endif
                 <div class="modal-foot">
-                    @if ($installed->get($domainFor)?->domain)
+                    @if ($domainKind === 'api' ? $installed->get($domainFor)?->api_domain : $installed->get($domainFor)?->domain)
                         <button class="btn btn-danger" type="button" wire:click="removeDomain('{{ $domainFor }}')" wire:confirm="Remove the domain?">Remove domain</button>
                     @endif
                     <button class="btn btn-primary" type="submit">Save</button>

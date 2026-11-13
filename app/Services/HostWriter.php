@@ -577,6 +577,17 @@ UNIT;
         return $this->apply(['plugin-domain', $key, 'remove']);
     }
 
+    /** A plugin's API on a public domain (no basic auth), proxied to its 127.0.0.1 port. */
+    public function pluginApiDomain(string $key, string $host, int $port): string
+    {
+        return $this->apply(['plugin-api-domain', $key, $host, (string) $port]);
+    }
+
+    public function pluginApiDomainRemove(string $key): string
+    {
+        return $this->apply(['plugin-api-domain', $key, 'remove']);
+    }
+
     /** Build a Dockerfile site's image from its folder (as root: site users never reach Docker). */
     public function siteDockerBuild(Website $website): string
     {

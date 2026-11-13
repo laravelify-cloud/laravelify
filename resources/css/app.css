@@ -270,6 +270,11 @@ html:has(.modal-root:not([x-cloak]):not([style*="display: none"])) {
 .dropdown-option.is-busy::after, .app-tab.is-busy::after { inset: 0 8px 0 auto; }
 .dropdown-option.is-busy, .app-tab.is-busy { color: inherit !important; }
 .dropdown-option.is-busy > *, .app-tab.is-busy > * { visibility: visible; opacity: .55; }
+/* Long waits keep their text ("Testing the domain, up to a minute…") with the spinner in front. */
+.btn.keeps-label.is-busy { color: var(--color-ink) !important; padding-left: 34px; }
+.btn-primary.keeps-label.is-busy, .btn-danger.keeps-label.is-busy { color: #fff !important; }
+.btn.keeps-label.is-busy > * { visibility: visible; }
+.btn.keeps-label.is-busy::after { inset: 0 auto 0 12px; }
 .page-progress { position: fixed; z-index: 200; top: 0; left: 0; right: 0; height: 2px; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity .2s; }
 .page-progress.is-active { opacity: 1; }
 .page-progress::before { content: ""; position: absolute; inset: 0; width: 40%; background: linear-gradient(90deg, transparent, var(--color-accent), transparent); animation: page-progress 1.1s ease-in-out infinite; }

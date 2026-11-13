@@ -126,9 +126,7 @@ class PluginManager
             throw new RuntimeException('Enter a domain like minio.example.com.');
         }
 
-        if (Website::query()->get()->contains(fn (Website $website): bool => in_array($domain, $website->hostnames(), true))) {
-            throw new RuntimeException($domain.' is already used by a website.');
-        }
+        $this->assertDomainFree($domain, $plugin, 'domain');
 
         if (preg_match('/^[A-Za-z0-9_.-]{1,64}$/', $user) !== 1 || strlen($password) < 12) {
             throw new RuntimeException('Pick a user name (letters, digits, . _ -) and a password of at least 12 characters.');
@@ -145,6 +143,66 @@ class PluginManager
         }
 
         return $tunnel ? app(CloudflareRoutes::class)->syncHost($tunnel, $domain, $previous) : ['configured' => true, 'lines' => [], 'note' => null];
+    }
+
+    /**
+     * Open a plugin's API on a public domain (MinIO's S3 API, for image links and the apps' S3
+     * clients). No basic auth: the API checks its own keys.
+     *
+     * @return array<string, mixed> What Cloudflare said (see setDomain).
+     */
+    public function setApiDomain(Plugin $plugin, string $domain, ?CloudflareTunnel $tunnel): array
+    {
+        $name = $plugin->definition()->apiPort() ?? throw new RuntimeException($plugin->definition()->label().' has no API to open on a domain.');
+        $port = (int) ($plugin->ports[$name] ?? 0);
+        $domain = strtolower(trim($domain));
+
+        if (preg_match('/^[a-z0-9]([a-z0-9-]{0,62}\.)+[a-z]{2,63}$/', $domain) !== 1) {
+            throw new RuntimeException('Enter a domain like s3.example.com.');
+        }
+
+        $this->assertDomainFree($domain, $plugin, 'api_domain');
+
+        $previous = $plugin->api_domain;
+        $previousTunnel = $plugin->apiTunnel;
+        $this->host->pluginApiDomain($plugin->key, $domain, $port);
+        $plugin->update(['api_domain' => $domain, 'api_cloudflare_tunnel_id' => $tunnel?->id]);
+
+        if ($previousTunnel && $previous && ($previousTunnel->isNot($tunnel) || $previous !== $domain)) {
+            app(CloudflareRoutes::class)->syncHost($previousTunnel, null, $previous);
+        }
+
+        return $tunnel ? app(CloudflareRoutes::class)->syncHost($tunnel, $domain, $previous) : ['configured' => true, 'lines' => [], 'note' => null];
+    }
+
+    public function removeApiDomain(Plugin $plugin): void
+    {
+        if ($plugin->api_domain === null) {
+            return;
+        }
+
+        $this->host->pluginApiDomainRemove($plugin->key);
+
+        if ($plugin->apiTunnel) {
+            app(CloudflareRoutes::class)->syncHost($plugin->apiTunnel, null, $plugin->api_domain);
+        }
+
+        $plugin->update(['api_domain' => null, 'api_cloudflare_tunnel_id' => null]);
+    }
+
+    /** A domain opens one thing: not a website, and not another domain of a plugin. */
+    private function assertDomainFree(string $domain, Plugin $plugin, string $field): void
+    {
+        if (Website::query()->get()->contains(fn (Website $website): bool => in_array($domain, $website->hostnames(), true))) {
+            throw new RuntimeException($domain.' is already used by a website.');
+        }
+
+        $taken = Plugin::query()->where(fn ($query) => $query->where('domain', $domain)->orWhere('api_domain', $domain))->get()
+            ->reject(fn (Plugin $other): bool => $other->is($plugin) && $other->{$field} === $domain);
+
+        if ($taken->isNotEmpty()) {
+            throw new RuntimeException($domain.' is already used by a plugin.');
+        }
     }
 
     public function removeDomain(Plugin $plugin): void
@@ -166,6 +224,7 @@ class PluginManager
     {
         try {
             $this->removeDomain($plugin);
+            $this->removeApiDomain($plugin);
         } catch (Throwable) {
             // plugin-remove takes its nginx files off too; a Cloudflare error does not stop the removal.
         }

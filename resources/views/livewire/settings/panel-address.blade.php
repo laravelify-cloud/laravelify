@@ -54,9 +54,9 @@
             @endif
 
             <div>
-                <button class="btn btn-primary" type="submit" wire:loading.attr="disabled" wire:target="move">
+                <button class="btn btn-primary keeps-label" type="submit" wire:loading.attr="disabled" wire:target="move">
                     <span wire:loading.remove wire:target="move">Test and move</span>
-                    <span wire:loading wire:target="move">Testing the domain, up to 40 seconds…</span>
+                    <span wire:loading wire:target="move">Testing the domain, up to a minute…</span>
                 </button>
             </div>
             <p class="text-[12.5px] text-muted">After the move you sign in again on the new address, and the old port redirects to it.</p>

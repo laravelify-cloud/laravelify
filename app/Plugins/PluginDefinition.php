@@ -91,6 +91,12 @@ abstract class PluginDefinition
         return null;
     }
 
+    /** The port (by name) of an API that can open on a public domain (MinIO's S3 API); null when none. */
+    public function apiPort(): ?string
+    {
+        return null;
+    }
+
     /** Whether websites can be linked to it (it gives them variables). */
     public function linkable(): bool
     {

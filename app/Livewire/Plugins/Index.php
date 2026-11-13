@@ -42,6 +42,9 @@ class Index extends PanelComponent
 
     public string $domain = '';
 
+    /** page: its web page behind basic auth; api: its API on a public domain (MinIO's S3). */
+    public string $domainKind = 'page';
+
     public string $domainTunnel = '';
 
     public string $domainUser = 'admin';
@@ -126,12 +129,15 @@ class Index extends PanelComponent
     }
 
     /** Open the domain form of a plugin. */
-    public function editDomain(string $key): void
+    public function editDomain(string $key, string $kind = 'page'): void
     {
         $plugin = Plugin::query()->where('key', $key)->firstOrFail();
+        abort_unless(in_array($kind, ['page', 'api'], true), 422);
+        $api = $kind === 'api';
         $this->domainFor = $key;
-        $this->domain = (string) $plugin->domain;
-        $this->domainTunnel = (string) ($plugin->cloudflare_tunnel_id ?? '');
+        $this->domainKind = $kind;
+        $this->domain = (string) ($api ? $plugin->api_domain : $plugin->domain);
+        $this->domainTunnel = (string) (($api ? $plugin->api_cloudflare_tunnel_id : $plugin->cloudflare_tunnel_id) ?? '');
         $this->domainUser = (string) ($plugin->basic_auth_user ?: 'admin');
         $this->domainPassword = '';
         $this->domainReport = [];
@@ -139,16 +145,19 @@ class Index extends PanelComponent
 
     public function closeDomain(): void
     {
-        $this->reset('domainFor', 'domain', 'domainTunnel', 'domainUser', 'domainPassword', 'domainReport');
+        $this->reset('domainFor', 'domainKind', 'domain', 'domainTunnel', 'domainUser', 'domainPassword', 'domainReport');
     }
 
     public function saveDomain(): void
     {
+        $this->resetErrorBag('domain');
         $plugin = Plugin::query()->where('key', (string) $this->domainFor)->firstOrFail();
         $tunnel = $this->domainTunnel === '' ? null : CloudflareTunnel::query()->findOrFail((int) $this->domainTunnel);
 
         try {
-            $report = app(PluginManager::class)->setDomain($plugin, $this->domain, $tunnel, $this->domainUser, $this->domainPassword);
+            $report = $this->domainKind === 'api'
+                ? app(PluginManager::class)->setApiDomain($plugin, $this->domain, $tunnel)
+                : app(PluginManager::class)->setDomain($plugin, $this->domain, $tunnel, $this->domainUser, $this->domainPassword);
         } catch (Throwable $exception) {
             $this->addError('domain', $exception->getMessage());
 
@@ -157,7 +166,7 @@ class Index extends PanelComponent
 
         $this->domainPassword = '';
         $this->domainReport = $report;
-        $this->toast($plugin->definition()->label().' opens on '.$plugin->domain.'.', 'success');
+        $this->toast($plugin->definition()->label().($this->domainKind === 'api' ? "'s S3 API opens on ".$plugin->api_domain : ' opens on '.$plugin->domain).'.', 'success');
 
         if ($report['lines'] === [] && $report['note'] === null) {
             $this->closeDomain();
@@ -169,7 +178,7 @@ class Index extends PanelComponent
         $plugin = Plugin::query()->where('key', $key)->firstOrFail();
 
         try {
-            app(PluginManager::class)->removeDomain($plugin);
+            $this->domainKind === 'api' ? app(PluginManager::class)->removeApiDomain($plugin) : app(PluginManager::class)->removeDomain($plugin);
             $this->toast('The domain is removed.', 'success');
             $this->closeDomain();
         } catch (Throwable $exception) {

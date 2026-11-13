@@ -43,6 +43,8 @@ class Plugin extends Model
         'cloudflare_tunnel_id',
         'basic_auth_user',
         'basic_auth_hash',
+        'api_domain',
+        'api_cloudflare_tunnel_id',
     ];
 
     protected $hidden = ['credentials', 'basic_auth_hash'];
@@ -80,6 +82,12 @@ class Plugin extends Model
     public function tunnel(): BelongsTo
     {
         return $this->belongsTo(CloudflareTunnel::class, 'cloudflare_tunnel_id');
+    }
+
+    /** The tunnel of its public API domain. */
+    public function apiTunnel(): BelongsTo
+    {
+        return $this->belongsTo(CloudflareTunnel::class, 'api_cloudflare_tunnel_id');
     }
 
     /** The port its web page answers on (MinIO's console, Vault's UI), or 0 when it has none. */

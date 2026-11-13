@@ -87,4 +87,10 @@ YAML;
     {
         return 'console';
     }
+
+    /** The S3 API: public on its domain (image links), its own keys decide access. */
+    public function apiPort(): ?string
+    {
+        return 'api';
+    }
 }
