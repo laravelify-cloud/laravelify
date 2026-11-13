@@ -9,6 +9,7 @@
             <option value="website">Websites</option>
             <option value="preview">Previews</option>
             <option value="live">Live Servers</option>
+            <option value="plugin">Plugins</option>
         </select>
         <span class="text-muted text-[13px]">{{ count($rows) }} {{ \Illuminate\Support\Str::plural('domain', count($rows)) }}</span>
     </div>
@@ -29,7 +30,7 @@
                     <tr wire:key="domain-{{ $row['kind'] }}-{{ $row['host'] }}">
                         <td>
                             <a class="flex items-center gap-2.5 font-medium hover:text-accent" href="https://{{ $row['host'] }}/" target="_blank" rel="noopener">
-                                <span class="stat-icon size-7"><x-menu-icon :name="['panel' => 'dashboard', 'live' => 'play', 'preview' => 'eye'][$row['kind']] ?? 'globe'" class="size-4" /></span>
+                                <span class="stat-icon size-7"><x-menu-icon :name="['panel' => 'dashboard', 'live' => 'play', 'preview' => 'eye', 'plugin' => 'database'][$row['kind']] ?? 'globe'" class="size-4" /></span>
                                 {{ $row['host'] }}
                                 <x-menu-icon name="external" class="size-3 opacity-50" />
                             </a>
@@ -38,6 +39,8 @@
                         <td>
                             @if ($row['website'])
                                 <a class="hover:text-accent" href="{{ route('websites.show', $row['website']) }}" wire:navigate>{{ $row['website']->name }}</a>
+                            @elseif ($row['plugin'] ?? null)
+                                <a class="hover:text-accent" href="{{ route('plugins.index') }}" wire:navigate>{{ $row['plugin'] }} (plugin)</a>
                             @else
                                 <span class="text-muted">—</span>
                             @endif

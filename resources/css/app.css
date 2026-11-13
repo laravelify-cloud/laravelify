@@ -3551,3 +3551,7 @@ label.conn-option:hover { background: var(--color-fill); }
 .db-schema.is-new:hover { color: var(--color-ink); }
 .db-schema-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .db-schema-form .input { width: min(260px, 100%); }
+
+/* A plugin port on a domain: the domain (a link), the local port under it. */
+.plugin-port-domain { display: grid; justify-items: end; gap: 1px; min-width: 0; }
+.plugin-port-domain small { font-size: 11px; }

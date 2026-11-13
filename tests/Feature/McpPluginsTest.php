@@ -8,6 +8,7 @@ use App\Mcp\Tools\InstallPlugin;
 use App\Mcp\Tools\LinkPlugin;
 use App\Mcp\Tools\ListPlugins;
 use App\Mcp\Tools\PluginStatus;
+use App\Mcp\Tools\SetPluginDomain;
 use App\Mcp\Tools\UnsealVault;
 use App\Models\PanelTask;
 use App\Models\Plugin;
@@ -81,5 +82,21 @@ class McpPluginsTest extends TestCase
         $host->shouldReceive('vaultSealed')->andReturn(false);
 
         $this->server()->tool(UnsealVault::class)->assertOk()->assertSee('Vault is unsealed')->assertDontSee(['k1', 'hvs.root']);
+    }
+
+    public function test_plugin_domains_are_set_without_returning_the_password(): void
+    {
+        $host = $this->host();
+        Plugin::factory()->create(['key' => 'minio', 'ports' => ['api' => 9000, 'console' => 9001]]);
+        $host->shouldReceive('pluginApiDomain')->once()->with('minio', 's3.example.com', 9000)->andReturn('');
+        $host->shouldReceive('pluginDomain')->once()->withArgs(fn (string $key, string $domain, int $port) => [$key, $domain, $port] === ['minio', 's3-ui.example.com', 9001])->andReturn('');
+        $server = $this->server();
+
+        $server->tool(SetPluginDomain::class, ['plugin' => 'minio', 'kind' => 'api', 'domain' => 's3.example.com'])->assertOk()->assertSee('s3.example.com');
+        $server->tool(SetPluginDomain::class, ['plugin' => 'minio', 'domain' => 's3-ui.example.com', 'basic_auth_password' => 'short'])->assertHasErrors(['12 characters']);
+        $server->tool(SetPluginDomain::class, ['plugin' => 'minio', 'domain' => 's3-ui.example.com', 'basic_auth_password' => 'a-long-console-password'])
+            ->assertOk()->assertSee('s3-ui.example.com')->assertDontSee('a-long-console-password');
+
+        $this->assertSame(['s3-ui.example.com', 's3.example.com'], [Plugin::query()->sole()->domain, Plugin::query()->sole()->api_domain]);
     }
 }

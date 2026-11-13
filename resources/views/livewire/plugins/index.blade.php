@@ -72,9 +72,23 @@
                     @if ($plugin)
                         <dl class="plugin-facts">
                             @foreach ($plugin->ports as $name => $port)
+                                @php
+                                    // A port on a domain shows the domain (its link), with the local port under it.
+                                    $portDomain = $name === $definition->webPort() ? $plugin->domain : ($name === $definition->apiPort() ? $plugin->api_domain : null);
+                                @endphp
                                 <div>
                                     <dt>{{ ucfirst($name) }}</dt>
-                                    <dd class="copy-inline font-mono">127.0.0.1:{{ $port }} <x-copy-button :text="\Illuminate\Support\Js::from('127.0.0.1:'.$port)->toHtml()" /></dd>
+                                    @if ($portDomain)
+                                        <dd class="plugin-port-domain">
+                                            <span class="copy-inline">
+                                                <a class="truncate text-accent hover:underline" href="https://{{ $portDomain }}" target="_blank" rel="noopener" title="{{ $name === $definition->apiPort() ? 'Public: its access keys decide who can write' : 'Behind basic auth ('.$plugin->basic_auth_user.')' }}">{{ $portDomain }}</a>
+                                                <x-copy-button :text="\Illuminate\Support\Js::from('https://'.$portDomain)->toHtml()" />
+                                            </span>
+                                            <small class="font-mono text-muted">127.0.0.1:{{ $port }}</small>
+                                        </dd>
+                                    @else
+                                        <dd class="copy-inline font-mono">127.0.0.1:{{ $port }} <x-copy-button :text="\Illuminate\Support\Js::from('127.0.0.1:'.$port)->toHtml()" /></dd>
+                                    @endif
                                 </div>
                             @endforeach
                             @if ($definition->sealable())
@@ -91,12 +105,6 @@
                                         <span class="text-muted">· auto-unseal {{ $plugin->auto_unseal ? 'on' : 'off' }}</span>
                                     </dd>
                                 </div>
-                            @endif
-                            @if ($plugin->domain)
-                                <div><dt>{{ $definition->apiPort() ? 'Console domain' : 'Domain' }}</dt><dd class="truncate"><a class="text-accent hover:underline" href="https://{{ $plugin->domain }}" target="_blank" rel="noopener" title="Behind basic auth ({{ $plugin->basic_auth_user }})">{{ $plugin->domain }}</a></dd></div>
-                            @endif
-                            @if ($plugin->api_domain)
-                                <div><dt>S3 API domain</dt><dd class="truncate"><a class="text-accent hover:underline" href="https://{{ $plugin->api_domain }}" target="_blank" rel="noopener" title="Public: its access keys decide who can write">{{ $plugin->api_domain }}</a></dd></div>
                             @endif
                         </dl>
 

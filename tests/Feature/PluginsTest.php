@@ -370,9 +370,12 @@ class PluginsTest extends TestCase
             ->set('domain', 's3.example.com')
             ->call('saveDomain')
             ->assertHasNoErrors()
-            ->assertSee(['Console domain', 's3-ui.example.com', 'S3 API domain', 's3.example.com']);
+            ->assertSee(['s3-ui.example.com', 's3.example.com', '127.0.0.1:9000']);
 
         $this->assertSame('s3.example.com', $plugin->fresh()->api_domain);
+
+        Livewire::test(\App\Livewire\Domains\Index::class)
+            ->assertSee(['s3.example.com', 'MinIO S3 API (public)', 's3-ui.example.com', 'MinIO console (basic auth)']);
 
         app(PluginManager::class)->removeApiDomain($plugin->fresh());
         $this->assertNull($plugin->fresh()->api_domain);

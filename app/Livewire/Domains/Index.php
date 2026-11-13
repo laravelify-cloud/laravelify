@@ -3,6 +3,7 @@
 namespace App\Livewire\Domains;
 
 use App\Livewire\PanelComponent;
+use App\Models\Plugin;
 use App\Models\Website;
 use App\Services\LiveServer;
 use Livewire\Attributes\Url;
@@ -47,7 +48,7 @@ class Index extends PanelComponent
     }
 
     /**
-     * @return list<array{host: string, kind: string, label: string, website: ?Website, running: ?bool}>
+     * @return list<array{host: string, kind: string, label: string, website: ?Website, running: ?bool, plugin?: string}>
      */
     private function rows(LiveServer $live): array
     {
@@ -75,6 +76,19 @@ class Index extends PanelComponent
 
             if ($website->live_host) {
                 $rows[] = ['host' => (string) $website->live_host, 'kind' => 'live', 'label' => 'Live Server', 'website' => $website, 'running' => $live->running($website)];
+            }
+        }
+
+        // Plugins: a web page behind basic auth (MinIO console, Vault UI) and a public API (MinIO S3).
+        foreach (Plugin::query()->orderBy('key')->get() as $plugin) {
+            $label = $plugin->definition()->label();
+
+            if ($plugin->domain) {
+                $rows[] = ['host' => (string) $plugin->domain, 'kind' => 'plugin', 'label' => $label.($plugin->definition()->apiPort() ? ' console' : '').' (basic auth)', 'website' => null, 'running' => null, 'plugin' => $label];
+            }
+
+            if ($plugin->api_domain) {
+                $rows[] = ['host' => (string) $plugin->api_domain, 'kind' => 'plugin', 'label' => $label.' S3 API (public)', 'website' => null, 'running' => null, 'plugin' => $label];
             }
         }
 

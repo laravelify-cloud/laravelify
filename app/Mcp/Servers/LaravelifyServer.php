@@ -41,6 +41,7 @@ use App\Mcp\Tools\RunBackup;
 use App\Mcp\Tools\RunCommand;
 use App\Mcp\Tools\ServerStatus;
 use App\Mcp\Tools\SetDomains;
+use App\Mcp\Tools\SetPluginDomain;
 use App\Mcp\Tools\SetRedirects;
 use App\Mcp\Tools\SetWebsiteEnabled;
 use App\Mcp\Tools\SyncCloudflare;
@@ -82,6 +83,7 @@ use Laravel\Mcp\Server\Attributes\Version;
     - Plugins: PostgreSQL, Redis, MinIO, and Vault run with Docker on 127.0.0.1 [list-plugins, install-plugin then get-task, plugin-status].
       link-plugin writes a plugin's variables into a website's .env (DATABASE_URL, SPRING_DATASOURCE_*, REDIS_URL, VAULT_ADDR...).
       Vault seals itself on a restart: unseal-vault. Passwords are never shown to you; the user sees them once on the Plugins page.
+      set-plugin-domain opens MinIO's console or Vault's UI on a domain behind basic auth (ask the user for the password), or MinIO's S3 API on a public domain (kind api).
     - Any app with a Dockerfile: type docker (built and run as a container). Spring Boot: type spring. ASP.NET Core: type aspnet.
     - Clean up: [delete-website, delete-group, update-group]. The site's folder moves to /var/www/.trash and its database stays on the server. Always ask the user first.
 
@@ -150,6 +152,7 @@ class LaravelifyServer extends Server
         PluginStatus::class,
         UnsealVault::class,
         LinkPlugin::class,
+        SetPluginDomain::class,
         GetLogs::class,
         CheckWebsite::class,
         RunCommand::class,

@@ -4,6 +4,13 @@ All notable changes are listed here. Releases follow [semantic versioning](https
 
 ## [Unreleased]
 
+## [0.3.0-beta.107] - 2026-11-13
+
+- **Fixed: MinIO's console on a domain sent you back to its sign-in page every time.** nginx passed the browser's basic-auth header on, and the console read it as its own login. It is dropped after the password check now; updating fixes domains you already set.
+- **Plugin domains on the card and the Domains page.** A plugin port that has a domain shows the domain (with the local 127.0.0.1 port under it), and the Domains page lists plugin domains (filter: Plugins).
+- **MCP: `set-plugin-domain`.** Opens MinIO's console or Vault's UI on a domain behind basic auth, or MinIO's S3 API on a public domain; the password is stored hashed and never returned.
+- **Fixed: setting a plugin domain could fail with "unlink(...htpasswd): No such file"** after nginx was already written.
+
 ## [0.3.0-beta.106] - 2026-11-13
 
 - **MinIO: the S3 API on its own public domain.** Beside the console domain (behind a password), MinIO's card has **S3 API on a domain**: image links and your apps' S3 clients use it without a password (MinIO's keys decide who can write), with the Host header passed on for S3 signatures. Both domains show on the card, and a domain used by a website or another plugin is refused.

@@ -568,7 +568,10 @@ UNIT;
         try {
             return $this->apply(['plugin-domain', $key, $host, (string) $port]);
         } finally {
-            @unlink($directory.'/htpasswd');
+            // host-apply.sh moves it into nginx's folder; it is only left here when that failed.
+            if (is_file($directory.'/htpasswd')) {
+                unlink($directory.'/htpasswd');
+            }
         }
     }
 

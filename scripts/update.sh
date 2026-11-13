@@ -123,6 +123,20 @@ bash "${APP_ROOT}/scripts/host-apply.sh" phpmyadmin-hide all || true
 "${PHP_BIN}" artisan laravelify:cloud-report --no-ansi || true
 bash "${APP_ROOT}/scripts/host-apply.sh" glitchtip-nginx all || true
 
+# Plugin pages behind basic auth (MinIO console, Vault UI) written before: the browser's Basic
+# header must not reach the app, or MinIO's console sends you back to its sign-in page.
+plugin_confs_changed=0
+for conf in /etc/nginx/sites-available/laravelify-plugin-*.conf; do
+  [[ -f "${conf}" && "${conf}" != *-api.conf ]] || continue
+  grep -q 'auth_basic_user_file' "${conf}" || continue
+  grep -q 'proxy_set_header Authorization ""' "${conf}" && continue
+  sed -i 's/^\( *\)proxy_set_header Host \$host;$/&\n\1proxy_set_header Authorization "";/' "${conf}"
+  plugin_confs_changed=1
+done
+if [[ ${plugin_confs_changed} -eq 1 ]]; then
+  nginx -t >/dev/null 2>&1 && systemctl reload nginx
+fi
+
 # The panel runs as its own user (laravelify), websites as www-data. The first update with this
 # moves an older install over (users, PHP-FPM pool, nginx, sudo, Supervisor, PM2); later ones
 # put owners and permissions back after the copy above. See scripts/privileges.sh.

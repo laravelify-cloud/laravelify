@@ -2340,6 +2340,9 @@ server {
         proxy_pass http://127.0.0.1:${P_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
+        # The browser's basic auth stays here: the app reads Authorization as its own login
+        # (MinIO's console then sends you back to its sign-in page on every request).
+        proxy_set_header Authorization "";
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header X-Forwarded-Proto https;
